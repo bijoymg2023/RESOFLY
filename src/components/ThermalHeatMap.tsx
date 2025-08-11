@@ -89,7 +89,7 @@ export const ThermalHeatMap = () => {
         {/* Heat Map Grid */}
         <div className="flex-1 bg-muted/10 rounded-lg p-3 border border-dashboard-panel-border overflow-hidden">
           <div 
-            className="grid gap-0.5 h-full w-full max-h-[180px] max-w-full mx-auto aspect-square"
+            className="grid gap-0.5 h-full w-full max-h-[240px] max-w-[240px] mx-auto aspect-square"
             style={{ gridTemplateColumns: 'repeat(16, 1fr)', gridTemplateRows: 'repeat(16, 1fr)' }}
           >
             {temperatureData.map((row, i) =>

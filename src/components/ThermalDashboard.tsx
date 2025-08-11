@@ -49,7 +49,7 @@ const ThermalDashboard = () => {
           </div>
           
           {/* Bottom Row - Heat Map and Alerts */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[300px]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[320px]">
             <ThermalHeatMap />
             <AlertBox />
           </div>
