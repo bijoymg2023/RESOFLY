@@ -52,6 +52,23 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				warning: {
+					DEFAULT: 'hsl(var(--warning))',
+					foreground: 'hsl(var(--warning-foreground))'
+				},
+				success: {
+					DEFAULT: 'hsl(var(--success))',
+					foreground: 'hsl(var(--success-foreground))'
+				},
+				thermal: {
+					DEFAULT: 'hsl(var(--thermal))',
+					foreground: 'hsl(var(--thermal-foreground))'
+				},
+				dashboard: {
+					grid: 'hsl(var(--dashboard-grid))',
+					panel: 'hsl(var(--dashboard-panel))',
+					'panel-border': 'hsl(var(--dashboard-panel-border))'
+				},
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
@@ -84,11 +101,43 @@ export default {
 					to: {
 						height: '0'
 					}
+				},
+				fadeIn: {
+					from: { 
+						opacity: '0',
+						transform: 'translateY(10px)' 
+					},
+					to: { 
+						opacity: '1',
+						transform: 'translateY(0)' 
+					}
+				},
+				slideUp: {
+					from: { 
+						transform: 'translateY(100%)' 
+					},
+					to: { 
+						transform: 'translateY(0)' 
+					}
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+				'pulse-slow': 'pulse 3s ease-in-out infinite',
+				'fade-in': 'fadeIn 0.5s ease-in-out',
+				'slide-up': 'slideUp 0.3s ease-out'
+			},
+			backgroundImage: {
+				'gradient-primary': 'var(--gradient-primary)',
+				'gradient-thermal': 'var(--gradient-thermal)',
+				'gradient-success': 'var(--gradient-success)'
+			},
+			boxShadow: {
+				'sm': 'var(--shadow-sm)',
+				'md': 'var(--shadow-md)',
+				'lg': 'var(--shadow-lg)',
+				'glow': 'var(--shadow-glow)'
 			}
 		}
 	},

@@ -1,0 +1,161 @@
+import React, { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { 
+  Video,
+  Thermometer,
+  Layers,
+  Play,
+  Pause,
+  Maximize,
+  Settings
+} from 'lucide-react';
+
+type VideoType = 'RGB' | 'Thermal' | 'Overlay';
+
+export const VideoStreamBox = () => {
+  const [activeType, setActiveType] = useState<VideoType>('RGB');
+  const [isPlaying, setIsPlaying] = useState(true);
+
+  const videoTypes = [
+    { key: 'RGB' as VideoType, label: 'RGB', icon: Video, color: 'primary' },
+    { key: 'Thermal' as VideoType, label: 'Thermal', icon: Thermometer, color: 'thermal' },
+    { key: 'Overlay' as VideoType, label: 'Overlay', icon: Layers, color: 'accent' }
+  ];
+
+  const getStreamBackground = () => {
+    switch (activeType) {
+      case 'RGB':
+        return 'bg-gradient-to-br from-primary/20 to-accent/20';
+      case 'Thermal':
+        return 'bg-gradient-thermal opacity-20';
+      case 'Overlay':
+        return 'bg-gradient-to-br from-accent/20 to-primary/20';
+    }
+  };
+
+  return (
+    <Card className="h-full bg-dashboard-panel border-dashboard-panel-border">
+      <CardHeader className="pb-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center text-lg">
+            <Video className="w-5 h-5 mr-2" />
+            Live Video Stream
+          </CardTitle>
+          <div className="flex items-center space-x-2">
+            <Badge 
+              variant="outline" 
+              className={`
+                ${isPlaying 
+                  ? 'bg-success/20 text-success border-success/30' 
+                  : 'bg-muted/20 text-muted-foreground border-muted/30'
+                }
+              `}
+            >
+              {isPlaying ? (
+                <>
+                  <div className="w-2 h-2 bg-success rounded-full mr-1 animate-pulse" />
+                  LIVE
+                </>
+              ) : (
+                'PAUSED'
+              )}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Stream Type Selector */}
+        <div className="flex space-x-2">
+          {videoTypes.map(({ key, label, icon: Icon, color }) => (
+            <Button
+              key={key}
+              variant={activeType === key ? "default" : "outline"}
+              size="sm"
+              onClick={() => setActiveType(key)}
+              className={`
+                ${activeType === key 
+                  ? `bg-${color} hover:bg-${color}/90` 
+                  : 'hover:bg-muted/50'
+                }
+              `}
+            >
+              <Icon className="w-4 h-4 mr-1" />
+              {label}
+            </Button>
+          ))}
+        </div>
+      </CardHeader>
+
+      <CardContent className="flex-1 p-0">
+        {/* Video Display Area */}
+        <div className="relative h-full min-h-[300px] mx-4 mb-4 rounded-lg overflow-hidden bg-muted/20 border border-dashboard-panel-border">
+          <div className={`absolute inset-0 ${getStreamBackground()}`} />
+          
+          {/* Simulated Video Content */}
+          <div className="relative h-full flex items-center justify-center">
+            <div className="text-center">
+              <div className="mb-4">
+                {videoTypes.find(v => v.key === activeType)?.icon && (
+                  React.createElement(
+                    videoTypes.find(v => v.key === activeType)!.icon,
+                    { className: "w-16 h-16 mx-auto text-muted-foreground/50" }
+                  )
+                )}
+              </div>
+              <p className="text-lg font-medium text-muted-foreground">
+                {activeType} Stream
+              </p>
+              <p className="text-sm text-muted-foreground/70">
+                {isPlaying ? 'Stream Active' : 'Stream Paused'}
+              </p>
+            </div>
+
+            {/* Stream Info Overlay */}
+            <div className="absolute top-4 left-4 space-y-2">
+              <Badge variant="outline" className="bg-background/80 backdrop-blur-sm">
+                1920x1080 • 30fps
+              </Badge>
+              {activeType === 'Thermal' && (
+                <Badge variant="outline" className="bg-thermal/20 text-thermal border-thermal/30 backdrop-blur-sm">
+                  <Thermometer className="w-3 h-3 mr-1" />
+                  18°C - 42°C
+                </Badge>
+              )}
+            </div>
+
+            {/* Controls Overlay */}
+            <div className="absolute bottom-4 right-4 flex space-x-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-background/80 backdrop-blur-sm"
+                onClick={() => setIsPlaying(!isPlaying)}
+              >
+                {isPlaying ? (
+                  <Pause className="w-4 h-4" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-background/80 backdrop-blur-sm"
+              >
+                <Maximize className="w-4 h-4" />
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="bg-background/80 backdrop-blur-sm"
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
