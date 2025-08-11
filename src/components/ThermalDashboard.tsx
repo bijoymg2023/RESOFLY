@@ -40,24 +40,29 @@ const ThermalDashboard = () => {
       </header>
 
       {/* Main Dashboard Grid */}
-      <div className="grid grid-cols-12 gap-4 h-[calc(100vh-140px)]">
-        {/* Left Column - Video Stream (Takes most space) */}
-        <div className="col-span-12 lg:col-span-8 space-y-4">
-          <VideoStreamBox />
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-1/2">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[calc(100vh-140px)]">
+        {/* Left Column - Video Stream and Heat Map/Alerts */}
+        <div className="lg:col-span-8 flex flex-col gap-6">
+          {/* Video Stream - Takes priority space */}
+          <div className="flex-1 min-h-[400px]">
+            <VideoStreamBox />
+          </div>
+          
+          {/* Bottom Row - Heat Map and Alerts */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[300px]">
             <ThermalHeatMap />
-            <div className="space-y-4">
-              <AlertBox />
-            </div>
+            <AlertBox />
           </div>
         </div>
 
-        {/* Right Column - GPS and Controls */}
-        <div className="col-span-12 lg:col-span-4 space-y-4">
-          <GPSCoordinateBox />
+        {/* Right Column - GPS and System Status */}
+        <div className="lg:col-span-4 flex flex-col gap-6">
+          <div className="flex-shrink-0">
+            <GPSCoordinateBox />
+          </div>
           
           {/* System Status Card */}
-          <Card className="bg-dashboard-panel border-dashboard-panel-border">
+          <Card className="bg-dashboard-panel border-dashboard-panel-border flex-1">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium flex items-center">
                 <Monitor className="w-4 h-4 mr-2" />

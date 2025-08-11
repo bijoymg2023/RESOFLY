@@ -145,8 +145,8 @@ export const AlertBox = () => {
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 p-0">
-        <ScrollArea className="h-full px-4">
+      <CardContent className="flex-1 p-0 overflow-hidden">
+        <ScrollArea className="h-full max-h-[220px] px-4">
           {alerts.length === 0 ? (
             <div className="text-center py-8">
               <CheckCircle className="w-8 h-8 mx-auto text-success mb-2" />
