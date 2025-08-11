@@ -69,27 +69,27 @@ export const ThermalHeatMap = () => {
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1">
+      <CardContent className="flex-1 flex flex-col overflow-hidden">
         {/* Temperature Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-4">
+        <div className="grid grid-cols-3 gap-2 mb-3 flex-shrink-0">
           <div className="text-center">
-            <p className="text-sm text-muted-foreground">Min</p>
-            <p className="text-lg font-bold text-primary">{minTemp.toFixed(1)}°C</p>
+            <p className="text-xs text-muted-foreground">Min</p>
+            <p className="text-sm font-bold text-primary">{minTemp.toFixed(1)}°C</p>
           </div>
           <div className="text-center">
-            <p className="text-sm text-muted-foreground">Avg</p>
-            <p className="text-lg font-bold text-foreground">{avgTemp.toFixed(1)}°C</p>
+            <p className="text-xs text-muted-foreground">Avg</p>
+            <p className="text-sm font-bold text-foreground">{avgTemp.toFixed(1)}°C</p>
           </div>
           <div className="text-center">
-            <p className="text-sm text-muted-foreground">Max</p>
-            <p className="text-lg font-bold text-thermal">{maxTemp.toFixed(1)}°C</p>
+            <p className="text-xs text-muted-foreground">Max</p>
+            <p className="text-sm font-bold text-thermal">{maxTemp.toFixed(1)}°C</p>
           </div>
         </div>
 
         {/* Heat Map Grid */}
-        <div className="aspect-square bg-muted/10 rounded-lg p-2 border border-dashboard-panel-border">
+        <div className="flex-1 bg-muted/10 rounded-lg p-3 border border-dashboard-panel-border overflow-hidden">
           <div 
-            className="grid gap-0.5 h-full w-full"
+            className="grid gap-0.5 h-full w-full max-h-[180px] max-w-full mx-auto aspect-square"
             style={{ gridTemplateColumns: 'repeat(16, 1fr)', gridTemplateRows: 'repeat(16, 1fr)' }}
           >
             {temperatureData.map((row, i) =>
@@ -110,31 +110,29 @@ export const ThermalHeatMap = () => {
         </div>
 
         {/* Temperature Scale */}
-        <div className="mt-4">
+        <div className="mt-3 flex-shrink-0">
           <div className="flex justify-between text-xs text-muted-foreground mb-1">
             <span>Cool</span>
-            <span>Moderate</span>
             <span>Hot</span>
           </div>
           <div 
-            className="h-2 rounded-full"
+            className="h-1.5 rounded-full"
             style={{
               background: 'linear-gradient(to right, hsl(220, 100%, 70%), hsl(60, 100%, 70%), hsl(14, 100%, 70%))'
             }}
           />
           <div className="flex justify-between text-xs text-muted-foreground mt-1">
             <span>15°C</span>
-            <span>30°C</span>
             <span>45°C</span>
           </div>
         </div>
 
         {/* Alert for high temperatures */}
         {maxTemp > 40 && (
-          <div className="mt-4 p-2 bg-warning/20 border border-warning/30 rounded-lg">
+          <div className="mt-2 p-2 bg-warning/20 border border-warning/30 rounded-lg flex-shrink-0">
             <div className="flex items-center text-warning">
-              <AlertTriangle className="w-4 h-4 mr-2" />
-              <span className="text-sm font-medium">High temperature detected</span>
+              <AlertTriangle className="w-3 h-3 mr-2" />
+              <span className="text-xs font-medium">High temperature detected</span>
             </div>
           </div>
         )}
