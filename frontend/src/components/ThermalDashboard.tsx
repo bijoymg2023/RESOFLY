@@ -105,7 +105,7 @@ const ThermalDashboard = () => {
           </div>
 
           {/* Secondary Content Area - GPS and System Status */}
-          <div className="lg:col-span-4 space-y-4 sm:space-y-6">
+          <div className="xl:col-span-4 space-y-4 sm:space-y-6">
             
             {/* GPS Coordinates */}
             <GPSCoordinateBox />
