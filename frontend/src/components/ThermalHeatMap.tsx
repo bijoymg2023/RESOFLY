@@ -53,7 +53,7 @@ export const ThermalHeatMap = () => {
     } else if (normalized < 0.7) {
       return `hsl(${60 - normalized * 60}, 100%, 70%)`;
     } else {
-      return `hsl(${14}, ${100}%, ${50 + normalized * 20}`)`;
+      return `hsl(${14}, ${100}%, ${50 + normalized * 20}%)`;
     }
   };
 
