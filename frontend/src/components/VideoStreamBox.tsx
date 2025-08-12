@@ -77,7 +77,7 @@ export const VideoStreamBox = () => {
               variant={activeType === key ? "default" : "outline"}
               size={isMobile ? "sm" : "sm"}
               onClick={() => setActiveType(key)}
-              className={`flex-1 sm:flex-none text-xs sm:text-sm ${
+              className={`flex-1 sm:flex-none text-xs sm:text-sm justify-center items-center ${
                 activeType === key 
                   ? `bg-${color} hover:bg-${color}/90` 
                   : 'hover:bg-muted/50'
