@@ -32,7 +32,7 @@ const ThermalDashboard = () => {
           </div>
           <div>
             <h1 className="text-lg sm:text-2xl font-bold text-foreground">
-              {isMobile ? 'Thermal Hub' : 'Thermal Vision Hub'}
+              ResoFly
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">
               Real-time monitoring and surveillance
