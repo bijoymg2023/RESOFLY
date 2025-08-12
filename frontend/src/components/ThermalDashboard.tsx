@@ -84,10 +84,10 @@ const ThermalDashboard = () => {
       {/* Main Dashboard Content */}
       <div className="p-2 sm:p-4 lg:p-6 space-y-4 sm:space-y-6">
         {/* Mobile-First Responsive Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 sm:gap-6">
           
           {/* Primary Content Area - Video Stream */}
-          <div className="lg:col-span-8 space-y-4 sm:space-y-6">
+          <div className="xl:col-span-8 space-y-4 sm:space-y-6">
             {/* Video Stream */}
             <div className="min-h-[250px] sm:min-h-[400px]">
               <VideoStreamBox />
