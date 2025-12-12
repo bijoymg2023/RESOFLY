@@ -4,16 +4,17 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { 
-  AlertTriangle, 
-  Info, 
-  CheckCircle, 
+import {
+  AlertTriangle,
+  Info,
+  CheckCircle,
   XCircle,
   Clock,
   X,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface Alert {
   id: string;
@@ -55,70 +56,55 @@ const alertTypes = {
   }
 };
 
+const API_URL = '/api';
+
 export const AlertBox = () => {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
   const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
   const isMobile = useIsMobile();
+  const queryClient = useQueryClient();
 
-  // Simulate incoming alerts
-  useEffect(() => {
-    const sampleAlerts = [
-      {
-        type: 'warning' as const,
-        title: 'High Temperature',
-        message: isMobile ? 'Thermal sensor 42°C in zone A3' : 'Thermal sensor reading 42°C in zone A3'
-      },
-      {
-        type: 'info' as const,
-        title: 'GPS Update',
-        message: isMobile ? 'Location updated' : 'Location updated to new coordinates'
-      },
-      {
-        type: 'success' as const,
-        title: 'System Online',
-        message: isMobile ? 'All sensors operational' : 'All thermal sensors are operational'
-      },
-      {
-        type: 'error' as const,
-        title: 'Connection Lost',
-        message: isMobile ? 'Lost connection to camera 2' : 'Lost connection to thermal camera 2'
-      }
-    ];
+  // Fetch Alerts
+  const { data: alerts = [] } = useQuery<Alert[]>({
+    queryKey: ['alerts'],
+    queryFn: async () => {
+      const res = await fetch(`${API_URL}/alerts`);
+      if (!res.ok) throw new Error('Failed to fetch alerts');
+      const data = await res.json();
+      // Ensure timestamps are Date objects
+      return data.map((alert: any) => ({
+        ...alert,
+        timestamp: new Date(alert.timestamp)
+      }));
+    },
+    refetchInterval: 5000,
+  });
 
-    // Add initial alerts
-    const initialAlerts = sampleAlerts.map((alert, index) => ({
-      id: `alert-${Date.now()}-${index}`,
-      ...alert,
-      timestamp: new Date(Date.now() - index * 60000),
-      acknowledged: false
-    }));
+  // Acknowledge Mutation
+  const acknowledgeMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      await fetch(`${API_URL}/alerts/${alertId}/acknowledge`, { method: 'PATCH' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    }
+  });
 
-    setAlerts(initialAlerts);
-
-    // Simulate new alerts coming in
-    const interval = setInterval(() => {
-      const randomAlert = sampleAlerts[Math.floor(Math.random() * sampleAlerts.length)];
-      const newAlert: Alert = {
-        id: `alert-${Date.now()}`,
-        ...randomAlert,
-        timestamp: new Date(),
-        acknowledged: false
-      };
-
-      setAlerts(prev => [newAlert, ...prev].slice(0, 10)); // Keep only last 10 alerts
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [isMobile]);
+  // Delete Mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (alertId: string) => {
+      await fetch(`${API_URL}/alerts/${alertId}`, { method: 'DELETE' });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    }
+  });
 
   const acknowledgeAlert = (alertId: string) => {
-    setAlerts(prev => prev.map(alert => 
-      alert.id === alertId ? { ...alert, acknowledged: true } : alert
-    ));
+    acknowledgeMutation.mutate(alertId);
   };
 
   const dismissAlert = (alertId: string) => {
-    setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+    deleteMutation.mutate(alertId);
   };
 
   const toggleExpandAlert = (alertId: string) => {
@@ -136,7 +122,7 @@ export const AlertBox = () => {
     return 'Just now';
   };
 
-  const unacknowledgedCount = alerts.filter(alert => !alert.acknowledged).length;
+  const unacknowledgedCount = alerts.filter((alert: Alert) => !alert.acknowledged).length;
 
   return (
     <Card className="h-full bg-dashboard-panel border-dashboard-panel-border">
@@ -208,7 +194,7 @@ export const AlertBox = () => {
                               </Button>
                             )}
                           </div>
-                          
+
                           {/* Mobile: Collapsible message */}
                           {isMobile ? (
                             <>
@@ -227,13 +213,13 @@ export const AlertBox = () => {
                               {alert.message}
                             </p>
                           )}
-                          
+
                           <div className="flex items-center justify-between mt-2">
                             <div className="flex items-center space-x-1 text-xs text-muted-foreground">
                               <Clock className="w-2 h-2 sm:w-3 sm:h-3" />
                               <span>{getTimeAgo(alert.timestamp)}</span>
                             </div>
-                            
+
                             {/* Mobile: Compact action buttons */}
                             <div className="flex items-center space-x-1">
                               {!alert.acknowledged && (

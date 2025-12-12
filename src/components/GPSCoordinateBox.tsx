@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { 
-  Navigation, 
-  MapPin, 
+import {
+  Navigation,
+  MapPin,
   Satellite,
   Clock,
   Copy,
@@ -14,6 +14,7 @@ import {
   MoreVertical
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { useQuery } from '@tanstack/react-query';
 
 interface GPSData {
   latitude: number;
@@ -26,40 +27,31 @@ interface GPSData {
 }
 
 export const GPSCoordinateBox = () => {
-  const [gpsData, setGpsData] = useState<GPSData | null>(null);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const isMobile = useIsMobile();
 
-  // Simulate GPS data updates
-  useEffect(() => {
-    const simulateGPSData = () => {
-      // Base location (you can change this to any coordinates)
-      const baseLat = 40.7128 + (Math.random() - 0.5) * 0.01; // New York area
-      const baseLng = -74.0060 + (Math.random() - 0.5) * 0.01;
-      
-      const newGpsData: GPSData = {
-        latitude: baseLat,
-        longitude: baseLng,
-        altitude: 50 + Math.random() * 20,
-        accuracy: 3 + Math.random() * 2,
-        timestamp: new Date(),
-        speed: Math.random() * 10,
-        heading: Math.random() * 360
+  // Fetch GPS Data
+  const { data: gpsData = null } = useQuery<GPSData>({
+    queryKey: ['gps'],
+    queryFn: async () => {
+      const res = await fetch('/api/gps');
+      if (!res.ok) throw new Error('Failed to fetch GPS');
+      const data = await res.json();
+      return {
+        ...data,
+        timestamp: new Date(data.timestamp)
       };
+    },
+    refetchInterval: 1000, // Poll every 1s for GPS
+  });
 
-      setGpsData(newGpsData);
+  useEffect(() => {
+    if (gpsData) {
       setLastUpdate(new Date());
-    };
-
-    // Initial data
-    simulateGPSData();
-
-    // Update every 5 seconds
-    const interval = setInterval(simulateGPSData, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    }
+  }, [gpsData]);
 
   const formatCoordinate = (coord: number, type: 'lat' | 'lng') => {
     const direction = type === 'lat' ? (coord >= 0 ? 'N' : 'S') : (coord >= 0 ? 'E' : 'W');
@@ -91,7 +83,7 @@ export const GPSCoordinateBox = () => {
     if (!lastUpdate) return 'No data';
     const now = new Date();
     const diff = (now.getTime() - lastUpdate.getTime()) / 1000;
-    
+
     if (diff < 60) return `${Math.floor(diff)}s ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     return `${Math.floor(diff / 3600)}h ago`;
@@ -107,11 +99,11 @@ export const GPSCoordinateBox = () => {
               {isMobile ? 'GPS' : 'GPS Coordinates'}
             </CardTitle>
             <div className="flex items-center space-x-2">
-              <Badge 
-                variant="outline" 
+              <Badge
+                variant="outline"
                 className={`text-xs sm:text-sm
-                  ${gpsData 
-                    ? 'bg-success/20 text-success border-success/30' 
+                  ${gpsData
+                    ? 'bg-success/20 text-success border-success/30'
                     : 'bg-muted/20 text-muted-foreground border-muted/30'
                   }
                 `}
@@ -151,7 +143,7 @@ export const GPSCoordinateBox = () => {
                         <p className="text-sm font-mono">{gpsData.longitude.toFixed(4)}°</p>
                       </div>
                     </div>
-                    
+
                     {/* Expandable details on mobile */}
                     {showDetails && (
                       <div className="grid grid-cols-2 gap-2 text-xs">
@@ -229,30 +221,30 @@ export const GPSCoordinateBox = () => {
 
               {/* Mobile-Optimized Action Buttons */}
               <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'space-x-2'}`}>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={copyCoordinates}
                   className={isMobile ? 'w-full' : 'flex-1'}
                 >
                   <Copy className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
                   {isMobile ? 'Copy Coordinates' : 'Copy'}
                 </Button>
-                
+
                 {isMobile ? (
                   <div className="flex space-x-2">
-                    <Button 
-                      variant="default" 
-                      size="sm" 
+                    <Button
+                      variant="default"
+                      size="sm"
                       onClick={() => setIsMapOpen(true)}
                       className="flex-1"
                     >
                       <MapPin className="w-3 h-3 mr-1" />
                       View Map
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={openInMaps}
                       className="flex-1"
                     >
@@ -262,18 +254,18 @@ export const GPSCoordinateBox = () => {
                   </div>
                 ) : (
                   <>
-                    <Button 
-                      variant="default" 
-                      size="sm" 
+                    <Button
+                      variant="default"
+                      size="sm"
                       onClick={() => setIsMapOpen(true)}
                       className="flex-1"
                     >
                       <MapPin className="w-4 h-4 mr-1" />
                       View Map
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       onClick={openInMaps}
                     >
                       <ExternalLink className="w-4 h-4" />
@@ -314,9 +306,9 @@ export const GPSCoordinateBox = () => {
                 <p className="text-xs text-muted-foreground mb-4">
                   Map integration would be displayed here
                 </p>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={openInMaps}
                   className="w-full sm:w-auto"
                 >
