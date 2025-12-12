@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { apiFetch } from '@/lib/api';
 import {
   AlertTriangle,
   Info,
@@ -67,7 +68,7 @@ export const AlertBox = () => {
   const { data: alerts = [] } = useQuery<Alert[]>({
     queryKey: ['alerts'],
     queryFn: async () => {
-      const res = await fetch(`${API_URL}/alerts`);
+      const res = await apiFetch(`${API_URL}/alerts`);
       if (!res.ok) throw new Error('Failed to fetch alerts');
       const data = await res.json();
       // Ensure timestamps are Date objects
@@ -82,7 +83,7 @@ export const AlertBox = () => {
   // Acknowledge Mutation
   const acknowledgeMutation = useMutation({
     mutationFn: async (alertId: string) => {
-      await fetch(`${API_URL}/alerts/${alertId}/acknowledge`, { method: 'PATCH' });
+      await apiFetch(`${API_URL}/alerts/${alertId}/acknowledge`, { method: 'PATCH' });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['alerts'] });

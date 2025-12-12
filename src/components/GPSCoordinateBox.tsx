@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
 
 interface GPSData {
   latitude: number;
@@ -36,7 +37,7 @@ export const GPSCoordinateBox = () => {
   const { data: gpsData = null } = useQuery<GPSData>({
     queryKey: ['gps'],
     queryFn: async () => {
-      const res = await fetch('/api/gps');
+      const res = await apiFetch('/api/gps');
       if (!res.ok) throw new Error('Failed to fetch GPS');
       const data = await res.json();
       return {

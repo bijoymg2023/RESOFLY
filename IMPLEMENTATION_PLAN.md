@@ -1,29 +1,49 @@
-# Backend Implementation Plan - Thermo Vision Hub
+# Authentication Implementation Plan
 
-## Hardware Context & Constraints
-- **Device**: Raspberry Pi (Need generally efficient code).
-- **Thermal Camera**: FLIR Lepton 3.5 (Radiometric data).
-- **RGB Camera**: Raspberry Pi Camera Module.
+## Goal
+Secure the ResoFly dashboard with a username/password login system to prevent unauthorized access when exposed to the internet/network.
 
-## Phase 1-3: Hardware Features (COMPLETE)
-- Alerts, Streaming, GPS, and System Status are implemented and verified.
+## Architecture
 
-## Phase 4: Production Readiness (Offline & Boot) (CURRENT)
-To make the application "Deployment Ready" for the Raspberry Pi:
+### Backend (FastAPI)
+- **Library**: `python-jose` (JWT), `passlib` (Hashing).
+- **Model**: `UserDB` (username, hashed_password).
+- **Endpoints**:
+    - `POST /api/token` (Login) -> Returns JWT access token.
+    - `GET /api/users/me` (Verify token).
+- **Middleware/Dependency**: `get_current_user` dependency will be added to sensitive routes (`/stream`, `/alerts`, `/gps`).
+- **Default User**: Create an efficient startup script to ensure a default `admin` user exists.
 
-### 1. Refactor Frontend URLs
-- **Problem**: Frontend currently fetches `http://127.0.0.1:8000/...`. This breaks if we access the Pi from another laptop (the browser will look for localhost on the laptop, not the Pi).
-- **Solution**: Use relative paths (`/api/...`).
-- **Dev Mode**: Configure Vite proxy to forward `/api` to localhost:8000.
-- **Prod Mode**: Backend serves the frontend bundle directly.
+### Frontend (React)
+- **Page**: `LoginPage.tsx` (New component).
+- **State**: Store JWT in `localStorage`.
+- **Logic**:
+    - On App load, check for token.
+    - If no token -> Redirect to `/login`.
+    - If API returns 401 -> Redirect to `/login`.
+    - `VideoStreamBox` needs to handle auth (Pass token in URL or use Cookies? MJPEG is tricky with Headers).
+        - *Decision*: For MJPEG, we might use a Query Parameter `?token=...` or Cookies. Cookies are easier for `<img>` tags. Let's use **Cookies** for the stream authentication or specific query param.
 
-### 2. Backward "Single-Process" Serving
-- Modify `server.py` to mount the frontend `dist` `src`.
-- Allows the whole app to run on a single port (8000) without needing Nginx.
+## Proposed Changes
 
-### 3. Boot Configuration
-- Create `thermo-vision.service` (Systemd unit file).
-- Commands: `npm run build` (once), then start python server on boot.
+### Backend
+#### [MODIFY] `backend/server.py`
+- Add `UserDB` model.
+- Add `Token` pydantic model.
+- Add `authenticate_user`, `create_access_token` functions.
+- Add `/token` endpoint.
+- Protect `get_alerts`, `gen_frames`, etc.
 
-## User Questions
-- None. Proceeding with robust relative-path architecture.
+### Frontend
+#### [NEW] `src/pages/Login.tsx`
+- Simple Login form.
+#### [MODIFY] `src/App.tsx`
+- Add `AuthProvider` wrapper.
+- Add Route for `/login`.
+- Protect `/` route.
+
+## Verification
+1. Try to access dashboard -> Should redirect to Login.
+2. Enter wrong password -> Error message.
+3. Enter correct password -> Dashboard loads.
+4. Verify Stream loads (Auth check).

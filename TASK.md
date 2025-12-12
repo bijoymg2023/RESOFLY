@@ -23,7 +23,16 @@
     - [x] Update `server.py` to serve static files from `../dist` <!-- id: 9.3 -->
     - [x] Create `thermo-vision.service` systemd file <!-- id: 9.4 -->
     - [x] Verify production build (`npm run build` + `python server.py`) <!-- id: 9.5 -->
+- [x] **Phase 5: Hosting Configuration** <!-- id: 10 -->
+    - [x] Create `Dockerfile` <!-- id: 10.1 -->
+    - [x] Create `HOSTING.md` guide <!-- id: 10.2 -->
 
 # Future Work
-- [ ] **Phase 5: Data Synchronization** (SQLite -> PostgreSQL)
-- [ ] **Phase 6: Authentication** (Login/JWT)
+- [ ] **Phase 6: Data Synchronization** (SQLite -> PostgreSQL)
+- [x] **Phase 7: Authentication** (Login/JWT) <!-- id: 11 -->
+    - [x] Install backend dependencies (`python-jose`, `passlib`) <!-- id: 11.1 -->
+    - [x] Update `server.py` with User model and Auth logic <!-- id: 11.2 -->
+    - [x] Protect API endpoints <!-- id: 11.3 -->
+    - [x] Create `LoginPage.tsx` <!-- id: 11.4 -->
+    - [x] Implement Auth Context in Frontend <!-- id: 11.5 -->
+    - [x] Verify Login Flow <!-- id: 11.6 -->

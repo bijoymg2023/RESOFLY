@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/contexts/AuthContext';
 import { Badge } from '@/components/ui/badge';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -21,6 +22,11 @@ export const VideoStreamBox = () => {
   const [isPlaying, setIsPlaying] = useState(true);
   const [showAllControls, setShowAllControls] = useState(false);
   const isMobile = useIsMobile();
+  const { token } = useAuth();
+
+  // Base URL for the stream
+  const STREAM_URL = '/api/stream/thermal';
+  const authenticatedStreamUrl = token ? `${STREAM_URL}?token=${token}` : STREAM_URL;
 
   const videoTypes = [
     { key: 'RGB' as VideoType, label: 'RGB', icon: Video, color: 'primary' },
@@ -98,7 +104,7 @@ export const VideoStreamBox = () => {
           <div className="relative h-full flex items-center justify-center">
             {activeType === 'Thermal' ? (
               <img
-                src="/api/stream/thermal"
+                src={authenticatedStreamUrl}
                 alt="Thermal Stream"
                 className="w-full h-full object-cover"
               />

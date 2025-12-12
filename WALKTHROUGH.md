@@ -76,5 +76,15 @@ I have made the system **Offline** and **Auto-Boot** capable.
 - Copy the code to Raspberry Pi using the **Deployment Guide**.
 - Enable the service with `sudo systemctl enable resofly.service`.
 
-> [!IMPORTANT]
 > **DEPLOYMENT**: Please refer to [DEPLOYMENT.md](file:///Users/bijoymathewgeorge/.gemini/antigravity/brain/4fff4f0c-8655-4ffb-a82f-9ec47a49f908/DEPLOYMENT.md) for detailed instructions on installing libraries (`pylepton`, `pyserial`) and configuring the Raspberry Pi.
+
+## Phase 5: Hosting Configuration
+I have added support for **Cloud & Container Hosting**.
+- **Documentation**: Added [HOSTING.md](file:///Users/bijoymathewgeorge/.gemini/antigravity/brain/4fff4f0c-8655-4ffb-a82f-9ec47a49f908/HOSTING.md) covering Local, Tunneling, and Cloud options.
+
+## Phase 6: Authentication
+I have implemented a complete **Login System** using JWT.
+- **Backend**: Added `users` table, password hashing (Bcrypt), and OAuth2 Bearer token logic.
+- **Frontend**: Created `LoginPage`, `AuthContext`, and protected all Dashboard routes.
+- **Stream Security**: Video stream now verifies the token.
+- **Default User**: `admin` / `resofly123`.

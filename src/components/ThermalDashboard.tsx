@@ -21,6 +21,7 @@ import {
   Database
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
 
 interface SystemStatus {
   cpu_usage: number;
@@ -34,7 +35,7 @@ const SystemStatusContent = () => {
   const { data: status } = useQuery<SystemStatus>({
     queryKey: ['status'],
     queryFn: async () => {
-      const res = await fetch('/api/system-status');
+      const res = await apiFetch('/api/system-status');
       if (!res.ok) throw new Error('Failed to fetch stats');
       return res.json();
     },
