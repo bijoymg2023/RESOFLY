@@ -153,7 +153,7 @@ if os.path.exists("../dist"):
 else:
     @api_router.get("/")
     async def root():
-        return {"message": "Hello Thermo Vision Hub (Headless / Dev Mode)"}
+        return {"message": "Hello to RESOFLY (Dev Mode)"}
 
 # Status Endpoints
 @api_router.post("/status", response_model=StatusCheck)

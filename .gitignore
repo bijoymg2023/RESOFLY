@@ -84,4 +84,7 @@ backend/.env
 .cache/
 
 # Mobile development
-android-sdk/ 
+android-sdk/
+
+# Legacy / Tooling
+.emergent/
