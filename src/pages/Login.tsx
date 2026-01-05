@@ -1,101 +1,74 @@
-import { useState } from "react";
-import { useAuth } from "../contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Lock } from "lucide-react";
+import React from "react";
 
-export default function Login() {
-    const [username, setUsername] = useState("");
-    const [password, setPassword] = useState("");
-    const [error, setError] = useState("");
-    const [loading, setLoading] = useState(false);
+const Login: React.FC = () => {
+  return (
+    <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-black text-white font-sans">
 
-    const { login } = useAuth();
-    const navigate = useNavigate();
+      {/* Glow background */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,229,255,0.15),transparent_70%)]" />
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError("");
-        setLoading(true);
+      {/* Drone HUD */}
+      <div className="absolute top-16 right-24 animate-float z-10">
+        <svg
+          width="180"
+          height="120"
+          viewBox="0 0 300 200"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          className="drop-shadow-[0_0_25px_rgba(0,229,255,0.7)]"
+        >
+          {/* Body */}
+          <rect x="110" y="80" width="80" height="30" rx="8" fill="#00E5FF" />
 
-        try {
-            const formData = new FormData();
-            formData.append("username", username);
-            formData.append("password", password);
+          {/* Arms */}
+          <rect x="40" y="85" width="70" height="10" rx="5" fill="#00E5FF" />
+          <rect x="190" y="85" width="70" height="10" rx="5" fill="#00E5FF" />
 
-            const res = await fetch("/api/token", {
-                method: "POST",
-                body: formData,
-            });
+          {/* Rotors */}
+          <circle cx="40" cy="90" r="20" stroke="#00E5FF" strokeWidth="4" />
+          <circle cx="260" cy="90" r="20" stroke="#00E5FF" strokeWidth="4" />
 
-            if (!res.ok) {
-                throw new Error("Invalid credentials");
-            }
+          {/* Camera */}
+          <circle cx="150" cy="125" r="10" fill="#081A2B" />
+          <circle cx="150" cy="125" r="4" fill="#00E5FF" />
+        </svg>
+      </div>
 
-            const data = await res.json();
-            login(data.access_token);
-            navigate("/");
-        } catch (err) {
-            setError("Invalid username or password");
-        } finally {
-            setLoading(false);
-        }
-    };
+      {/* Login Card */}
+      <div className="relative z-20 w-full max-w-md rounded-2xl bg-[#020B14]/90 backdrop-blur-xl border border-cyan-500/30 shadow-[0_0_40px_rgba(0,229,255,0.2)] p-8">
 
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-background p-4">
-            <Card className="w-full max-w-md border-border/50 shadow-lg">
-                <CardHeader className="space-y-1">
-                    <div className="flex justify-center mb-4">
-                        <div className="p-3 rounded-full bg-primary/10">
-                            <Lock className="w-6 h-6 text-primary" />
-                        </div>
-                    </div>
-                    <CardTitle className="text-2xl text-center font-bold">ResoFly Login</CardTitle>
-                    <CardDescription className="text-center text-muted-foreground">
-                        Enter your credentials to access the dashboard
-                    </CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="space-y-2">
-                            <Label htmlFor="username">Username</Label>
-                            <Input
-                                id="username"
-                                type="text"
-                                placeholder="admin"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                required
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="password">Password</Label>
-                            <Input
-                                id="password"
-                                type="password"
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                            />
-                        </div>
-                        {error && (
-                            <div className="text-sm text-destructive text-center font-medium bg-destructive/10 p-2 rounded">
-                                {error}
-                            </div>
-                        )}
-                        <Button className="w-full" type="submit" disabled={loading}>
-                            {loading ? "Signing in..." : "Sign In"}
-                        </Button>
-                    </form>
-                </CardContent>
-                <CardFooter className="flex justify-center text-xs text-muted-foreground">
-                    Default: admin / resofly123
-                </CardFooter>
-            </Card>
+        <h1 className="text-4xl font-extrabold tracking-widest text-cyan-400 text-center">
+          RESOFLY
+        </h1>
+
+        <p className="text-center text-sm mt-2 text-cyan-200/70 tracking-wider">
+          PILOT AUTHENTICATION TERMINAL
+        </p>
+
+        <div className="mt-8 space-y-5">
+          <input
+            type="text"
+            placeholder="Pilot ID"
+            className="w-full px-4 py-3 rounded-lg bg-black/60 border border-cyan-500/30 focus:border-cyan-400 focus:outline-none text-cyan-200 placeholder-cyan-400/40 tracking-wide"
+          />
+
+          <input
+            type="password"
+            placeholder="Access Code"
+            className="w-full px-4 py-3 rounded-lg bg-black/60 border border-cyan-500/30 focus:border-cyan-400 focus:outline-none text-cyan-200 placeholder-cyan-400/40 tracking-wide"
+          />
+
+          <button className="w-full py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 transition-all duration-300 text-black font-bold tracking-widest shadow-[0_0_20px_rgba(0,229,255,0.6)]">
+            INITIATE FLIGHT
+          </button>
         </div>
-    );
-}
+
+        <p className="text-center text-xs mt-6 text-cyan-400/50 tracking-widest">
+          SECURE UAV CONTROL SYSTEM
+        </p>
+      </div>
+    </div>
+  );
+};
+
+export default Login;
