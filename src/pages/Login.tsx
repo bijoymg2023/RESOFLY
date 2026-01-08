@@ -36,7 +36,8 @@ const Login: React.FC = () => {
       formData.append('username', username);
       formData.append('password', password);
 
-      const response = await fetch('http://localhost:8000/api/token', {
+      const API_BASE_URL = `http://${window.location.hostname}:8000`;
+      const response = await fetch(`${API_BASE_URL}/api/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
