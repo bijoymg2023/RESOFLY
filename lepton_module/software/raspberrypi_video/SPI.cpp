@@ -18,7 +18,7 @@ int SpiOpenPort(int spi_device, unsigned int useSpiSpeed) {
   // (1,0)  CPOL=1 (Clock Idle high level), CPHA=0 (SDO transmit/change edge
   // active to idle) SPI_MODE_3 (1,1)  CPOL=1 (Clock Idle high level), CPHA=1
   // (SDO transmit/change edge idle to active)
-  spi_mode = SPI_MODE_3;
+  spi_mode = SPI_MODE_1;
 
   //----- SET BITS PER WORD -----
   spi_bitsPerWord = 8;
