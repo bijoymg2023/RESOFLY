@@ -119,9 +119,13 @@ void LeptonThread::run() {
 
     // retry loop
     while (true) {
-      // Perform the bulk read once
-      SpiReadSegment(spi_cs0_fd, result, sizeof(uint8_t) * PACKET_SIZE,
-                     PACKETS_PER_FRAME);
+      // Read 4 chunks of 15 packets each to avoid buffer limit (4096 bytes)
+      int packets_per_read = 15;
+      for (int k = 0; k < 4; k++) {
+        SpiReadSegment(spi_cs0_fd,
+                       result + (k * packets_per_read * PACKET_SIZE),
+                       sizeof(uint8_t) * PACKET_SIZE, packets_per_read);
+      }
 
       bool valid = true;
       for (int j = 0; j < PACKETS_PER_FRAME; j++) {
@@ -136,9 +140,6 @@ void LeptonThread::run() {
                       << (int)result[j * PACKET_SIZE + 3] << std::dec
                       << std::endl;
           }
-
-          // Add a tiny delay to allow Lepton to reset its packet index
-          usleep(650);
 
           valid = false;
           break;
