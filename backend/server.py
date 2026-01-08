@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from dotenv import load_dotenv
@@ -185,29 +185,31 @@ api_router = APIRouter(prefix="/api")
 async def root():
     return {"message": "Hello to RESOFLY (API)"}
 
-@api_router.post("/token", response_model=Token)
+@api_router.post("/token", response_model=None)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     try:
         print(f"Attempting login for user: {form_data.username}")
+        # DEBUG: Print everything
+        print(f"Password provided: {form_data.password}")
+        
         result = await db.execute(select(UserDB).where(UserDB.username == form_data.username))
         user = result.scalar_one_or_none()
         
         if not user:
             print(f"User {form_data.username} not found")
-            raise HTTPException(
-                status_code=401,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            return JSONResponse(status_code=401, content={"detail": "Incorrect username or password"})
             
-        print(f"User found. Verifying password...")
-        if not verify_password(form_data.password, user.hashed_password):
+        print(f"User found. ID: {user.username}. Hash: {user.hashed_password}")
+        
+        try:
+            valid = verify_password(form_data.password, user.hashed_password)
+        except Exception as e:
+            print(f"HASH VERIFICATION CRASHED: {e}")
+            return JSONResponse(status_code=500, content={"detail": f"Hash crash: {str(e)}"})
+
+        if not valid:
             print("Password verification failed")
-            raise HTTPException(
-                status_code=401,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+            return JSONResponse(status_code=401, content={"detail": "Incorrect username or password"})
         
         print("Login successful. Generating token...")
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -218,9 +220,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     except Exception as e:
         import traceback
         traceback.print_exc()
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=f"Internal Login Error: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": f"Internal Login Error: {str(e)}"})
 
 @api_router.get("/users/me", response_model=User)
 async def read_users_me(current_user: UserDB = Depends(get_current_user)):
