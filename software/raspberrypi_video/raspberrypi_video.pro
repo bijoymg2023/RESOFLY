@@ -1,7 +1,7 @@
 
 TEMPLATE = app
-QT += core gui
-greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
+QT += core gui widgets
+CONFIG += c++11
 
 TARGET = raspberrypi_video
 
@@ -27,4 +27,3 @@ SOURCES += *.cpp
 unix:LIBS += -L$${RPI_LIBS}/$${LEPTONSDK}/Debug -lLEPTON_SDK
 
 unix:QMAKE_CLEAN += -r $(OBJECTS_DIR) $${MOC_DIR}
-

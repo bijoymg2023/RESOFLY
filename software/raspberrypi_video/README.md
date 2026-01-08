@@ -1,69 +1,89 @@
-This example is meant for Raspberry Pi, Pi2, Pi3, PiZero, & Pi4 and has been tested with Raspbian.
+# Raspberry Pi Video for FLIR Lepton
 
-First enable the SPI and I2C interfaces on the Pi.
-```
-sudo raspi-config
-```
+This application displays the thermal video feed from a FLIR Lepton module on a Raspberry Pi using Qt.
+It supports **Lepton 2.x, 3.x, and 3.5**.
 
-Install the 'qt4-dev-tools' package, which allows compiling of QT applications.
-```
-sudo apt-get install qt4-dev-tools
-```
+## Hardware Requirements
+- Raspberry Pi (Any model with GPIO, tested on Pi 3/4/Zero)
+- FLIR Lepton Module (2.x, 3.x, or 3.5)
+- Breakout Board (e.g., PureThermal, or generic breakout) connected via SPI and I2C.
 
-To build (will build any SDK dependencies as well, cd to the *LeptonModule/sofware/raspberrypi_video* folder, then run:
-```
-qmake && make
-```
+### Wiring (Generic Breakout)
+| Lepton Pin | Raspberry Pi Pin | Function |
+|------------|------------------|----------|
+| GND        | GND              | Ground   |
+| CS         | GPIO 8 (CE0)     | SPI CS0  |
+| MISO       | GPIO 9 (MISO)    | SPI MISO |
+| CLK        | GPIO 11 (SCLK)   | SPI CLK  |
+| VIN        | 3.3V             | Power    |
+| SDA        | GPIO 2 (SDA)     | I2C SDA  |
+| SCL        | GPIO 3 (SCL)     | I2C SCL  |
 
-To clean:
-```
-make sdkclean && make distclean
-```
+> Note: Some instructions suggest CE1, but standard SPI0 usually uses CE0 or CE1. This code defaults to `/dev/spidev0.0` (CE0) or `/dev/spidev0.1` (CE1) depending on configuration. `SPI.cpp` defaults to checking both but usually expects CE0 or CE1. Ensure you enable SPI in raspi-config.
 
-## Raspberry Pi 1,2,3, & Zero
+## Software Prerequisites
 
-### Lepton 2.x
-To run the program while still in the raspberrypi_video directory, using a FLIR Lepton 2.x camera core use the following code:
-```
-./raspberrypi_video
-```
+1. **Enable Interfaces**:
+   Run `sudo raspi-config`
+   - Interface Options -> SPI -> Enable
+   - Interface Options -> I2C -> Enable
 
-### Lepton 3.x
-To run the program while still in the raspberrypi_video directory, using a FLIR Lepton 3.x camera core use the following code:
-```
+2. **Install Dependencies** (Qt5):
+   ```bash
+   sudo apt-get update
+   sudo apt-get install qtbase5-dev qt5-qmake build-essential
+   ```
+
+## Build Instructions
+
+1. Navigate to the directory:
+   ```bash
+   cd LeptonModule/software/raspberrypi_video
+   ```
+
+2. Compile:
+   ```bash
+   qmake
+   make
+   ```
+
+   *Note: This will also compile the Lepton SDK in `../raspberrypi_libs`.*
+
+3. Clean (if needed):
+   ```bash
+   make distclean
+   ```
+
+## Running the Application
+
+### For FLIR Lepton 3.5 (or 3.x)
+Lepton 3.x modules have a resolution of 160x120 and require a specific sync mode (`-tl 3`).
+
+```bash
 ./raspberrypi_video -tl 3
 ```
 
-## Raspberry Pi 4
+### For FLIR Lepton 2.x
+Lepton 2.x modules have a resolution of 80x60.
 
-### Lepton 2.x
-To run the program while still in the raspberrypi_video directory, using a FLIR Lepton 2.x camera core first use the following code:
-```
-sudo sh -c "echo performance > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor"
-```
-Then run this to start the program:
-```
+```bash
 ./raspberrypi_video
 ```
 
-### Lepton 3.x
-To run the program while still in the raspberrypi_video directory, using a FLIR Lepton 3.x camera core first use the following code:
-```
-sudo sh -c "echo performance > /sys/devices/system/cpu/cpufreq/policy0/scaling_governor"
-```
-Then run this to start the program:
-```
-./raspberrypi_video -tl 3
-```
+### Options
+- `-tl 3`:  Select Lepton 3.x mode (Required for Lepton 3.5)
+- `-ss 20`: Set SPI speed to 20MHz (Default). range 10-30.
+- `-cm 1`:  Rainbow Colormap
+- `-cm 2`:  Grayscale Colormap
+- `-cm 3`:  IronBlack Colormap (Default)
+- `-min 30000`: Force min scaling value (raw 14-bit value)
+- `-max 32000`: Force max scaling value
 
-----
+### Troubleshooting
+- **Black Screen / Red Square**: Ensure SPI wiring is correct and the Lepton is fully seated.
+- **Garbled Image**: Try lowering SPI speed or checking connections.
+- **Permission Errors**: You might need to add your user to `spi` and `i2c` groups, or run with `sudo` (not recommended for GUI apps usually, but sometimes necessary for direct hardware access unless udev rules are set).
 
-In order for the application to run properly, a Lepton camera must be attached in a specific way to the SPI, power, and ground pins of the Raspi's GPIO interface, as well as the I2C SDA/SCL pins:
-
-Lepton's GND pin should be connected to RasPi's ground.
-Lepton's CS pin should be connected to RasPi's CE1 pin.
-Lepton's MISO pin should be connected to RasPI's MISO pin.
-Lepton's CLK pin should be connected to RasPI's SCLK pin.
-Lepton's VIN pin should be connected to RasPI's 3v3 pin.
-Lepton's SDA pin should be connected to RasPI's SDA pin.
-Lepton's SCL pin should be connected to RasPI's SCL pin.
+```bash
+sudo ./raspberrypi_video -tl 3
+```

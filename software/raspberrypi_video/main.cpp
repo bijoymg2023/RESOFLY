@@ -9,6 +9,11 @@
 #include <QString>
 #include <QPushButton>
 
+#include <cstdio>
+#include <cstring>
+#include <cstdlib>
+#include <libgen.h>
+
 #include "LeptonThread.h"
 #include "MyLabel.h"
 
