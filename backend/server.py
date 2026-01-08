@@ -38,7 +38,7 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "resofly_secret_key_12345")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 Days
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/token")
 
 # Database Setup
@@ -187,21 +187,40 @@ async def root():
 
 @api_router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(UserDB).where(UserDB.username == form_data.username))
-    user = result.scalar_one_or_none()
-    
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=401,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+    try:
+        print(f"Attempting login for user: {form_data.username}")
+        result = await db.execute(select(UserDB).where(UserDB.username == form_data.username))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            print(f"User {form_data.username} not found")
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+            
+        print(f"User found. Verifying password...")
+        if not verify_password(form_data.password, user.hashed_password):
+            print("Password verification failed")
+            raise HTTPException(
+                status_code=401,
+                detail="Incorrect username or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        print("Login successful. Generating token...")
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.username}, expires_delta=access_token_expires
         )
-    
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+        return {"access_token": access_token, "token_type": "bearer"}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Internal Login Error: {str(e)}")
 
 @api_router.get("/users/me", response_model=User)
 async def read_users_me(current_user: UserDB = Depends(get_current_user)):
@@ -333,16 +352,22 @@ async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
-    # Create Default Admin
+    # Create or Update Default Admin
     async with AsyncSessionLocal() as db:
         result = await db.execute(select(UserDB).where(UserDB.username == "admin"))
         user = result.scalar_one_or_none()
+        
+        hashed_pwd = get_password_hash("resofly123")
+        
         if not user:
             print("Creating default admin user...")
-            hashed_pwd = get_password_hash("resofly123")
             admin_user = UserDB(username="admin", hashed_password=hashed_pwd)
             db.add(admin_user)
-            await db.commit()
+        else:
+            print("Updating default admin user password (schema migration)...")
+            user.hashed_password = hashed_pwd
+            
+        await db.commit()
 
 # Include API Router
 app.include_router(api_router)
