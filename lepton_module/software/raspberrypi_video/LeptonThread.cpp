@@ -119,6 +119,7 @@ void LeptonThread::run() {
 
     // retry loop
     while (true) {
+      // Perform the bulk read once
       SpiReadSegment(spi_cs0_fd, result, sizeof(uint8_t) * PACKET_SIZE,
                      PACKETS_PER_FRAME);
 
@@ -126,14 +127,22 @@ void LeptonThread::run() {
       for (int j = 0; j < PACKETS_PER_FRAME; j++) {
         int packetNumber = result[j * PACKET_SIZE + 1];
         if (packetNumber != j) {
+          // Debug logging for sync errors
+          if ((resets % 100) == 0) {
+            std::cout << "Sync Error! Pkt: " << j << " Hdr: " << packetNumber
+                      << " Raw: " << std::hex << (int)result[j * PACKET_SIZE]
+                      << " " << (int)result[j * PACKET_SIZE + 1] << " "
+                      << (int)result[j * PACKET_SIZE + 2] << " "
+                      << (int)result[j * PACKET_SIZE + 3] << std::dec
+                      << std::endl;
+          }
+
           valid = false;
           break;
         }
+
         if ((typeLepton == 3) && (packetNumber == 20)) {
           segmentNumber = (result[j * PACKET_SIZE] >> 4) & 0x0f;
-          // We will handle invalid segment check outside the for loop to follow
-          // original structure, or just mark invalid here. Original code logged
-          // error and broke loop.
           if ((segmentNumber < 1) || (4 < segmentNumber)) {
             log_message(10, "[ERROR] Wrong segment number " +
                                 std::to_string(segmentNumber));
@@ -159,6 +168,8 @@ void LeptonThread::run() {
         resets = 0;
       }
     }
+
+    // Log if we had to reset many times
     if (resets >= 30) {
       log_message(3, "done reading, resets: " + std::to_string(resets));
     }
