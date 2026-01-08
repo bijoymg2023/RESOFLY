@@ -294,20 +294,23 @@ async def get_status_checks(db: AsyncSession = Depends(get_db), current_user: Us
     return result.scalars().all()
 
 # Stream (Authentication via Query Param or Cookie for img tags)
-async def gen_frames():
-    cam = camera.get_camera()
+# Stream (Authentication via Query Param or Cookie for img tags)
+async def gen_frames(camera_type='thermal'):
+    cam = camera.get_camera(camera_type)
     while True:
         frame = await cam.get_frame()
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 @api_router.get("/stream/thermal")
-async def video_feed(token: Optional[str] = None):
+async def video_feed_thermal(token: Optional[str] = None):
     # For now, allowing public access or verify token if present
-    # To enforce strict auth for stream, uncomment below:
-    # if not token: raise HTTPException(401)
-    # user = await get_current_user(token, ...)
-    return StreamingResponse(gen_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
+    return StreamingResponse(gen_frames('thermal'), media_type="multipart/x-mixed-replace; boundary=frame")
+
+@api_router.get("/stream/rgb")
+async def video_feed_rgb(token: Optional[str] = None):
+    # RGB Webcam Stream
+    return StreamingResponse(gen_frames('rgb'), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 # --------------------------

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { VideoStreamBox } from './VideoStreamBox';
 import { ThermalHeatMap } from './ThermalHeatMap';
 import { AlertBox } from './AlertBox';
@@ -18,7 +17,8 @@ import {
   X,
   Cpu,
   HardDrive,
-  Database
+  Globe,
+  Wifi
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -31,6 +31,18 @@ interface SystemStatus {
   uptime: number;
 }
 
+// Custom HUD Progress Bar
+const HUDBar = ({ value, color = "bg-cyan-500" }: { value: number; color?: string }) => (
+  <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-sm overflow-hidden border border-white/5 relative">
+    <div
+      className={`h-full ${color} shadow-[0_0_10px_rgba(34,211,238,0.5)] transition-all duration-500`}
+      style={{ width: `${value}%` }}
+    />
+    {/* Grid overlay for "segmented" look */}
+    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_2px,#000_1px)] bg-[size:4px_100%] opacity-50" />
+  </div>
+);
+
 const SystemStatusContent = () => {
   const { data: status } = useQuery<SystemStatus>({
     queryKey: ['status'],
@@ -42,58 +54,49 @@ const SystemStatusContent = () => {
     refetchInterval: 5000
   });
 
-  if (!status) return <div className="text-sm p-4 text-center text-muted-foreground">Loading stats...</div>;
+  if (!status) return <div className="text-[10px] p-4 text-center text-cyan-500/50 animate-pulse font-mono">INITIALIZING TELEMETRY...</div>;
 
   return (
-    <>
-      <div className="grid grid-cols-1 gap-2 sm:gap-3">
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground flex items-center">
-            <Cpu className="w-3 h-3 mr-2" /> CPU Usage
-          </span>
-          <Badge variant="outline" className={`${status.cpu_usage > 80 ? 'text-destructive border-destructive/30' : 'text-success border-success/30'} bg-transparent text-xs`}>
-            {status.cpu_usage.toFixed(1)}%
-          </Badge>
+    <div className="space-y-4 font-mono">
+      {/* CPU */}
+      <div className="space-y-1">
+        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-cyan-200/70">
+          <span className="flex items-center"><Cpu className="w-3 h-3 mr-1.5 opacity-70" /> CPU Load</span>
+          <span>{status.cpu_usage.toFixed(1)}%</span>
         </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground flex items-center">
-            <Activity className="w-3 h-3 mr-2" /> Memory
-          </span>
-          <Badge variant="outline" className={`${status.memory_usage > 80 ? 'text-destructive border-destructive/30' : 'text-success border-success/30'} bg-transparent text-xs`}>
-            {status.memory_usage.toFixed(1)}%
-          </Badge>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground flex items-center">
-            <HardDrive className="w-3 h-3 mr-2" /> Disk
-          </span>
-          <Badge variant="outline" className={`${status.disk_usage > 90 ? 'text-destructive border-destructive/30' : 'text-success border-success/30'} bg-transparent text-xs`}>
-            {status.disk_usage.toFixed(1)}%
-          </Badge>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-muted-foreground flex items-center">
-            <Thermometer className="w-3 h-3 mr-2" /> Temp
-          </span>
-          <Badge variant="outline" className={`${status.temperature > 70 ? 'text-warning border-warning/30' : 'text-success border-success/30'} bg-transparent text-xs`}>
-            {status.temperature.toFixed(1)}°C
-          </Badge>
-        </div>
+        <HUDBar value={status.cpu_usage} color={status.cpu_usage > 80 ? "bg-red-500" : "bg-cyan-500"} />
       </div>
 
-      <div className="mt-3 pt-2 sm:pt-3 border-t border-border">
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="text-center p-2 bg-muted/20 rounded-md">
-            <div className="text-primary font-bold text-sm">{(status.uptime / 3600).toFixed(1)}h</div>
-            <div className="text-muted-foreground text-xs">Uptime</div>
-          </div>
-          <div className="text-center p-2 bg-muted/20 rounded-md">
-            <div className="text-success font-bold text-sm">OK</div>
-            <div className="text-muted-foreground text-xs">Health</div>
-          </div>
+      {/* Memory */}
+      <div className="space-y-1">
+        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-cyan-200/70">
+          <span className="flex items-center"><Activity className="w-3 h-3 mr-1.5 opacity-70" /> Memory</span>
+          <span>{status.memory_usage.toFixed(1)}%</span>
+        </div>
+        <HUDBar value={status.memory_usage} color={status.memory_usage > 80 ? "bg-red-500" : "bg-cyan-500"} />
+      </div>
+
+      {/* Temp */}
+      <div className="space-y-1">
+        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-cyan-200/70">
+          <span className="flex items-center"><Thermometer className="w-3 h-3 mr-1.5 opacity-70" /> Core Temp</span>
+          <span>{status.temperature.toFixed(1)}°C</span>
+        </div>
+        <HUDBar value={(status.temperature / 100) * 100} color={status.temperature > 75 ? "bg-red-500" : "bg-emerald-500"} />
+      </div>
+
+      {/* Footer Info */}
+      <div className="pt-3 mt-3 border-t border-white/5 grid grid-cols-2 gap-2">
+        <div className="bg-white/5 rounded p-2 text-center border border-white/5">
+          <div className="text-[10px] text-white/30 uppercase">Uptime</div>
+          <div className="text-xs text-white">{(status.uptime / 3600).toFixed(1)}H</div>
+        </div>
+        <div className="bg-white/5 rounded p-2 text-center border border-white/5">
+          <div className="text-[10px] text-white/30 uppercase">Network</div>
+          <div className="text-xs text-emerald-400">SECURE</div>
         </div>
       </div>
-    </>
+    </div>
   );
 };
 
@@ -102,28 +105,40 @@ const ThermalDashboard = () => {
   const isMobile = useIsMobile();
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Mobile-Optimized Header */}
-      <header className="flex items-center justify-between p-4 border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="flex items-center space-x-2 sm:space-x-3">
-          <div className="p-1.5 sm:p-2 rounded-lg bg-gradient-primary shadow-glow">
-            <Thermometer className="h-4 w-4 sm:h-6 sm:w-6 text-white" />
+    <div className="min-h-screen bg-[#020202] text-white font-sans selection:bg-cyan-500/30 relative overflow-hidden">
+
+      {/* --- Background Elements --- */}
+      {/* Dark Tech Mesh */}
+      <div className="absolute inset-0 z-0 opacity-10 bg-[linear-gradient(to_right,#00bcd4_1px,transparent_1px),linear-gradient(to_bottom,#00bcd4_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_60%,transparent_100%)] pointer-events-none" />
+
+      {/* Ambient Glow */}
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vw] h-[500px] bg-cyan-900/20 blur-[120px] rounded-full pointer-events-none" />
+
+
+      {/* --- Header --- */}
+      <header className="relative z-50 flex items-center justify-between p-4 border-b border-white/10 bg-[#050505]/80 backdrop-blur-md">
+        <div className="flex items-center space-x-3">
+          <div className="relative group">
+            <div className="absolute inset-0 bg-cyan-500 blur opacity-40 group-hover:opacity-60 transition-opacity" />
+            <div className="relative p-2 rounded-lg bg-black border border-cyan-500/50 text-cyan-400">
+              <Globe className="h-5 w-5 animate-pulse-slow" />
+            </div>
           </div>
           <div>
-            <h1 className="text-lg sm:text-2xl font-bold text-foreground">
-              ResoFly
+            <h1 className="text-xl font-black italic tracking-tighter text-white">
+              RESOFLY
             </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">
-              Real-time monitoring and surveillance
+            <p className="text-[10px] text-cyan-200/40 uppercase tracking-[0.2em] hidden sm:block">
+              Command & Control Link Established
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2 sm:space-x-4">
-          <Badge variant="outline" className="bg-success/20 text-success border-success/30 text-xs sm:text-sm">
-            <Activity className="w-2 h-2 sm:w-3 sm:h-3 mr-1" />
-            {isMobile ? 'Active' : 'System Active'}
-          </Badge>
+        <div className="flex items-center space-x-4">
+          <div className="hidden sm:flex items-center space-x-3 text-[10px] font-mono text-emerald-500 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20">
+            <Wifi className="w-3 h-3 animate-pulse" />
+            <span>LINK STABLE</span>
+          </div>
           <ThemeToggle />
 
           {/* Mobile menu button */}
@@ -132,7 +147,7 @@ const ThermalDashboard = () => {
               variant="outline"
               size="sm"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="sm:hidden"
+              className="sm:hidden border-white/10 bg-white/5 hover:bg-white/10 text-white"
             >
               {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </Button>
@@ -140,86 +155,78 @@ const ThermalDashboard = () => {
         </div>
       </header>
 
-      {/* Mobile Navigation Overlay */}
+      {/* --- Mobile Nav --- */}
       {isMobile && mobileMenuOpen && (
-        <div className="fixed inset-0 top-16 bg-background/95 backdrop-blur-sm z-40 sm:hidden">
+        <div className="fixed inset-0 top-16 bg-black/95 backdrop-blur-xl z-40 sm:hidden border-t border-white/10">
           <div className="p-4 space-y-3">
-            <Button variant="outline" className="w-full justify-start" onClick={() => setMobileMenuOpen(false)}>
-              <Monitor className="w-4 h-4 mr-2" />
-              System Overview
-            </Button>
-            <Button variant="outline" className="w-full justify-start" onClick={() => setMobileMenuOpen(false)}>
-              <AlertTriangle className="w-4 h-4 mr-2" />
-              View Alerts
-            </Button>
-            <Button variant="outline" className="w-full justify-start" onClick={() => setMobileMenuOpen(false)}>
-              <Navigation className="w-4 h-4 mr-2" />
-              GPS Location
-            </Button>
+            {['Overview', 'Alerts', 'GPS Tracking'].map((item) => (
+              <Button key={item} variant="ghost" className="w-full justify-start text-cyan-100 hover:text-cyan-400 hover:bg-cyan-900/20 font-mono uppercase tracking-wider text-xs border border-transparent hover:border-cyan-500/30" onClick={() => setMobileMenuOpen(false)}>
+                <Monitor className="w-4 h-4 mr-2" />
+                {item}
+              </Button>
+            ))}
           </div>
         </div>
       )}
 
-      {/* Main Dashboard Content */}
-      <div className="p-2 sm:p-4 lg:p-6 space-y-3 sm:space-y-4 lg:space-y-6">
-        {/* Mobile-First Responsive Layout */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-3 sm:gap-4 lg:gap-6">
+      {/* --- Main Dashboard Content --- */}
+      <div className="relative z-10 p-2 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1920px] mx-auto">
 
-          {/* Primary Content Area - Video Stream */}
-          <div className="xl:col-span-8 space-y-3 sm:space-y-4 lg:space-y-6">
-            {/* Video Stream - Optimized for mobile */}
-            <div className="min-h-[220px] sm:min-h-[280px] md:min-h-[350px] lg:min-h-[400px]">
+        {/* Layout Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 lg:gap-6">
+
+          {/* LEFT: Video & Heatmap */}
+          <div className="xl:col-span-8 space-y-4 lg:space-y-6">
+
+            {/* Primary content constraint */}
+            <div className="min-h-[250px] sm:min-h-[350px] md:min-h-[450px]">
               <VideoStreamBox />
             </div>
 
-            {/* Bottom Row - Heat Map and Alerts (Mobile: Stack vertically) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
-              <div className="min-h-[280px] sm:min-h-[300px] order-1">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="min-h-[300px] order-1">
                 <ThermalHeatMap />
               </div>
-              <div className="min-h-[280px] sm:min-h-[300px] order-2">
+              <div className="min-h-[300px] order-2">
                 <AlertBox />
               </div>
             </div>
           </div>
 
-          {/* Secondary Content Area - GPS and System Status */}
-          <div className="xl:col-span-4 space-y-3 sm:space-y-4 lg:space-y-6 order-3">
+          {/* RIGHT: Telemetry Sidepanel */}
+          <div className="xl:col-span-4 space-y-4 lg:space-y-6 order-3">
 
-            {/* GPS Coordinates */}
-            <GPSCoordinateBox />
+            {/* GPS Unit */}
+            <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-sm">
+              <GPSCoordinateBox />
+            </div>
 
-            {/* System Status Card */}
-            <Card className="bg-dashboard-panel border-dashboard-panel-border">
-              <CardHeader className="pb-2 sm:pb-3">
-                <CardTitle className="text-sm sm:text-base font-medium flex items-center">
-                  <Monitor className="w-4 h-4 mr-2" />
-                  System Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 sm:space-y-3">
+            {/* System Status Panel */}
+            <Card className="bg-[#0A0A0A]/80 border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-2xl">
+              <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                <div className="flex items-center space-x-2 text-cyan-400">
+                  <Monitor className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-widest">System Diagnostics</span>
+                </div>
+                <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              </div>
+              <CardContent className="p-4 sm:p-6">
                 <SystemStatusContent />
               </CardContent>
             </Card>
 
-            {/* Mobile: Quick Actions */}
-            <Card className="bg-dashboard-panel border-dashboard-panel-border xl:hidden">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="outline" size="sm" className="h-10 sm:h-12 flex-col justify-center">
-                    <AlertTriangle className="w-3 h-3 sm:w-4 sm:h-4 mb-1" />
-                    <span className="text-xs">Alerts</span>
-                  </Button>
-                  <Button variant="outline" size="sm" className="h-10 sm:h-12 flex-col justify-center">
-                    <Navigation className="w-3 h-3 sm:w-4 sm:h-4 mb-1" />
-                    <span className="text-xs">GPS</span>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Mobile Actions */}
+            <div className="xl:hidden grid grid-cols-2 gap-2">
+              <Button className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 h-10 flex items-center justify-center space-x-2">
+                <AlertTriangle className="w-4 h-4" />
+                <span className="text-xs font-mono uppercase">Quick Alert</span>
+              </Button>
+              <Button className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-10 flex items-center justify-center space-x-2">
+                <Navigation className="w-4 h-4" />
+                <span className="text-xs font-mono uppercase">Locate</span>
+              </Button>
+            </div>
+
           </div>
         </div>
       </div>

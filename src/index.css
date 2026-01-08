@@ -46,7 +46,7 @@
     /* Dashboard specific colors */
     --thermal: 14 100% 50%;
     --thermal-foreground: 0 0% 98%;
-    
+
     --dashboard-grid: 220 13% 95%;
     --dashboard-panel: 0 0% 100%;
     --dashboard-panel-border: 220 13% 91%;
@@ -118,7 +118,7 @@
     /* Dashboard specific - dark theme */
     --thermal: 14 100% 50%;
     --thermal-foreground: 0 0% 98%;
-    
+
     --dashboard-grid: 220 25% 12%;
     --dashboard-panel: 220 25% 11%;
     --dashboard-panel-border: 220 25% 18%;
@@ -152,4 +152,104 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+@keyframes hover-slow {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes scan-line {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+
+  10% {
+    opacity: 0.8;
+  }
+
+  90% {
+    opacity: 0.8;
+  }
+
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-glow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 15px rgba(0, 229, 255, 0.1);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(0, 229, 255, 0.3);
+  }
+}
+
+@keyframes glitch {
+  0% {
+    transform: translate(0)
+  }
+
+  20% {
+    transform: translate(-2px, 2px)
+  }
+
+  40% {
+    transform: translate(-2px, -2px)
+  }
+
+  60% {
+    transform: translate(2px, 2px)
+  }
+
+  80% {
+    transform: translate(2px, -2px)
+  }
+
+  100% {
+    transform: translate(0)
+  }
+}
+
+.animate-hover-slow {
+  animation: hover-slow 4s ease-in-out infinite;
+}
+
+.animate-scan-line {
+  animation: scan-line 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+.animate-glitch {
+  animation: glitch 0.3s cubic-bezier(.25, .46, .45, .94) both infinite;
 }
