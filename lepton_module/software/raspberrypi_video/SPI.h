@@ -32,6 +32,7 @@ extern unsigned char spi_bitsPerWord;
 extern unsigned int spi_speed;
 
 int SpiOpenPort(int spi_device, unsigned int spi_speed);
+int SpiReadSegment(int spi_fd, uint8_t *result_buffer, int packet_size, int packets_per_frame);
 int SpiClosePort(int spi_device);
 
 #endif

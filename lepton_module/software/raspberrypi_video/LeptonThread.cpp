@@ -116,38 +116,47 @@ void LeptonThread::run() {
     // read data packets from lepton over SPI
     int resets = 0;
     int segmentNumber = -1;
-    for (int j = 0; j < PACKETS_PER_FRAME; j++) {
-      // if it's a drop packet, reset j to 0, set to -1 so he'll be at 0 again
-      // loop
-      read(spi_cs0_fd, result + sizeof(uint8_t) * PACKET_SIZE * j,
-           sizeof(uint8_t) * PACKET_SIZE);
-      int packetNumber = result[j * PACKET_SIZE + 1];
-      if (packetNumber != j) {
-        j = -1;
-        resets += 1;
-        usleep(1000);
-        // Note: we've selected 750 resets as an arbitrary limit, since there
-        // should never be 750 "null" packets between two valid transmissions at
-        // the current poll rate By polling faster, developers may easily exceed
-        // this count, and the down period between frames may then be flagged as
-        // a loss of sync
-        if (resets == 750) {
-          SpiClosePort(0);
-          lepton_reboot();
-          n_wrong_segment = 0;
-          n_zero_value_drop_frame = 0;
-          usleep(750000);
-          SpiOpenPort(0, spiSpeed);
-        }
-        continue;
-      }
-      if ((typeLepton == 3) && (packetNumber == 20)) {
-        segmentNumber = (result[j * PACKET_SIZE] >> 4) & 0x0f;
-        if ((segmentNumber < 1) || (4 < segmentNumber)) {
-          log_message(10, "[ERROR] Wrong segment number " +
-                              std::to_string(segmentNumber));
+
+    // retry loop
+    while (true) {
+      SpiReadSegment(spi_cs0_fd, result, sizeof(uint8_t) * PACKET_SIZE,
+                     PACKETS_PER_FRAME);
+
+      bool valid = true;
+      for (int j = 0; j < PACKETS_PER_FRAME; j++) {
+        int packetNumber = result[j * PACKET_SIZE + 1];
+        if (packetNumber != j) {
+          valid = false;
           break;
         }
+        if ((typeLepton == 3) && (packetNumber == 20)) {
+          segmentNumber = (result[j * PACKET_SIZE] >> 4) & 0x0f;
+          // We will handle invalid segment check outside the for loop to follow
+          // original structure, or just mark invalid here. Original code logged
+          // error and broke loop.
+          if ((segmentNumber < 1) || (4 < segmentNumber)) {
+            log_message(10, "[ERROR] Wrong segment number " +
+                                std::to_string(segmentNumber));
+            valid = false;
+            break;
+          }
+        }
+      }
+
+      if (valid) {
+        break;
+      }
+
+      resets += 1;
+      usleep(1000);
+      if (resets == 750) {
+        SpiClosePort(0);
+        lepton_reboot();
+        n_wrong_segment = 0;
+        n_zero_value_drop_frame = 0;
+        usleep(750000);
+        SpiOpenPort(0, spiSpeed);
+        resets = 0;
       }
     }
     if (resets >= 30) {
