@@ -83,23 +83,38 @@ int SpiOpenPort(int spi_device, unsigned int useSpiSpeed) {
 
 int SpiReadSegment(int spi_fd, uint8_t *result_buffer, int packet_size,
                    int packets_per_frame) {
-  struct spi_ioc_transfer xfer[packets_per_frame];
-  memset(xfer, 0, sizeof(xfer));
+  // Batch size limited to stay under default spidev bufsiz (usually 4096 bytes)
+  // 20 packets * 164 bytes = 3280 bytes
+  const int BATCH_SIZE = 20;
+  int packets_read = 0;
 
-  for (int i = 0; i < packets_per_frame; i++) {
-    xfer[i].rx_buf = (unsigned long)(result_buffer + i * packet_size);
-    xfer[i].len = packet_size;
-    xfer[i].speed_hz = spi_speed;
-    xfer[i].bits_per_word = spi_bitsPerWord;
-    xfer[i].cs_change = 0;
-  }
+  while (packets_read < packets_per_frame) {
+    int packets_to_read = packets_per_frame - packets_read;
+    if (packets_to_read > BATCH_SIZE) {
+      packets_to_read = BATCH_SIZE;
+    }
 
-  int status = ioctl(spi_fd, SPI_IOC_MESSAGE(packets_per_frame), xfer);
-  if (status < 0) {
-    perror("SPI_IOC_MESSAGE");
-    return -1;
+    struct spi_ioc_transfer xfer[BATCH_SIZE];
+    memset(xfer, 0, sizeof(xfer));
+
+    for (int i = 0; i < packets_to_read; i++) {
+      xfer[i].rx_buf =
+          (unsigned long)(result_buffer + (packets_read + i) * packet_size);
+      xfer[i].len = packet_size;
+      xfer[i].speed_hz = spi_speed;
+      xfer[i].bits_per_word = spi_bitsPerWord;
+      xfer[i].cs_change = 0;
+    }
+
+    int status = ioctl(spi_fd, SPI_IOC_MESSAGE(packets_to_read), xfer);
+    if (status < 0) {
+      perror("SPI_IOC_MESSAGE");
+      return -1;
+    }
+
+    packets_read += packets_to_read;
   }
-  return status;
+  return 0;
 }
 
 int SpiClosePort(int spi_device) {
