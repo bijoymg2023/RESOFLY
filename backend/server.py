@@ -284,6 +284,14 @@ async def get_gps(current_user: UserDB = Depends(get_current_user)):
         heading=random.uniform(0, 360)
     )
 
+def get_pi_temperature():
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+            temp_str = f.read()
+        return float(temp_str) / 1000.0
+    except:
+        return 0.0
+
 @api_router.get("/system-status", response_model=SystemStatus)
 async def get_system_status(current_user: UserDB = Depends(get_current_user)):
     cpu = psutil.cpu_percent(interval=None)
@@ -291,7 +299,7 @@ async def get_system_status(current_user: UserDB = Depends(get_current_user)):
     disk = psutil.disk_usage('/').percent
     boot_time = psutil.boot_time()
     uptime = datetime.now().timestamp() - boot_time
-    temp = 42.0 + random.uniform(-1, 2)
+    temp = get_pi_temperature()
     return SystemStatus(
         cpu_usage=cpu, memory_usage=memory, disk_usage=disk, temperature=temp, uptime=uptime
     )

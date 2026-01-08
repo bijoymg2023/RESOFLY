@@ -52,28 +52,38 @@ import os
 
 class RealCamera(BaseCamera):
     def __init__(self, source=None):
+        self.mock_fallback = None
+        
         # Determine source from arg or env
         if source is None:
             source = os.environ.get("CAMERA_SOURCE", 0)
-            
-        # If source is a string digit (e.g. "0"), convert to int for local webcam
+        
+        # Try to confirm integer index
         if isinstance(source, str) and source.isdigit():
             source = int(source)
             
-        print(f"Connecting to Camera Source: {source}")
-        self.video = cv2.VideoCapture(source)
+        print(f"Initializing RealCamera with source: {source}")
+        
+        # Attempt 1: V4L2 backend (Best for Pi)
+        self.video = cv2.VideoCapture(source, cv2.CAP_V4L2)
+        if not self.video.isOpened():
+             print(f"Failed to open source {source} with V4L2. Trying default backend...")
+             self.video = cv2.VideoCapture(source)
         
         # Verify camera opened
         if not self.video.isOpened():
-             print(f"Error: Could not open camera source {source}. Falling back to mock.")
+             print(f"Error: Could not open camera source {source}. Switching to MOCK.")
              self.mock_fallback = MockCamera()
         else:
-             self.mock_fallback = None
-             # Only set resolution for local webcams (integers)
-             if isinstance(source, int):
+             print(f"Successfully opened camera source {source}!")
+             # Try to set resolution (don't fail if it doesn't work)
+             try:
                  self.video.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                  self.video.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
+                 self.video.set(cv2.CAP_PROP_FPS, 30)
+             except:
+                 pass
+                 
     def __del__(self):
         if self.video and self.video.isOpened():
             self.video.release()
@@ -83,14 +93,19 @@ class RealCamera(BaseCamera):
              return await self.mock_fallback.get_frame()
 
         # Read frame
-        success, frame = self.video.read()
-        if not success:
-            # If stream drops, try to reconnect or return empty
-            return b''  
+        if self.video and self.video.isOpened():
+            success, frame = self.video.read()
+            if success and frame is not None:
+                # Resize if needed to reduce bandwidth? No, let's keep quality for now.
+                # Encode
+                ret, jpeg = cv2.imencode('.jpg', frame)
+                if ret:
+                    return jpeg.tobytes()
         
-        # Encode
-        ret, jpeg = cv2.imencode('.jpg', frame)
-        return jpeg.tobytes()
+        # If we reach here, reading failed. Re-try opening or just return mock?
+        # Let's return empty bytes so frontend handles it, OR return mock temporarily.
+        print("Camera read failed. Returning reconnecting placeholder...")
+        return b''
 
 # Instances
 thermal_instance = MockCamera()
