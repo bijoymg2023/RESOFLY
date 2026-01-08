@@ -137,6 +137,9 @@ void LeptonThread::run() {
                       << std::endl;
           }
 
+          // Add a tiny delay to allow Lepton to reset its packet index
+          usleep(100);
+
           valid = false;
           break;
         }
