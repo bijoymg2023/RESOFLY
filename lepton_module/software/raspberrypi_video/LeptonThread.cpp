@@ -138,7 +138,7 @@ void LeptonThread::run() {
           }
 
           // Add a tiny delay to allow Lepton to reset its packet index
-          usleep(100);
+          usleep(650);
 
           valid = false;
           break;
