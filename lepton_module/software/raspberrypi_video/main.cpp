@@ -47,9 +47,9 @@ void printUsage(char *cmd) {
 int main(int argc, char **argv) {
   int typeColormap = 3; // colormap_ironblack
   int typeLepton = 3;   // Lepton 3.x [Default changed for user]
-  int spiSpeed = 10;    // SPI bus speed 10MHz [Default changed for stability]
-  int rangeMin = -1;    //
-  int rangeMax = -1;    //
+  int spiSpeed = 2;  // SPI bus speed 2MHz [Default changed for max stability]
+  int rangeMin = -1; //
+  int rangeMax = -1; //
   int loglevel = 0;
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "-h") == 0) {
