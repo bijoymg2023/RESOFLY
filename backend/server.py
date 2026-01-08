@@ -353,21 +353,26 @@ async def startup():
         await conn.run_sync(Base.metadata.create_all)
     
     # Create or Update Default Admin
-    async with AsyncSessionLocal() as db:
-        result = await db.execute(select(UserDB).where(UserDB.username == "admin"))
-        user = result.scalar_one_or_none()
-        
-        hashed_pwd = get_password_hash("resofly123")
-        
-        if not user:
-            print("Creating default admin user...")
-            admin_user = UserDB(username="admin", hashed_password=hashed_pwd)
-            db.add(admin_user)
-        else:
-            print("Updating default admin user password (schema migration)...")
-            user.hashed_password = hashed_pwd
+    try:
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(UserDB).where(UserDB.username == "admin"))
+            user = result.scalar_one_or_none()
             
-        await db.commit()
+            hashed_pwd = get_password_hash("resofly123")
+            
+            if not user:
+                print("Creating default admin user...")
+                admin_user = UserDB(username="admin", hashed_password=hashed_pwd)
+                db.add(admin_user)
+            else:
+                print("Updating default admin user password (schema migration)...")
+                user.hashed_password = hashed_pwd
+                
+            await db.commit()
+    except Exception as e:
+        print(f"CRITICAL STARTUP ERROR: Could not create/update admin user. {e}")
+        import traceback
+        traceback.print_exc()
 
 # Include API Router
 app.include_router(api_router)
