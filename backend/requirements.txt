@@ -28,7 +28,6 @@ flake8==7.3.0
 Flask==3.0.3
 Flask-Bcrypt==1.0.1
 flask-cors==5.0.1
-Flask-MySQLdb==2.0.0
 Flask-SQLAlchemy==3.1.1
 fonttools==4.59.2
 fsspec==2025.3.0
@@ -72,7 +71,6 @@ msgpack==1.1.0
 mypy==1.19.0
 mypy_extensions==1.1.0
 mysql-connector-python==9.1.0
-mysqlclient==2.2.4
 networkx==3.4.2
 numpy
 oauthlib==3.3.1
