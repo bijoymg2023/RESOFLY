@@ -81,40 +81,41 @@ int SpiOpenPort(int spi_device, unsigned int useSpiSpeed) {
 
 #include <string.h>
 
+#include <errno.h>
+#include <string.h>
+
 int SpiReadSegment(int spi_fd, uint8_t *result_buffer, int packet_size,
                    int packets_per_frame) {
-  // Batch size limited to stay under default spidev bufsiz (usually 4096 bytes)
-  // 20 packets * 164 bytes = 3280 bytes
-  const int BATCH_SIZE = 20;
-  int packets_read = 0;
+  // We must read the entire frame (packets_per_frame * packet_size) in ONE
+  // transaction to keep CS asserted throughout. Splitting it causes Lepton to
+  // reset.
 
-  while (packets_read < packets_per_frame) {
-    int packets_to_read = packets_per_frame - packets_read;
-    if (packets_to_read > BATCH_SIZE) {
-      packets_to_read = BATCH_SIZE;
-    }
+  int total_len = packet_size * packets_per_frame;
+  struct spi_ioc_transfer xfer;
+  memset(&xfer, 0, sizeof(xfer));
 
-    struct spi_ioc_transfer xfer[BATCH_SIZE];
-    memset(xfer, 0, sizeof(xfer));
+  xfer.rx_buf = (unsigned long)result_buffer;
+  xfer.len = total_len;
+  xfer.speed_hz = spi_speed;
+  xfer.bits_per_word = spi_bitsPerWord;
+  xfer.cs_change = 0;
 
-    for (int i = 0; i < packets_to_read; i++) {
-      xfer[i].rx_buf =
-          (unsigned long)(result_buffer + (packets_read + i) * packet_size);
-      xfer[i].len = packet_size;
-      xfer[i].speed_hz = spi_speed;
-      xfer[i].bits_per_word = spi_bitsPerWord;
-      xfer[i].cs_change = 0;
-    }
-
-    int status = ioctl(spi_fd, SPI_IOC_MESSAGE(packets_to_read), xfer);
-    if (status < 0) {
+  int status = ioctl(spi_fd, SPI_IOC_MESSAGE(1), &xfer);
+  if (status < 0) {
+    if (errno == EMSGSIZE) {
+      perror("SPI_IOC_MESSAGE (Message too long)");
+      fprintf(stderr, "\nCRITICAL ERROR: The SPI buffer is too small for a "
+                      "Lepton frame.\n");
+      fprintf(stderr, "Please add 'spidev.bufsiz=65536' to /boot/cmdline.txt "
+                      "(or /boot/firmware/cmdline.txt) and REBOOT.\n");
+      fprintf(stderr, "Example command: sudo sed -i '$s/$/ "
+                      "spidev.bufsiz=65536/' /boot/cmdline.txt\n\n");
+    } else {
       perror("SPI_IOC_MESSAGE");
-      return -1;
     }
-
-    packets_read += packets_to_read;
+    return -1;
   }
-  return 0;
+  return status;
 }
 
 int SpiClosePort(int spi_device) {
