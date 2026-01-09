@@ -8,8 +8,8 @@ from email.mime.multipart import MIMEMultipart
 # CONFIGURATION
 # ------------------------------------------------------------------
 # EMAIL SETTINGS (SMTP - Gmail/Outlook/etc)
-EMAIL_SENDER = "resofly.alert@gmail.com"  # The email SENDING the alert
-EMAIL_PASSWORD = "app-password-here"      # App Password (NOT your normal password)
+EMAIL_SENDER = "team13saintgits@gmail.com"
+EMAIL_PASSWORD = "rjri uivx eqtm wnbi"
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 
