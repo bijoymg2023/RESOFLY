@@ -69,18 +69,12 @@ class RealCamera(BaseCamera):
         if not self.video.isOpened():
              print(f"Failed to open source {source} with V4L2. Trying default backend...")
              self.video = cv2.VideoCapture(source)
-        
-        # Verify camera opened
-        if not self.video.isOpened():
-             print(f"Error: Could not open camera source {source}. Switching to MOCK.")
-             self.mock_fallback = MockCamera()
-        else:
-             print(f"Successfully opened camera source {source}!")
-             # Try to set resolution (don't fail if it doesn't work)
-             try:
-                 self.video.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-                 self.video.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-                 self.video.set(cv2.CAP_PROP_FPS, 30)
+             
+        # FORCE MJPG (Crucial for Pi Cams to work fast via USB)
+        self.video.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
+        self.video.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.video.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+        self.video.set(cv2.CAP_PROP_FPS, 30)
              except:
                  pass
                  
