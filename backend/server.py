@@ -128,6 +128,7 @@ class SystemStatus(BaseModel):
     disk_usage: float
     temperature: float
     uptime: float
+    boot_time_str: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 # --------------------------
@@ -312,10 +313,12 @@ async def get_system_status(current_user: UserDB = Depends(get_current_user)):
     memory = psutil.virtual_memory().percent
     disk = psutil.disk_usage('/').percent
     boot_time = psutil.boot_time()
+    boot_dt = datetime.fromtimestamp(boot_time)
     uptime = datetime.now().timestamp() - boot_time
     temp = get_pi_temperature()
     return SystemStatus(
-        cpu_usage=cpu, memory_usage=memory, disk_usage=disk, temperature=temp, uptime=uptime
+        cpu_usage=cpu, memory_usage=memory, disk_usage=disk, temperature=temp, uptime=uptime,
+        boot_time_str=boot_dt.strftime("%Y-%m-%d %H:%M:%S")
     )
 
 # Status Check (Keep public? Or Protected? Let's protect to be safe)
