@@ -1,0 +1,4 @@
+# Add one email address per line
+# Example:
+# person1@example.com
+# person2@example.com
