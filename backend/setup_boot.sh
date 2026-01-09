@@ -1,9 +1,11 @@
 #!/bin/bash
 
 # setup_boot.sh
-# CONFIGURATION - CHANGE THIS TO YOUR USERNAME IF DIFFERENT
-PI_USER="pi"
-APP_DIR="/home/$PI_USER/thermo-vision-hub/backend"
+# AUTO-DETECT USER
+PI_USER=$(whoami)
+# DETECT DIRECTORY (Assuming script is run from backend dir)
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+APP_DIR="$SCRIPT_DIR"
 PYTHON_EXEC="$APP_DIR/.venv/bin/python"
 
 # Colors
