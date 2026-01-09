@@ -390,14 +390,71 @@ async def startup():
                 admin_user = UserDB(username="admin", hashed_password=hashed_pwd)
                 db.add(admin_user)
             else:
-                print("Updating default admin user password (schema migration)...")
                 user.hashed_password = hashed_pwd
+            
+            # 1. Log System Startup
+            startup_alert = AlertDB(
+                id=str(uuid.uuid4()),
+                type='info',
+                title='System Online',
+                message='ResoFly Backend started successfully.',
+                timestamp=datetime.utcnow()
+            )
+            db.add(startup_alert)
                 
             await db.commit()
+            
+        # 2. Start Background Alert Monitor
+        asyncio.create_task(background_monitor())
+            
     except Exception as e:
         print(f"CRITICAL STARTUP ERROR: Could not create/update admin user. {e}")
         import traceback
         traceback.print_exc()
+
+async def background_monitor():
+    """Periodically checks system health and logs alerts."""
+    while True:
+        try:
+            # Check every 60 seconds
+            await asyncio.sleep(60) 
+            
+            cpu = psutil.cpu_percent(interval=None)
+            disk = psutil.disk_usage('/').percent
+            temp = get_pi_temperature()
+            
+            alerts_to_add = []
+            
+            if cpu > 90:
+                alerts_to_add.append(("error", "High CPU Usage", f"CPU is critically high at {cpu}%"))
+            elif cpu > 75:
+                alerts_to_add.append(("warning", "Elevated CPU", f"CPU usage is high at {cpu}%"))
+                
+            if temp > 80:
+                alerts_to_add.append(("error", "Overheating", f"Core temperature is {temp}°C"))
+            elif temp > 70:
+                alerts_to_add.append(("warning", "High Temperature", f"Core temperature is {temp}°C"))
+                
+            if disk > 95:
+                alerts_to_add.append(("error", "Disk Full", f"Storage is {disk}% full"))
+            
+            if alerts_to_add:
+                async with AsyncSessionLocal() as db:
+                    for type_, title, msg in alerts_to_add:
+                        # Check duplicate logic could go here to prevent spamming
+                        new_alert = AlertDB(
+                            id=str(uuid.uuid4()),
+                            type=type_,
+                            title=title,
+                            message=msg,
+                            timestamp=datetime.utcnow()
+                        )
+                        db.add(new_alert)
+                    await db.commit()
+                    
+        except Exception as e:
+            print(f"Monitor Loop Error: {e}")
+            await asyncio.sleep(60)
 
 # Include API Router
 app.include_router(api_router)
