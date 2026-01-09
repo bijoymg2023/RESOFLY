@@ -31,6 +31,7 @@ interface SystemStatus {
   uptime: number;
 }
 
+
 // Custom HUD Progress Bar
 const HUDBar = ({ value, color = "bg-cyan-500" }: { value: number; color?: string }) => (
   <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-sm overflow-hidden border border-white/5 relative">
@@ -42,6 +43,16 @@ const HUDBar = ({ value, color = "bg-cyan-500" }: { value: number; color?: strin
     <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_2px,#000_1px)] bg-[size:4px_100%] opacity-50" />
   </div>
 );
+
+const formatUptime = (seconds: number) => {
+  const d = Math.floor(seconds / (3600 * 24));
+  const h = Math.floor((seconds % (3600 * 24)) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
 
 const SystemStatusContent = () => {
   const { data: status } = useQuery<SystemStatus>({
@@ -89,7 +100,7 @@ const SystemStatusContent = () => {
       <div className="pt-3 mt-3 border-t border-white/5 grid grid-cols-2 gap-2">
         <div className="bg-white/5 rounded p-2 text-center border border-white/5">
           <div className="text-[10px] text-white/30 uppercase">Uptime</div>
-          <div className="text-xs text-white">{(status.uptime / 3600).toFixed(1)}H</div>
+          <div className="text-xs text-white">{formatUptime(status.uptime)}</div>
         </div>
         <div className="bg-white/5 rounded p-2 text-center border border-white/5">
           <div className="text-[10px] text-white/30 uppercase">Network</div>
