@@ -92,11 +92,11 @@ class RealCamera(BaseCamera):
         if self.mock_fallback:
              return await self.mock_fallback.get_frame()
 
-        # Read frame
+        # Read frame in a separate thread to avoid blocking the event loop
+        # This is CRITICAL for concurrent performance (GPS + Video)
         if self.video and self.video.isOpened():
-            success, frame = self.video.read()
+            success, frame = await asyncio.to_thread(self.video.read)
             if success and frame is not None:
-                # Resize if needed to reduce bandwidth? No, let's keep quality for now.
                 # Encode
                 ret, jpeg = cv2.imencode('.jpg', frame)
                 if ret:
