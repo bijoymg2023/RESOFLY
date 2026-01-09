@@ -269,19 +269,33 @@ async def delete_alert(alert_id: str, db: AsyncSession = Depends(get_db), curren
     await db.commit()
     return {"message": "Alert deleted"}
 
+
+import gps_real
+
+# Initialize real GPS reader (Adjust port if using UART vs USB)
+# Common ports: /dev/ttyUSB0, /dev/ttyACM0, /dev/serial0
+try:
+    gps_reader = gps_real.GPSReader(port='/dev/ttyUSB0') 
+    gps_reader.start()
+    print("GPS Module Initialized")
+except Exception as e:
+    print(f"Warning: GPS Init Failed: {e}")
+    gps_reader = None
+
 @api_router.get("/gps", response_model=GPSData)
 async def get_gps(current_user: UserDB = Depends(get_current_user)):
-    # Mock GPS data
-    base_lat = 40.7128
-    base_lng = -74.0060
-    jitter = 0.0005
+    if gps_reader:
+         data = gps_reader.get_data()
+         # Ensure timestamp is datetime
+         if isinstance(data.get("timestamp"), str):
+             # basic fallback if parsing failed
+             data["timestamp"] = datetime.utcnow()
+         return GPSData(**data)
+         
+    # Fallback if no GPS hardware found (return zeros instead of mock)
     return GPSData(
-        latitude=base_lat + random.uniform(-jitter, jitter),
-        longitude=base_lng + random.uniform(-jitter, jitter),
-        altitude=50.0 + random.uniform(-1, 1),
-        accuracy=random.uniform(2.0, 5.0),
-        speed=random.uniform(0, 10),
-        heading=random.uniform(0, 360)
+        latitude=0.0, longitude=0.0, altitude=0.0, 
+        accuracy=0.0, speed=0.0, heading=0.0
     )
 
 def get_pi_temperature():
