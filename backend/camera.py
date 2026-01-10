@@ -64,19 +64,26 @@ class RealCamera(BaseCamera):
             
         print(f"Initializing RealCamera with source: {source}")
         
-        # Attempt 1: V4L2 backend (Best for Pi)
-        self.video = cv2.VideoCapture(source, cv2.CAP_V4L2)
-        if not self.video.isOpened():
-             print(f"Failed to open source {source} with V4L2. Trying default backend...")
-             self.video = cv2.VideoCapture(source)
-             
-        # FORCE MJPG (Crucial for Pi Cams to work fast via USB)
-        self.video.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
-        self.video.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        self.video.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        self.video.set(cv2.CAP_PROP_FPS, 30)
-
+        try:
+            # Attempt 1: V4L2 backend (Best for Pi)
+            self.video = cv2.VideoCapture(source, cv2.CAP_V4L2)
+            if not self.video.isOpened():
+                 print(f"Failed to open source {source} with V4L2. Trying default backend...")
+                 self.video = cv2.VideoCapture(source)
                  
+            # FORCE MJPG (Crucial for Pi Cams to work fast via USB)
+            self.video.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
+            self.video.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            self.video.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            self.video.set(cv2.CAP_PROP_FPS, 30)
+            
+            if not self.video.isOpened():
+                raise Exception("Could not open video source")
+                
+        except Exception as e:
+            print(f"CAMERA INIT ERROR: {e}. Switching to MOCK mode.")
+            self.mock_fallback = MockCamera()
+            self.video = None
     def __del__(self):
         if self.video and self.video.isOpened():
             self.video.release()
