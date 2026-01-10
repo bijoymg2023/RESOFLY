@@ -136,3 +136,5 @@ uritemplate==4.1.1
 urllib3==2.2.3
 uvicorn==0.25.0
 Werkzeug==3.0.4
+pyserial
+pynmea2

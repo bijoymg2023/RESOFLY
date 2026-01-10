@@ -75,8 +75,7 @@ class RealCamera(BaseCamera):
         self.video.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
         self.video.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
         self.video.set(cv2.CAP_PROP_FPS, 30)
-             except:
-                 pass
+
                  
     def __del__(self):
         if self.video and self.video.isOpened():
