@@ -142,8 +142,27 @@ class LeptonCamera(BaseCamera):
             time.sleep(0.185) 
             
             # Atomic read of the full frame
-            # Use xfer2 to avoid 4096 byte limit on some systems
-            data = self.spi.xfer2([0] * 39360)
+            # Use chunked read to bypass 4096 byte limit of spidev library
+            # We need 39360 bytes. 
+            # Note: This technically violates the "Atomic CS" requirement of Lepton
+            # BUT many spidev implementations keep CS asserted if we use xfer2.
+            # However, if CS de-asserts, we lose sync.
+            # If this fails, we MUST use the C driver (v4l2lepton).
+            # Let's try to increase the buffer size via ioctl? No, that's complex in python.
+            # Actually, the error "Argument list size exceeds 4096 bytes" is from the Python wrapper arg parsing!
+            # The ONLY way to fix this in Python is to rebuild python-spidev with a bigger buffer 
+            # OR use the C driver which we know works now.
+            
+            # Since the user already has the C driver working (waiting for sink), 
+            # switching to C driver is the MOST ROBUST solution.
+            
+            # Attempting chunked read (Risk: Sync loss)
+            # data = bytearray()
+            # for _ in range(10): # 10 chunks of 3936
+            #     data.extend(self.spi.xfer2([0]*3936))
+            
+            # Instead of fighting python-spidev, let's gracefully fail and tell the user to use the C driver.
+            raise Exception("Python spidev limit. Use v4l2lepton C driver.")
             
             # Convert to numpy
             raw = np.frombuffer(bytearray(data), dtype=np.uint8)
