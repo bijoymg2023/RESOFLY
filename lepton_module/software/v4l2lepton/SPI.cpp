@@ -22,7 +22,7 @@ int SpiOpenPort(char *spi_device) {
   spi_bitsPerWord = 8;
 
   //----- SET SPI BUS SPEED -----
-  spi_speed = 10000000; // 1000000 = 1MHz (1uS per bit)
+  spi_speed = 5000000; // Lower to 5MHz for stability with jumper wires
 
   if (spi_device)
     spi_cs_fd = open(std::string(spi_device).c_str(), O_RDWR);
