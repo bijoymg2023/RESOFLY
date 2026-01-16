@@ -132,37 +132,96 @@ class LeptonCamera(BaseCamera):
 
     def _read_spi_frame(self):
         try:
-            # Import our robust IOCTL driver lazily
             from lepton_ioctl import LeptonIOCTL
-            
             if not hasattr(self, 'io_spi') or self.io_spi is None:
                  self.io_spi = LeptonIOCTL()
             
-            # Resync sleep
-            time.sleep(0.185) 
+            # VoSPI Protocol for Lepton 3.x
+            # We must read 4 segments. Each segment is 60 packets.
+            # If we lose sync, we must reset (sleep > 185ms).
             
-            # Atomic read using direct IOCTL (Bypasses 4096 limit)
-            data = self.io_spi.xfer2([0] * 39360)
+            full_frame = bytearray()
             
-            if not data:
+            # Attempt to read all 4 segments
+            for segment_idx in range(4): # 0 to 3 implied? No, Lepton segments are 1-based (1,2,3,4) but we index 0..3
+                # We expect segment number = segment_idx + 1 (usually).
+                # Actually, bits 14:12 of the first packet ID word are segment #.
+                
+                # Retry loop for this segment
+                attempts = 0
+                while True:
+                    if attempts > 20: 
+                        # Lost Sync completely
+                        time.sleep(0.2) # Force reset
+                        return b'' # Fail this frame
+                        
+                    # Read ONE segment (60 packets * 164 bytes = 9840 bytes)
+                    # We use xfer2 via our custom driver
+                    seg_data = self.io_spi.xfer2([0] * 9840)
+                    if not seg_data or len(seg_data) != 9840:
+                         time.sleep(0.01)
+                         attempts += 1
+                         continue
+                         
+                    # Check Packet 20 for validity
+                    # In Lepton 3, Packet 20 contains the Segment Number.
+                    # Index of Packet 20 = 20 * 164 = 3280
+                    # Header is 2 bytes (bytes 3280, 3281)
+                    # ID = (byte[0] << 8) | byte[1]
+                    # Segment # is (ID >> 12) & 0x7 
+                    # Wait, Lepton datasheet says Packet 20 ID field: TTTT SSSS PPPP PPPP
+                    
+                    # Let's verify simpler discard packets first.
+                    # First packet of segment (Packet 0) ID must not be 0x0Fxx (Discard)
+                    p0_id = (seg_data[0] << 8) | seg_data[1]
+                    if (p0_id & 0x0F00) == 0x0F00:
+                         # Discard packet detected. Sync lost.
+                         time.sleep(0.005) # Small wait
+                         attempts += 1
+                         continue
+                         
+                    # Append to full frame
+                    full_frame.extend(seg_data)
+                    break 
+            
+            if len(full_frame) != 39360:
+                print(f"Frame incomplete: {len(full_frame)}")
                 return b''
-
             
             # Convert to numpy
-            raw = np.frombuffer(bytearray(data), dtype=np.uint8)
-            
-            # Reshape to packets (240 packets, 164 bytes each)
+            raw = np.frombuffer(full_frame, dtype=np.uint8)
             packets = raw.reshape(240, 164)
             
-            # Strip 4 byte headers, keep 160 byte payload (80 pixels * 2 bytes)
-            payload = packets[:, 4:] # Shape (240, 160)
-            
-            # Flatten payload
-            flat = payload.flatten() # 38400 bytes
-            
-            # View as uint16 (Big Endian from camera)
+            # Strip headers
+            payload = packets[:, 4:] 
+            flat = payload.flatten()
             vals = flat.view(np.uint16)
-            vals = vals.byteswap() # Swap to Little Endian (Pi/Host)
+            vals = vals.byteswap()
+            
+            # Reshape 120x60
+            frame = vals.reshape(120, 160)
+            
+            # Normalize
+            valid_mask = frame > 0
+            if np.any(valid_mask):
+                min_val = np.min(frame[valid_mask])
+                max_val = np.max(frame[valid_mask])
+                diff = max_val - min_val
+                if diff == 0: 
+                    diff = 1
+                frame_norm = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            else:
+                frame_norm = np.zeros((120, 160), dtype=np.uint8)
+                
+            heatmap = cv2.applyColorMap(frame_norm, cv2.COLORMAP_INFERNO)
+            heatmap = cv2.resize(heatmap, (640, 480), interpolation=cv2.INTER_NEAREST)
+            ret, jpeg = cv2.imencode('.jpg', heatmap)
+            return jpeg.tobytes()
+            
+        except Exception as e:
+            print(f"SPI Error: {e}")
+            time.sleep(1) # Backoff
+            return b''
             
             # Reshape to image (Lepton 3.5 is 120x160)
             # Logic: 240 packets. 2 packets per line? 
