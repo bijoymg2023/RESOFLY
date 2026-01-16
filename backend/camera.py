@@ -136,62 +136,20 @@ class LeptonCamera(BaseCamera):
             if not hasattr(self, 'io_spi') or self.io_spi is None:
                  self.io_spi = LeptonIOCTL()
             
-            # VoSPI Protocol for Lepton 3.x
-            # We must read 4 segments. Each segment is 60 packets.
-            # If we lose sync, we must reset (sleep > 185ms).
+            # Force Re-Sync for every frame
+            # This ensures we catch the start of the VoSPI stream.
+            time.sleep(0.2) 
             
-            full_frame = bytearray()
+            # Read FULL FRAME (4 Segments) in one massive atomic transaction
+            # This prevents Python pauses between segments which cause Sync Loss on Lepton 3
+            total_size = 39360 
+            data = self.io_spi.xfer2([0] * total_size)
             
-            # Attempt to read all 4 segments
-            for segment_idx in range(4): # 0 to 3 implied? No, Lepton segments are 1-based (1,2,3,4) but we index 0..3
-                # We expect segment number = segment_idx + 1 (usually).
-                # Actually, bits 14:12 of the first packet ID word are segment #.
-                
-                # Retry loop for this segment
-                attempts = 0
-                while True:
-                    if attempts > 20: 
-                        # Lost Sync completely
-                        print(f"Lost Sync: Segment {segment_idx}, {attempts} attempts. Resetting...")
-                        time.sleep(0.2) # Force reset
-                        return b'' # Fail this frame
-                        
-                    # Read ONE segment (60 packets * 164 bytes = 9840 bytes)
-                    # We use xfer2 via our custom driver
-                    seg_data = self.io_spi.xfer2([0] * 9840)
-                    if not seg_data or len(seg_data) != 9840:
-                         time.sleep(0.01)
-                         attempts += 1
-                         continue
-                         
-                    # Check Packet 20 for validity
-                    # In Lepton 3, Packet 20 contains the Segment Number.
-                    # Index of Packet 20 = 20 * 164 = 3280
-                    # Header is 2 bytes (bytes 3280, 3281)
-                    # ID = (byte[0] << 8) | byte[1]
-                    # Segment # is (ID >> 12) & 0x7 
-                    # Wait, Lepton datasheet says Packet 20 ID field: TTTT SSSS PPPP PPPP
-                    
-                    # Let's verify simpler discard packets first.
-                    # First packet of segment (Packet 0) ID must not be 0x0Fxx (Discard)
-                    p0_id = (seg_data[0] << 8) | seg_data[1]
-                    if (p0_id & 0x0F00) == 0x0F00:
-                         # Discard packet detected. Sync lost.
-                         # print(f"Discarding: Seg {segment_idx} Att {attempts} ID {hex(p0_id)}")
-                         time.sleep(0.005) # Small wait
-                         attempts += 1
-                         continue
-                         
-                    # Append to full frame
-                    full_frame.extend(seg_data)
-                    break 
-            
-            if len(full_frame) != 39360:
-                print(f"Frame incomplete: {len(full_frame)}")
+            if not data or len(data) != total_size:
                 return b''
             
             # Convert to numpy
-            raw = np.frombuffer(full_frame, dtype=np.uint8)
+            raw = np.frombuffer(bytearray(data), dtype=np.uint8)
             packets = raw.reshape(240, 164)
             
             # Strip headers
