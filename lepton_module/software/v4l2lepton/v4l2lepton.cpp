@@ -36,6 +36,14 @@ static int width = 160;
 static int height = 120;
 static uint8_t result[PACKET_SIZE * PACKETS_PER_FRAME * 4]; // 4 segments
 
+// Global video buffers
+static char *vidsendbuf = NULL;
+static int vidsendsiz = 0;
+static uint16_t *frameBuffer;
+
+// Forward Declarations
+static void init_device() { SpiOpenPort(spidev); }
+
 static void grab_frame() {
   int resets = 0;
   int segmentNumber = 0;
