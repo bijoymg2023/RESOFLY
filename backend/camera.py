@@ -142,7 +142,8 @@ class LeptonCamera(BaseCamera):
             time.sleep(0.185) 
             
             # Atomic read of the full frame
-            data = self.spi.readbytes(39360)
+            # Use xfer2 to avoid 4096 byte limit on some systems
+            data = self.spi.xfer2([0] * 39360)
             
             # Convert to numpy
             raw = np.frombuffer(bytearray(data), dtype=np.uint8)

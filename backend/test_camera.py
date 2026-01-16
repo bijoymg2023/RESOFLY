@@ -45,9 +45,26 @@ def test_stream():
     import cv2
     
     spi = spidev.SpiDev()
+    # Open with explicit buffer size check bypass if possible, 
+    # but mostly we rely on the kernel module parameter we just verified.
+    # However, spidev.open() in newer versions might need bufsize arg? 
+    # Actually, spidev object doesn't take bufsize in open(). 
+    # The error comes from the underlying read call limiting to 4096 if not careful.
+    # Let's try reading in chunks OR ensuring we don't hit a default limit?
+    # Actually, older spidev libs limited this. We verified 65536 kernel param.
+    # We will try breaking the read into chunks to isolate the issue? 
+    # NO, Lepton frame must be atomic CS hold.
+    
+    # FIX: Some spidev versions require max_speed_hz BEFORE open? No.
+    # The common fix is ensuring spidev is up to date (we did that).
+    
+    # REAL FIX: We can try transfer() instead of readbytes()? 
+    # Or just debugging what readbytes returned.
+    
     spi.open(0, 0)
     spi.max_speed_hz = 16000000
     spi.mode = 0b11
+
     
     print("Capturing frames (Ctrl+C to stop)...")
     success_count = 0
@@ -59,8 +76,10 @@ def test_stream():
             # Reset sync limit
             time.sleep(0.2)
             
-            # Read
-            data = spi.readbytes(39360)
+            # Read using xfer2 (often bypasses the readbytes limit)
+            # We send dummy bytes [0]*len
+            # data = spi.readbytes(39360) 
+            data = spi.xfer2([0] * 39360)
             
             # Simple VoSPI Validation
             # Packet 20 of Segment X should have a specific ID
