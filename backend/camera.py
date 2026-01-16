@@ -107,15 +107,110 @@ class RealCamera(BaseCamera):
         print("Camera read failed. Returning reconnecting placeholder...")
         return b''
 
+class LeptonCamera(BaseCamera):
+    def __init__(self):
+        try:
+            import spidev
+        except ImportError:
+            print("ERROR: spidev module not found. Please install it: pip install spidev")
+            self.spi = None
+            return
+
+        print("Initializing Direct SPI Lepton Camera...")
+        self.spi = spidev.SpiDev()
+        self.spi.open(0, 0) # /dev/spidev0.0
+        self.spi.max_speed_hz = 16000000 # 16 MHz
+        self.spi.mode = 0b11 # SPI Mode 3
+        
+        # Buffer for 4 segments * 60 packets/seg * 164 bytes/packet = 39360 bytes
+        # Requires spidev.bufsiz=65536 in /boot/cmdline.txt
+        self.frame_msg = bytearray(39360) 
+
+    async def get_frame(self):
+        if not self.spi:
+            await asyncio.sleep(1)
+            return b''
+
+        # Get frame in thread to avoid blocking
+        return await asyncio.to_thread(self._read_spi_frame)
+
+    def _read_spi_frame(self):
+        try:
+            # Resync Strategy: Lepton resets frame pointer if CS de-asserted for >185ms
+            # We enforce ~200ms sleep roughly between frames to ensure we catch Frame Start 
+            # (Limiting to ~5 FPS, but guarantees sync without complex packet logic)
+            time.sleep(0.185) 
+            
+            # Atomic read of the full frame
+            data = self.spi.readbytes(39360)
+            
+            # Convert to numpy
+            raw = np.frombuffer(bytearray(data), dtype=np.uint8)
+            
+            # Reshape to packets (240 packets, 164 bytes each)
+            packets = raw.reshape(240, 164)
+            
+            # Strip 4 byte headers, keep 160 byte payload (80 pixels * 2 bytes)
+            payload = packets[:, 4:] # Shape (240, 160)
+            
+            # Flatten payload
+            flat = payload.flatten() # 38400 bytes
+            
+            # View as uint16 (Big Endian from camera)
+            vals = flat.view(np.uint16)
+            vals = vals.byteswap() # Swap to Little Endian (Pi/Host)
+            
+            # Reshape to image (Lepton 3.5 is 120x160)
+            # Logic: 240 packets. 2 packets per line? 
+            # Packet sequence in segment: 0, 1, 2... 
+            # Let's try simple reshape first.
+            frame = vals.reshape(120, 160)
+            
+            # Normalization (Auto-AGC)
+            # Find min/max excluding zeros (dead pixels or padding)
+            valid_mask = frame > 0
+            if np.any(valid_mask):
+                min_val = np.min(frame[valid_mask])
+                max_val = np.max(frame[valid_mask])
+                
+                # Stretch contrast
+                frame_norm = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+            else:
+                frame_norm = np.zeros((120, 160), dtype=np.uint8)
+                
+            # False Color
+            heatmap = cv2.applyColorMap(frame_norm, cv2.COLORMAP_INFERNO)
+            
+            # Upscale for display (optional, 160x120 is small)
+            heatmap = cv2.resize(heatmap, (640, 480), interpolation=cv2.INTER_NEAREST)
+            
+            ret, jpeg = cv2.imencode('.jpg', heatmap)
+            return jpeg.tobytes()
+            
+        except Exception as e:
+            print(f"SPI Read Error: {e}")
+            return b''
+
 # Instances
-thermal_instance = MockCamera()
-rgb_instance = None # Lazy load
+thermal_instance = None # Lazy load
+rgb_instance = None 
 
 def get_camera(type='thermal'):
-    global rgb_instance
+    global rgb_instance, thermal_instance
     if type == 'rgb':
         if rgb_instance is None:
-             # This will trigger the env var lookup in __init__
-             rgb_instance = RealCamera()
+             rgb_instance = RealCamera(source=0) # Default to 0 for Webcam
         return rgb_instance
+        
+    # Thermal
+    if thermal_instance is None:
+        # Check env or default
+        val = os.environ.get("CAMERA_SOURCE", "mock")
+        if val == "lepton" or val == "spi":
+             thermal_instance = LeptonCamera()
+        elif val.isdigit():
+             thermal_instance = RealCamera(source=int(val))
+        else:
+             thermal_instance = MockCamera()
+             
     return thermal_instance
