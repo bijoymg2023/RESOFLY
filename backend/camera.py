@@ -152,6 +152,7 @@ class LeptonCamera(BaseCamera):
                 while True:
                     if attempts > 20: 
                         # Lost Sync completely
+                        print(f"Lost Sync: Segment {segment_idx}, {attempts} attempts. Resetting...")
                         time.sleep(0.2) # Force reset
                         return b'' # Fail this frame
                         
@@ -176,6 +177,7 @@ class LeptonCamera(BaseCamera):
                     p0_id = (seg_data[0] << 8) | seg_data[1]
                     if (p0_id & 0x0F00) == 0x0F00:
                          # Discard packet detected. Sync lost.
+                         # print(f"Discarding: Seg {segment_idx} Att {attempts} ID {hex(p0_id)}")
                          time.sleep(0.005) # Small wait
                          attempts += 1
                          continue

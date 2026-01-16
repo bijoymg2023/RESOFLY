@@ -69,7 +69,8 @@ class LeptonIOCTL:
         
         ioctl_arg = 0x40206b00 
         
-        speed_hz = 16000000
+        # Lower speed to 6.5MHz to match jumper wire capabilities (High speed = noise)
+        speed_hz = 6500000 
         delay_usecs = 0
         bits_per_word = 8
         cs_change = 0
