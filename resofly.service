@@ -6,6 +6,8 @@ After=network.target
 User=team13
 WorkingDirectory=/home/team13/RESOFLY/backend
 ExecStart=/bin/bash start_backend.sh
+KillMode=mixed
+TimeoutStopSec=5
 Restart=always
 RestartSec=10
 Environment=PORT=5000
