@@ -4,18 +4,20 @@
 # 1. Kill old instances
 pkill -f cloudflared
 
-# 2. Start Cloudflare Quick Tunnel
-# We DO NOT use nohup here because we want to track the PID within this script.
-# We redirect output to log.
+# 2. Start Cloudflare Quick Tunnel (Port 5000)
+# We navigate to the directory first to ensure python finds files
+cd /home/team13/RESOFLY/thermo-vision-hub/backend
+
 echo "Starting Cloudflare Tunnel..."
 rm -f /home/team13/tunnel.log
-cloudflared tunnel --url http://127.0.0.1:8000 > /home/team13/tunnel.log 2>&1 &
+
+# --url http://127.0.0.1:5000 matches the backend default
+cloudflared tunnel --url http://127.0.0.1:5000 > /home/team13/tunnel.log 2>&1 &
 TUNNEL_PID=$!
 
 echo "Tunnel started with PID $TUNNEL_PID"
 
 # 3. Wait for tunnel to initialize and generate URL
-# We loop until we see the URL in the log
 echo "Waiting for URL..."
 MAX_RETRIES=30
 COUNT=0
@@ -35,6 +37,4 @@ echo "Running Email Monitor..."
 python3 monitor_tunnel.py
 
 # 5. KEEP ALIVE
-# This is Critical. If this script exits, systemd will kill the tunnel process.
-# We wait for the tunnel process to exit (which it shouldn't unless it crashes).
 wait $TUNNEL_PID
