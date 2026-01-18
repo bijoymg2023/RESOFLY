@@ -473,4 +473,4 @@ if os.path.exists("../dist"):
 if __name__ == "__main__":
     import uvicorn
     # Use 0.0.0.0 to listen on all interfaces
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
