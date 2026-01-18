@@ -92,8 +92,9 @@ class StreamProxyCamera(BaseCamera):
                 time.sleep(2)
                 
     async def get_frame(self):
-        # Return latest frame if available AND recent (<0.5s old)
-        if self.frame and (time.time() - self.last_frame_time < 0.5):
+        # Return latest frame if available AND recent (<5.0s old)
+        # Increased to 5.0s because tunnel lag can be high
+        if self.frame and (time.time() - self.last_frame_time < 5.0):
             return self.frame
         
         # If frame is stale or missing, return mock
