@@ -29,6 +29,7 @@ class MockCamera(BaseCamera):
         if self.x <= 10 or self.x >= self.width-10: self.dx *= -1
         if self.y <= 10 or self.y >= self.height-10: self.dy *= -1
         cv2.circle(frame, (self.x, self.y), 25, (255), -1)
+        cv2.putText(frame, "NO SIGNAL - MOCK DATA", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255), 2)
         frame = cv2.GaussianBlur(frame, (35, 35), 0)
         heatmap = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
         await asyncio.sleep(0.05) 
