@@ -125,7 +125,7 @@ static QByteArray httpResponse(const QByteArray& body, const QByteArray& content
 MjpegServer::MjpegServer(MyLabel* source, AppCfg* cfg, quint16 port, QObject* parent)
     : QTcpServer(parent), m_source(source), m_cfg(cfg), m_port(port)
 {
-    listen(QHostAddress::Any, m_port);
+    listen(QHostAddress::AnyIPv4, m_port);
 }
 
 void MjpegServer::incomingConnection(qintptr socketDescriptor)
