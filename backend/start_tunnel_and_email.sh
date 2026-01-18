@@ -6,7 +6,14 @@ pkill -f cloudflared
 
 # 2. Start Cloudflare Quick Tunnel (Port 5000)
 # We navigate to the directory first to ensure python finds files
-cd /home/team13/RESOFLY/backend
+# Add common paths
+export PATH=$PATH:/usr/local/bin:/usr/bin
+
+echo "Starting Cloudflare Tunnel script..."
+
+# 2. Start Cloudflare Quick Tunnel (Port 5000)
+# We navigate to the directory first to ensure python finds files
+cd /home/team13/RESOFLY/backend || exit 1
 
 echo "Starting Cloudflare Tunnel..."
 rm -f /home/team13/tunnel.log
@@ -18,8 +25,8 @@ TUNNEL_PID=$!
 echo "Tunnel started with PID $TUNNEL_PID"
 
 # 3. Wait for tunnel to initialize and generate URL
-echo "Waiting for URL..."
-MAX_RETRIES=30
+echo "Waiting for URL (up to 5 mins)..."
+MAX_RETRIES=150
 COUNT=0
 URL=""
 
@@ -30,11 +37,14 @@ while [ $COUNT -lt $MAX_RETRIES ]; do
         break
     fi
     ((COUNT++))
+    if [ $((COUNT % 10)) -eq 0 ]; then
+        echo "Still waiting for URL... ($COUNT/$MAX_RETRIES)"
+    fi
 done
 
 # 4. Run the Email Monitor Script
 echo "Running Email Monitor..."
-python3 monitor_tunnel.py
+python3 -u monitor_tunnel.py
 
 # 5. KEEP ALIVE
 wait $TUNNEL_PID

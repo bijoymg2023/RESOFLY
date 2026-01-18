@@ -1,6 +1,7 @@
 [Unit]
 Description=ResoFly Cloudflare Tunnel & Emailer
-After=network.target resofly.service
+After=network-online.target resofly.service
+Wants=network-online.target
 
 [Service]
 User=team13
