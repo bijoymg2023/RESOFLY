@@ -9,7 +9,7 @@ pkill -f cloudflared
 # We redirect output to log.
 echo "Starting Cloudflare Tunnel..."
 rm -f /home/team13/tunnel.log
-cloudflared tunnel --url http://127.0.0.1:5000 > /home/team13/tunnel.log 2>&1 &
+cloudflared tunnel --url http://127.0.0.1:8000 > /home/team13/tunnel.log 2>&1 &
 TUNNEL_PID=$!
 
 echo "Tunnel started with PID $TUNNEL_PID"
