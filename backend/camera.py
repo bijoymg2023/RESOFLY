@@ -41,7 +41,7 @@ class StreamProxyCamera(BaseCamera):
     Proxies the MJPEG stream from the external C++ driver running on localhost:8080.
     Uses a background thread to prevent blocking the main asyncio loop.
     """
-    def __init__(self, url="http://localhost:8080/mjpeg"):
+    def __init__(self, url="http://127.0.0.1:8080/mjpeg"):
         self.url = url
         self.lock = asyncio.Lock()
         self.frame = None
