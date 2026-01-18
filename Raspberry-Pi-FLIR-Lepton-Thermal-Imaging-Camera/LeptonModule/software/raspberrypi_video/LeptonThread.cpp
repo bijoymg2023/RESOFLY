@@ -23,7 +23,7 @@ LeptonThread::LeptonThread() : QThread() {
   selectedColormapSize = get_size_colormap_ironblack();
 
   //
-  typeLepton = 2; // 2:Lepton 2.x  / 3:Lepton 3.x
+  typeLepton = 3; // 2:Lepton 2.x  / 3:Lepton 3.x
   myImageWidth = 80;
   myImageHeight = 60;
 
