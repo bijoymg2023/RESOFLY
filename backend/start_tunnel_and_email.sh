@@ -6,7 +6,7 @@ pkill -f cloudflared
 
 # 2. Start Cloudflare Quick Tunnel (Port 5000)
 # We navigate to the directory first to ensure python finds files
-cd /home/team13/RESOFLY/thermo-vision-hub/backend
+cd /home/team13/RESOFLY/backend
 
 echo "Starting Cloudflare Tunnel..."
 rm -f /home/team13/tunnel.log

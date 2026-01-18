@@ -4,7 +4,7 @@ After=network.target resofly.service
 
 [Service]
 User=team13
-WorkingDirectory=/home/team13/RESOFLY/thermo-vision-hub/backend
+WorkingDirectory=/home/team13/RESOFLY/backend
 ExecStart=/bin/bash start_tunnel_and_email.sh
 Restart=on-failure
 RestartSec=30

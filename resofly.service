@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 User=team13
-WorkingDirectory=/home/team13/RESOFLY/thermo-vision-hub/backend
+WorkingDirectory=/home/team13/RESOFLY/backend
 ExecStart=/usr/bin/python3 server.py
 Restart=always
 RestartSec=10
