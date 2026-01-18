@@ -3,14 +3,14 @@ Description=RESOFLY Service
 After=network.target
 
 [Service]
-User=pi
-WorkingDirectory=/home/pi/thermo-vision-hub/backend
+User=team13
+WorkingDirectory=/home/team13/RESOFLY/thermo-vision-hub/backend
 ExecStart=/usr/bin/python3 server.py
 Restart=always
 RestartSec=10
-Environment=PORT=8000
-# Add any other env vars here, e.g.:
-# Environment=DATABASE_URL=sqlite+aiosqlite:///...
+Environment=PORT=5000
+Environment=CAMERA_SOURCE=proxy
+# Add any other env vars here
 
 [Install]
 WantedBy=multi-user.target
