@@ -45,6 +45,7 @@ class StreamProxyCamera(BaseCamera):
         self.url = url
         self.lock = asyncio.Lock()
         self.frame = None
+        self.last_frame_time = 0
         self.running = True
         self.cap = None
         
@@ -61,15 +62,10 @@ class StreamProxyCamera(BaseCamera):
             try:
                 # 1. Connect if not connected
                 if self.cap is None or not self.cap.isOpened():
-                    # print(f"Connecting to {self.url}...")
                     self.cap = cv2.VideoCapture(self.url)
-                    
-                    # Some backends need a warm-up read to know if they are truly open
                     if self.cap.isOpened():
                          print(f"Connected to Camera: {self.url}")
                     else:
-                         # Failed to open
-                         # print(f"Failed to connect to {self.url}")
                          self.cap = None
                          time.sleep(2)
                          continue
@@ -78,14 +74,10 @@ class StreamProxyCamera(BaseCamera):
                 success, frame = self.cap.read()
                 
                 if success:
-                    # Encode to JPEG immediately
                     ret, jpeg = cv2.imencode('.jpg', frame)
                     if ret:
                         self.frame = jpeg.tobytes()
-                    # Small sleep to prevent tight loop if camera fps is high? 
-                    # Actually, read() blocks until frame arrives, so sleep isn't strictly needed 
-                    # unless read() is non-blocking (rare).
-                    # time.sleep(0.01) 
+                        self.last_frame_time = time.time()
                 else:
                     print("Stream closed or empty frame. Reconnecting...")
                     self.cap.release()
@@ -100,12 +92,11 @@ class StreamProxyCamera(BaseCamera):
                 time.sleep(2)
                 
     async def get_frame(self):
-        # Return latest frame if available, else fetch from mock
-        if self.frame:
+        # Return latest frame if available AND recent (<0.5s old)
+        if self.frame and (time.time() - self.last_frame_time < 0.5):
             return self.frame
         
-        # If no frame yet (starting up or error), return mock
-        # We create a temporary mock just for a fallback frame
+        # If frame is stale or missing, return mock
         return await MockCamera().get_frame()
 
     def __del__(self):
