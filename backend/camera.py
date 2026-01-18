@@ -55,30 +55,49 @@ class StreamProxyCamera(BaseCamera):
 
     def _update_loop(self):
         """Runs in a separate thread to continuously fetch frames."""
+        print(f"Proxy Thread Started. Target: {self.url}")
+        
         while self.running:
             try:
+                # 1. Connect if not connected
                 if self.cap is None or not self.cap.isOpened():
-                    # Attempt to connect
-                    # print("Connecting to C++ Stream...")
+                    # print(f"Connecting to {self.url}...")
                     self.cap = cv2.VideoCapture(self.url)
-                    if not self.cap.isOpened():
-                        time.sleep(2)
-                        continue
+                    
+                    # Some backends need a warm-up read to know if they are truly open
+                    if self.cap.isOpened():
+                         print(f"Connected to Camera: {self.url}")
+                    else:
+                         # Failed to open
+                         # print(f"Failed to connect to {self.url}")
+                         self.cap = None
+                         time.sleep(2)
+                         continue
                 
+                # 2. Read Frame
                 success, frame = self.cap.read()
+                
                 if success:
-                    # Encode to JPEG immediately in this thread to save main thread work
+                    # Encode to JPEG immediately
                     ret, jpeg = cv2.imencode('.jpg', frame)
                     if ret:
                         self.frame = jpeg.tobytes()
+                    # Small sleep to prevent tight loop if camera fps is high? 
+                    # Actually, read() blocks until frame arrives, so sleep isn't strictly needed 
+                    # unless read() is non-blocking (rare).
+                    # time.sleep(0.01) 
                 else:
+                    print("Stream closed or empty frame. Reconnecting...")
                     self.cap.release()
                     self.cap = None
                     time.sleep(1)
                     
             except Exception as e:
-                print(f"Camera Thread Error: {e}")
-                time.sleep(1)
+                print(f"Camera Thread Crash: {e}")
+                if self.cap:
+                    self.cap.release()
+                    self.cap = None
+                time.sleep(2)
                 
     async def get_frame(self):
         # Return latest frame if available, else fetch from mock
