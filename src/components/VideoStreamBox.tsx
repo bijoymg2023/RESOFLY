@@ -79,7 +79,7 @@ export const VideoStreamBox = () => {
           <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:20px_20px]" />
 
           {/* Simulated Stream Content */}
-          {activeType === 'Thermal' || activeType === 'RGB' ? (
+          {activeType === 'Thermal' || activeType === 'RGB' || activeType === 'Overlay' ? (
             <div className="relative w-full h-full">
               <img
                 src={getStreamUrl(activeType)}
