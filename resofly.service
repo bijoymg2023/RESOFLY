@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=team13
 WorkingDirectory=/home/team13/RESOFLY/backend
-ExecStart=/usr/bin/python3 server.py
+ExecStart=/bin/bash start_backend.sh
 Restart=always
 RestartSec=10
 Environment=PORT=5000
