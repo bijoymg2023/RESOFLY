@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import time
 import asyncio
+import threading
 import aiohttp
 from abc import ABC, abstractmethod
 
@@ -37,48 +38,60 @@ class MockCamera(BaseCamera):
 class StreamProxyCamera(BaseCamera):
     """
     Proxies the MJPEG stream from the external C++ driver running on localhost:8080.
+    Uses a background thread to prevent blocking the main asyncio loop.
     """
     def __init__(self, url="http://localhost:8080/mjpeg"):
         self.url = url
-        self.session = None
-        self.stream_response = None
+        self.lock = asyncio.Lock()
+        self.frame = None
+        self.running = True
+        self.cap = None
+        
+        # Start background poller
+        self.thread = threading.Thread(target=self._update_loop, daemon=True)
+        self.thread.start()
         print(f"Initializing Proxy Camera to: {self.url}")
 
+    def _update_loop(self):
+        """Runs in a separate thread to continuously fetch frames."""
+        while self.running:
+            try:
+                if self.cap is None or not self.cap.isOpened():
+                    # Attempt to connect
+                    # print("Connecting to C++ Stream...")
+                    self.cap = cv2.VideoCapture(self.url)
+                    if not self.cap.isOpened():
+                        time.sleep(2)
+                        continue
+                
+                success, frame = self.cap.read()
+                if success:
+                    # Encode to JPEG immediately in this thread to save main thread work
+                    ret, jpeg = cv2.imencode('.jpg', frame)
+                    if ret:
+                        self.frame = jpeg.tobytes()
+                else:
+                    self.cap.release()
+                    self.cap = None
+                    time.sleep(1)
+                    
+            except Exception as e:
+                print(f"Camera Thread Error: {e}")
+                time.sleep(1)
+                
     async def get_frame(self):
-        try:
-            if not self.session:
-                self.session = aiohttp.ClientSession()
-            
-            # Since MJPEG is a continuous stream, we can't just "get one frame" via a library easily in one-shot
-            # However, for the purpose of this architecture where 'gen_frames' calls this repeatedly, 
-            # we actually want to maintain a connection.
-            # BUT, the current architecture of 'server.py' calls 'get_frame()' in a loop.
-            # To properly proxy, we should probably read the MJPEG stream continuously in a background task
-            # and update a 'latest_frame' buffer.
-            
-            # Simple fallback for now: Just capture from URL using OpenCV (it handles streams natively)
-            # Fetching via HTTP in python loop is slow. Let's use cv2.VideoCapture with the URL.
-            return await self._get_frame_cv2()
-
-        except Exception as e:
-            print(f"Proxy Error: {e}")
-            return await MockCamera().get_frame() # Fallback to mock if C++ app not running
-
-    async def _get_frame_cv2(self):
-        # We need a persistent capture object, otherwise we reconnect every frame (too slow)
-        if not hasattr(self, 'cap') or self.cap is None or not self.cap.isOpened():
-             print("Opening connection to C++ Stream...")
-             self.cap = cv2.VideoCapture(self.url)
+        # Return latest frame if available, else fetch from mock
+        if self.frame:
+            return self.frame
         
-        if self.cap.isOpened():
-            success, frame = self.cap.read()
-            if success:
-                ret, jpeg = cv2.imencode('.jpg', frame)
-                return jpeg.tobytes()
-        
-        # If we failed
-        self.cap = None 
+        # If no frame yet (starting up or error), return mock
+        # We create a temporary mock just for a fallback frame
         return await MockCamera().get_frame()
+
+    def __del__(self):
+        self.running = False
+        if self.cap:
+            self.cap.release()
 
 # Global Singleton
 thermal_instance = None 
@@ -88,8 +101,6 @@ def get_camera(type='thermal'):
     
     if thermal_instance is None:
         # We attempt to use the Proxy Camera (Connecting to the C++ App)
-        # If the C++ App isn't running, it will automatically fall back to Mock inside the class.
-        print("Using StreamProxyCamera -> localhost:8080")
         thermal_instance = StreamProxyCamera()
              
     return thermal_instance
