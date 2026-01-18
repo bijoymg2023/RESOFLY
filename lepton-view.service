@@ -8,9 +8,8 @@ Type=simple
 # Adjust path if user cloned elsewhere, but we assume ~/RESOFLY
 WorkingDirectory=/home/team13/RESOFLY/Raspberry-Pi-FLIR-Lepton-Thermal-Imaging-Camera/LeptonModule/software/raspberrypi_video
 
-# Run on Framebuffer (Headless-ish)
-Environment=QT_QPA_PLATFORM=linuxfb
-Environment=QT_QPA_FB=/dev/fb0
+# Run in Headless Mode (No screen required)
+Environment=QT_QPA_PLATFORM=offscreen
 Environment=XDG_RUNTIME_DIR=/tmp/runtime-root
 
 # Clean/Create FIFO for commands
