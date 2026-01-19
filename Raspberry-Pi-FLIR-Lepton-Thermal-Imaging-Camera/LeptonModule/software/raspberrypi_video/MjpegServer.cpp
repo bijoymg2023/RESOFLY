@@ -235,7 +235,7 @@ void MjpegServer::handleClient(QTcpSocket *s) {
         QByteArray jpg;
         QBuffer buf(&jpg);
         buf.open(QIODevice::WriteOnly);
-        img.convertToFormat(QImage::Format_RGB888).save(&buf, "JPG", 70);
+        img.convertToFormat(QImage::Format_RGB888).save(&buf, "JPG", 40);
 
         QByteArray part;
         part += "--frame\r\n";
