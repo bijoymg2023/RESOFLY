@@ -84,8 +84,8 @@ int main(int argc, char **argv) {
 
   MyLabel *myLabel = new MyLabel(w);
   myLabel->setLogo("flir_logo.png",
-                   70, // height
-                   60  // margin from edges in pixels
+                   50, // height
+                   30  // margin from edges in pixels
   );
   layout->addWidget(myLabel);
   myLabel->setConfig(cfg);
@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
                    SLOT(setCameraImage(QImage)));
   cam->start();
 
-  w->resize(800, 600);
+  w->resize(1440, 900);
   w->show();
   return a.exec();
 }
