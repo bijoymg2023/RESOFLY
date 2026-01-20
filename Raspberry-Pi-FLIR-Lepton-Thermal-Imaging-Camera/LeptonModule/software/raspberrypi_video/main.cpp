@@ -77,6 +77,9 @@ int main(int argc, char **argv) {
   qDebug() << "CFG usb" << cfg.usb.xform.offset_x << cfg.usb.xform.offset_y
            << cfg.usb.xform.scale << cfg.usb.xform.rotate_deg;
 
+  // OVERRIDE: Force zoom out (0.6x scale) as requested
+  cfg.thermal.xform.scale = 0.6;
+
   QWidget *w = new QWidget;
   QVBoxLayout *layout = new QVBoxLayout(w);
   layout->setContentsMargins(0, 0, 0, 0);
