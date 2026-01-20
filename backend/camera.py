@@ -55,44 +55,40 @@ class StreamProxyCamera(BaseCamera):
         print(f"Initializing Proxy Camera to: {self.url}")
 
     def _update_loop(self):
-        """Runs in a separate thread to continuously fetch frames."""
+        """Runs in a separate thread to continuously fetch frames using requests (Lower Latency)."""
+        import requests
         print(f"Proxy Thread Started. Target: {self.url}")
         
         while self.running:
             try:
-                if self.cap is None or not self.cap.isOpened():
-                    self.cap = cv2.VideoCapture(self.url)
-                    # Set a timeout for the stream read (if backend supports it, e.g. ffmpeg)
-                    # This prevents read() from hanging forever on some systems
-                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
+                # Open the stream
+                stream = requests.get(self.url, stream=True, timeout=5)
+                if stream.status_code == 200:
+                    print(f"Connected to Camera: {self.url}")
+                    bytes_data = bytes()
                     
-                    if self.cap.isOpened():
-                         print(f"Connected to Camera: {self.url}")
-                         self.last_frame_time = time.time() # Reset time to avoid immediate stale check fail
-                    else:
-                         self.cap = None
-                         time.sleep(2)
-                         continue
-                
-                # 2. Read Frame
-                success, frame = self.cap.read()
-                
-                if success:
-                    ret, jpeg = cv2.imencode('.jpg', frame)
-                    if ret:
-                        self.frame = jpeg.tobytes()
-                        self.last_frame_time = time.time()
+                    # Iterate over chunks
+                    for chunk in stream.iter_content(chunk_size=1024):
+                        if not self.running: break
+                        bytes_data += chunk
+                        
+                        # Look for JPEG boundaries: 0xFF 0xD8 (Start) ... 0xFF 0xD9 (End)
+                        a = bytes_data.find(b'\xff\xd8')
+                        b = bytes_data.find(b'\xff\xd9')
+                        
+                        if a != -1 and b != -1:
+                            # We have a full JPEG
+                            jpg = bytes_data[a:b+2]
+                            bytes_data = bytes_data[b+2:] # Keep the remainder
+                            
+                            self.frame = jpg
+                            self.last_frame_time = time.time()
                 else:
-                    print("Stream closed or empty frame. Reconnecting...")
-                    self.cap.release()
-                    self.cap = None
-                    time.sleep(1)
+                    print(f"Stream returned status: {stream.status_code}")
+                    time.sleep(2)
                     
             except Exception as e:
-                print(f"Camera Thread Crash: {e}")
-                if self.cap:
-                    self.cap.release()
-                    self.cap = None
+                print(f"Stream Read Error: {e}")
                 time.sleep(2)
                 
     async def get_frame(self):
