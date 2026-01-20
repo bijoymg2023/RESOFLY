@@ -60,11 +60,15 @@ class StreamProxyCamera(BaseCamera):
         
         while self.running:
             try:
-                # 1. Connect if not connected
                 if self.cap is None or not self.cap.isOpened():
                     self.cap = cv2.VideoCapture(self.url)
+                    # Set a timeout for the stream read (if backend supports it, e.g. ffmpeg)
+                    # This prevents read() from hanging forever on some systems
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1) 
+                    
                     if self.cap.isOpened():
                          print(f"Connected to Camera: {self.url}")
+                         self.last_frame_time = time.time() # Reset time to avoid immediate stale check fail
                     else:
                          self.cap = None
                          time.sleep(2)
