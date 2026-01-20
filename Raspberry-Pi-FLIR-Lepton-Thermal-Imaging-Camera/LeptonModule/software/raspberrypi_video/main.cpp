@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
                    SLOT(setCameraImage(QImage)));
   cam->start();
 
-  w->resize(640, 480);
+  w->resize(320, 240);
   w->show();
   return a.exec();
 }
