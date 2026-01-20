@@ -130,7 +130,9 @@ void LeptonThread::run() {
         // the current poll rate By polling faster, developers may easily exceed
         // this count, and the down period between frames may then be flagged as
         // a loss of sync
-        if (resets == 750) {
+        // Aggressive reset: if we lose sync for just 30 packets (~0.1s), RESET
+        // immediately. This avoids long "Static Image" states.
+        if (resets >= 30) {
           SpiClosePort(0);
           lepton_reboot();
           n_wrong_segment = 0;
