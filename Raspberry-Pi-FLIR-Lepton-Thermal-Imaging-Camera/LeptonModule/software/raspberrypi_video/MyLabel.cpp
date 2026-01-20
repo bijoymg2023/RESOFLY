@@ -169,11 +169,6 @@ void MyLabel::paintEvent(QPaintEvent *event) {
   // draw to screen
   QPainter w(this);
   w.drawImage(QRect(QPoint(0, 0), size()), frame);
-
-  // DEBUG: Draw Timestamp to verify stream is ALIVE
-  w.setPen(Qt::white);
-  w.setFont(QFont("Arial", 16));
-  w.drawText(10, 30, QDateTime::currentDateTime().toString("HH:mm:ss.zzz"));
 }
 
 void MyLabel::setConfig(const AppCfg &cfg) {
