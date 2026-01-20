@@ -28,7 +28,7 @@ LeptonThread::LeptonThread() : QThread() {
   myImageHeight = 60;
 
   //
-  spiSpeed = 20 * 1000 * 1000; // SPI bus speed 20MHz (Standard)
+  spiSpeed = 18 * 1000 * 1000; // SPI bus speed 18MHz (Lowered for stability)
 
   // min/max value for scaling
   autoRangeMin = true;
