@@ -1,4 +1,5 @@
 #include "MyLabel.h"
+#include <QDateTime> // Added for timestamp overlay
 #include <QMutexLocker>
 #include <QPainter>
 #include <QTransform>
