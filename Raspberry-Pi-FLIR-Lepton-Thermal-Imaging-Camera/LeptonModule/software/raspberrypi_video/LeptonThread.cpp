@@ -129,7 +129,7 @@ void LeptonThread::run() {
         // should never be 750 "null" packets between two valid transmissions at
         // the current poll rate. Reboot only after many failed attempts to
         // avoid triggering static feeds.
-        if (resets >= 150) {
+        if (resets >= 50) {
           SpiClosePort(0);
           usleep(200000); // Wait 200ms before reboot
           lepton_reboot();
