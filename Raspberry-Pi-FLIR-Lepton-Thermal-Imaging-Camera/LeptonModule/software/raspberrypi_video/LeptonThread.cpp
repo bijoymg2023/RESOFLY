@@ -124,22 +124,16 @@ void LeptonThread::run() {
       if (packetNumber != j) {
         j = -1;
         resets += 1;
-        usleep(1500); // Slightly longer delay between retries
-        // Note: we've selected 750 resets as an arbitrary limit, since there
-        // should never be 750 "null" packets between two valid transmissions at
-        // the current poll rate. Reboot only after many failed attempts to
-        // avoid triggering static feeds.
-        if (resets >= 50) {
+        usleep(1000); // Quick delay between retries
+        // Re-sync after 750 failed packets as per original design
+        // Just re-open SPI port instead of full camera reboot for faster
+        // recovery
+        if (resets >= 750) {
           SpiClosePort(0);
-          usleep(200000); // Wait 200ms before reboot
-          lepton_reboot();
-          usleep(750000);       // Wait 750ms for camera to stabilize
-          lepton_perform_ffc(); // Force FFC to help stabilize
-          n_wrong_segment = 0;
-          n_zero_value_drop_frame = 0;
-          usleep(750000); // Wait another 750ms after FFC
+          usleep(
+              185000); // Wait ~185ms (one frame period at 5.4Hz segment rate)
           SpiOpenPort(0, spiSpeed);
-          resets = 0; // Reset counter after recovery
+          resets = 0;
         }
         continue;
       }

@@ -223,7 +223,7 @@ void MjpegServer::handleClient(QTcpSocket *s) {
 
       // stream timer
       auto *t = new QTimer(s);
-      t->setInterval(100); // 10 fps (adjust later)
+      t->setInterval(66); // ~15 fps to capture all Lepton frames (~9 fps)
       QObject::connect(t, &QTimer::timeout, this, [this, s]() {
         if (!s->isOpen())
           return;
