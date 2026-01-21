@@ -79,23 +79,24 @@ export const VideoStreamBox = () => {
           <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[size:20px_20px]" />
 
           {/* Simulated Stream Content */}
-          {activeType === 'Thermal' || activeType === 'RGB' || activeType === 'Overlay' ? (
+          {activeType === 'Thermal' ? (
             <div className="relative w-full h-full">
               <img
-                src={getStreamUrl(activeType)}
-                alt={`${activeType} Stream`}
+                src={getStreamUrl('Thermal')}
+                alt="Thermal Stream"
                 className="w-full h-full object-cover opacity-90"
-                key={activeType} // Force re-render on switch
+                key="thermal-stream"
               />
-              {/* False Color Overlay Mix (Only for Thermal) */}
-              {activeType === 'Thermal' && (
-                <div className="absolute inset-0 bg-gradient-to-t from-purple-900/20 via-transparent to-orange-500/10 mix-blend-overlay pointer-events-none" />
-              )}
+              {/* False Color Overlay Mix */}
+              <div className="absolute inset-0 bg-gradient-to-t from-purple-900/20 via-transparent to-orange-500/10 mix-blend-overlay pointer-events-none" />
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-white/20 animate-pulse">
+            <div className="flex flex-col items-center justify-center text-white/20 h-full">
               <Video className="w-16 h-16 mb-4 opacity-50" />
-              <p className="font-mono text-sm tracking-widest uppercase">Signal Offline</p>
+              <p className="font-mono text-sm tracking-widest uppercase">
+                {activeType === 'RGB' ? 'OPTICAL FEED UNAVAILABLE' : 'FUSION MODE UNAVAILABLE'}
+              </p>
+              <p className="font-mono text-xs text-white/10 mt-2">No hardware connected</p>
             </div>
           )}
 

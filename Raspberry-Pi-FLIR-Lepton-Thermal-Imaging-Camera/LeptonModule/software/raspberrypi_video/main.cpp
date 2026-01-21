@@ -77,8 +77,8 @@ int main(int argc, char **argv) {
   qDebug() << "CFG usb" << cfg.usb.xform.offset_x << cfg.usb.xform.offset_y
            << cfg.usb.xform.scale << cfg.usb.xform.rotate_deg;
 
-  // OVERRIDE: Force zoom out (0.6x scale) as requested
-  cfg.thermal.xform.scale = 0.6;
+  // OVERRIDE: Force zoom out (0.5x scale) as requested
+  cfg.thermal.xform.scale = 0.5;
 
   QWidget *w = new QWidget;
   QVBoxLayout *layout = new QVBoxLayout(w);
@@ -126,7 +126,7 @@ int main(int argc, char **argv) {
                    SLOT(setCameraImage(QImage)));
   cam->start();
 
-  w->resize(800, 600);
+  w->resize(640, 480);
   w->show();
   return a.exec();
 }

@@ -61,11 +61,12 @@ class StreamProxyCamera(BaseCamera):
         
         while self.running:
             try:
-                # Open the stream
-                stream = requests.get(self.url, stream=True, timeout=5)
+                # Open the stream with a longer timeout for initial connection
+                stream = requests.get(self.url, stream=True, timeout=10)
                 if stream.status_code == 200:
                     print(f"Connected to Camera: {self.url}")
                     bytes_data = bytes()
+                    last_frame_received = time.time()
                     
                     # Iterate over chunks
                     for chunk in stream.iter_content(chunk_size=1024):
@@ -83,6 +84,13 @@ class StreamProxyCamera(BaseCamera):
                             
                             self.frame = jpg
                             self.last_frame_time = time.time()
+                            last_frame_received = time.time()
+                        
+                        # Heartbeat check: if no new frame for 10 seconds, force reconnect
+                        if time.time() - last_frame_received > 10:
+                            print("Stream heartbeat timeout (10s). Forcing reconnect...")
+                            stream.close()
+                            break
                 else:
                     print(f"Stream returned status: {stream.status_code}")
                     time.sleep(2)
