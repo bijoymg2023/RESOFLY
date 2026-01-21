@@ -12,7 +12,7 @@
 #define FRAME_SIZE_UINT16 (PACKET_SIZE_UINT16 * PACKETS_PER_FRAME)
 #define FPS 27
 
-LeptonThread::LeptonThread() : QThread() {
+LeptonThread::LeptonThread() {
   //
   loglevel = 0;
 
@@ -124,22 +124,22 @@ void LeptonThread::run() {
       if (packetNumber != j) {
         j = -1;
         resets += 1;
-        usleep(1000);
+        usleep(1500); // Slightly longer delay between retries
         // Note: we've selected 750 resets as an arbitrary limit, since there
         // should never be 750 "null" packets between two valid transmissions at
-        // the current poll rate By polling faster, developers may easily exceed
-        // this count, and the down period between frames may then be flagged as
-        // a loss of sync
-        // Aggressive reset: if we lose sync for just 15 packets, RESET
-        // immediately
-        if (resets >= 15) {
+        // the current poll rate. Reboot only after many failed attempts to
+        // avoid triggering static feeds.
+        if (resets >= 150) {
           SpiClosePort(0);
+          usleep(200000); // Wait 200ms before reboot
           lepton_reboot();
+          usleep(750000);       // Wait 750ms for camera to stabilize
           lepton_perform_ffc(); // Force FFC to help stabilize
           n_wrong_segment = 0;
           n_zero_value_drop_frame = 0;
-          usleep(1500000); // Wait 1.5 seconds after reboot
+          usleep(750000); // Wait another 750ms after FFC
           SpiOpenPort(0, spiSpeed);
+          resets = 0; // Reset counter after recovery
         }
         continue;
       }
