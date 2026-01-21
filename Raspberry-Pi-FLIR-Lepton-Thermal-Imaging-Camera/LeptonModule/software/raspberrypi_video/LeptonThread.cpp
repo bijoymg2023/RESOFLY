@@ -28,7 +28,7 @@ LeptonThread::LeptonThread() : QThread() {
   myImageHeight = 60;
 
   //
-  spiSpeed = 20 * 1000 * 1000; // SPI bus speed 20MHz (Standard)
+  spiSpeed = 15 * 1000 * 1000; // SPI bus speed 15MHz (Stable)
 
   // min/max value for scaling
   autoRangeMin = true;
@@ -130,14 +130,15 @@ void LeptonThread::run() {
         // the current poll rate By polling faster, developers may easily exceed
         // this count, and the down period between frames may then be flagged as
         // a loss of sync
-        // Aggressive reset: if we lose sync for just 30 packets (~0.1s), RESET
-        // immediately. This avoids long "Static Image" states.
-        if (resets >= 30) {
+        // Aggressive reset: if we lose sync for just 15 packets, RESET
+        // immediately
+        if (resets >= 15) {
           SpiClosePort(0);
           lepton_reboot();
+          lepton_perform_ffc(); // Force FFC to help stabilize
           n_wrong_segment = 0;
           n_zero_value_drop_frame = 0;
-          usleep(750000);
+          usleep(1500000); // Wait 1.5 seconds after reboot
           SpiOpenPort(0, spiSpeed);
         }
         continue;
