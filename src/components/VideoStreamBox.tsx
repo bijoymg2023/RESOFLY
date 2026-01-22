@@ -98,22 +98,30 @@ export const VideoStreamBox = () => {
               />
             </div>
           ) : activeType === 'RGB' ? (
-            <div className="flex flex-col items-center justify-center text-white/20 h-full bg-gradient-to-br from-slate-900 to-black">
-              <Video className="w-16 h-16 mb-4 opacity-30" />
-              <p className="font-mono text-sm tracking-widest uppercase">
-                OPTICAL FEED UNAVAILABLE
+            <div className="flex flex-col items-center justify-center h-full bg-black">
+              <div className="relative">
+                <Video className="w-20 h-20 text-red-500/20" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-16 h-[2px] bg-red-500/50 rotate-45" />
+                </div>
+              </div>
+              <p className="font-mono text-2xl font-bold text-red-500/80 mt-6 tracking-[0.3em]">
+                OFFLINE
               </p>
-              <p className="font-mono text-xs text-white/10 mt-2">No RGB camera connected</p>
-              <p className="font-mono text-[10px] text-white/30 mt-4 max-w-xs text-center border p-2 border-white/10 rounded">SYSTEM STATUS: OPTICAL SENSOR OFFLINE</p>
+              <p className="font-mono text-[10px] text-white/30 mt-2 tracking-widest">OPTICAL SENSOR</p>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-white/20 h-full bg-gradient-to-br from-slate-900 to-black">
-              <Layers className="w-16 h-16 mb-4 opacity-30" />
-              <p className="font-mono text-sm tracking-widest uppercase">
-                FUSION MODE UNAVAILABLE
+            <div className="flex flex-col items-center justify-center h-full bg-black">
+              <div className="relative">
+                <Layers className="w-20 h-20 text-yellow-500/20" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-16 h-[2px] bg-yellow-500/50 rotate-45" />
+                </div>
+              </div>
+              <p className="font-mono text-2xl font-bold text-yellow-500/80 mt-6 tracking-[0.3em]">
+                OFFLINE
               </p>
-              <p className="font-mono text-xs text-white/10 mt-2">Requires both thermal and RGB feeds</p>
-              <p className="font-mono text-[10px] text-white/5 mt-4 max-w-xs text-center">Optical camera not connected</p>
+              <p className="font-mono text-[10px] text-white/30 mt-2 tracking-widest">FUSION MODE</p>
             </div>
           )}
 
