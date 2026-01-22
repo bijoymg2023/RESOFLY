@@ -115,6 +115,7 @@ void LeptonThread::run() {
 
     // read data packets from lepton over SPI
     int resets = 0;
+    static int spi_resets = 0; // Track SPI resets for camera reboot
     int segmentNumber = -1;
     for (int j = 0; j < PACKETS_PER_FRAME; j++) {
       // if it's a drop packet, reset j to 0, set to -1 so he'll be at 0 again
@@ -126,15 +127,21 @@ void LeptonThread::run() {
         j = -1;
         resets += 1;
         usleep(1000); // Quick delay between retries
-        // Re-sync after 750 failed packets as per original design
-        // Just re-open SPI port instead of full camera reboot for faster
-        // recovery
-        if (resets >= 750) {
+        // Re-sync after 100 failed packets (more aggressive)
+        if (resets >= 100) {
           SpiClosePort(0);
-          usleep(
-              185000); // Wait ~185ms (one frame period at 5.4Hz segment rate)
+          usleep(200000); // Wait 200ms for sync
           SpiOpenPort(0, spiSpeed);
           resets = 0;
+          spi_resets++;
+          // Full camera reboot after 5 SPI resets to prevent permanent freeze
+          if (spi_resets >= 5) {
+            log_message(1, "[RECOVERY] Performing full camera reboot");
+            lepton_reboot();
+            usleep(1000000); // Wait 1 second after reboot
+            lepton_perform_ffc();
+            spi_resets = 0;
+          }
         }
         continue;
       }
