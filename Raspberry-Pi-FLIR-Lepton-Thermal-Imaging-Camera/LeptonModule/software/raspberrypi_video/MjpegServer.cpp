@@ -221,9 +221,9 @@ void MjpegServer::handleClient(QTcpSocket *s) {
       s->write(h);
       s->flush();
 
-      // stream timer - optimized for Lepton's 9fps output
+      // stream timer
       auto *t = new QTimer(s);
-      t->setInterval(100); // 10 fps to match Lepton camera rate
+      t->setInterval(16); // ~60 fps for ultra-smooth live video
       QObject::connect(t, &QTimer::timeout, this, [this, s]() {
         if (!s->isOpen())
           return;
@@ -235,8 +235,7 @@ void MjpegServer::handleClient(QTcpSocket *s) {
         QByteArray jpg;
         QBuffer buf(&jpg);
         buf.open(QIODevice::WriteOnly);
-        img.convertToFormat(QImage::Format_RGB888)
-            .save(&buf, "JPG", 75); // 75% quality for faster streaming
+        img.convertToFormat(QImage::Format_RGB888).save(&buf, "JPG", 100);
 
         QByteArray part;
         part += "--frame\r\n";
