@@ -8,8 +8,8 @@
         "offset_y": 23,
         "opacity": 1,
         "rotate_deg": 0,
-        "scale": 1.26,
-        "smooth": 5
+        "scale": 2.0,
+        "smooth": 0
     },
     "usb_cam": {
         "device": "/dev/video0",

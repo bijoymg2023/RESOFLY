@@ -90,13 +90,21 @@ export const VideoStreamBox = () => {
               {/* False Color Overlay Mix */}
               <div className="absolute inset-0 bg-gradient-to-t from-purple-900/20 via-transparent to-orange-500/10 mix-blend-overlay pointer-events-none" />
             </div>
-          ) : (
+          ) : activeType === 'RGB' ? (
             <div className="flex flex-col items-center justify-center text-white/20 h-full">
               <Video className="w-16 h-16 mb-4 opacity-50" />
               <p className="font-mono text-sm tracking-widest uppercase">
-                {activeType === 'RGB' ? 'OPTICAL FEED UNAVAILABLE' : 'FUSION MODE UNAVAILABLE'}
+                OPTICAL FEED UNAVAILABLE
               </p>
-              <p className="font-mono text-xs text-white/10 mt-2">No hardware connected</p>
+              <p className="font-mono text-xs text-white/10 mt-2">No RGB camera connected</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center text-white/20 h-full">
+              <Layers className="w-16 h-16 mb-4 opacity-50" />
+              <p className="font-mono text-sm tracking-widest uppercase">
+                FUSION MODE UNAVAILABLE
+              </p>
+              <p className="font-mono text-xs text-white/10 mt-2">Requires both thermal and RGB feeds</p>
             </div>
           )}
 

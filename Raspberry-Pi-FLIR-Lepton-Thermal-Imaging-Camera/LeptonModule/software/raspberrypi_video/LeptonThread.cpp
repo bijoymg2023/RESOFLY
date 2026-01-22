@@ -28,7 +28,8 @@ LeptonThread::LeptonThread() {
   myImageHeight = 60;
 
   //
-  spiSpeed = 15 * 1000 * 1000; // SPI bus speed 15MHz (Stable)
+  spiSpeed =
+      5 * 1000 * 1000; // SPI bus speed 5MHz (Ultra stable, fixes banding)
 
   // min/max value for scaling
   autoRangeMin = true;
@@ -174,6 +175,7 @@ void LeptonThread::run() {
       memcpy(shelf[segmentNumber - 1], result,
              sizeof(uint8_t) * PACKET_SIZE * PACKETS_PER_FRAME);
       if (segmentNumber != 4) {
+        usleep(500); // Small delay between segments for better sync
         continue;
       }
       iSegmentStop = 4;
