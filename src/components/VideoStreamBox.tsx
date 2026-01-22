@@ -104,7 +104,7 @@ export const VideoStreamBox = () => {
                 OPTICAL FEED UNAVAILABLE
               </p>
               <p className="font-mono text-xs text-white/10 mt-2">No RGB camera connected</p>
-              <p className="font-mono text-[10px] text-white/5 mt-4 max-w-xs text-center">Only thermal sensor is currently active</p>
+              <p className="font-mono text-[10px] text-white/30 mt-4 max-w-xs text-center border p-2 border-white/10 rounded">SYSTEM STATUS: OPTICAL SENSOR OFFLINE</p>
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center text-white/20 h-full bg-gradient-to-br from-slate-900 to-black">
