@@ -29,7 +29,7 @@ LeptonThread::LeptonThread() {
 
   //
   spiSpeed =
-      5 * 1000 * 1000; // SPI bus speed 5MHz (Ultra stable, fixes banding)
+      2 * 1000 * 1000; // SPI bus speed 2MHz (Max stability for long wires)
 
   // min/max value for scaling
   autoRangeMin = true;
