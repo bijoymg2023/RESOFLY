@@ -80,31 +80,40 @@ export const VideoStreamBox = () => {
 
           {/* Simulated Stream Content */}
           {activeType === 'Thermal' ? (
-            <div className="relative w-full h-full">
+            <div className="relative w-full h-full bg-black">
               <img
                 src={getStreamUrl('Thermal')}
                 alt="Thermal Stream"
-                className="w-full h-full object-cover opacity-90"
+                className="w-full h-full object-cover"
                 key="thermal-stream"
               />
-              {/* False Color Overlay Mix */}
-              <div className="absolute inset-0 bg-gradient-to-t from-purple-900/20 via-transparent to-orange-500/10 mix-blend-overlay pointer-events-none" />
+              {/* Enhanced Thermal Color Grading */}
+              <div className="absolute inset-0 bg-gradient-to-b from-blue-900/10 via-transparent to-red-900/10 mix-blend-multiply pointer-events-none" />
+              {/* Thermal Contrast Enhancement */}
+              <div className="absolute inset-0 mix-blend-overlay opacity-20 pointer-events-none"
+                style={{
+                  backgroundImage: 'linear-gradient(45deg, rgba(255,100,0,0.1) 25%, rgba(255,0,0,0.1) 25%, rgba(255,0,0,0.1) 50%, rgba(255,100,0,0.1) 50%, rgba(255,100,0,0.1) 75%, rgba(255,0,0,0.1) 75%, rgba(255,0,0,0.1))',
+                  backgroundSize: '4px 4px'
+                }}
+              />
             </div>
           ) : activeType === 'RGB' ? (
-            <div className="flex flex-col items-center justify-center text-white/20 h-full">
-              <Video className="w-16 h-16 mb-4 opacity-50" />
+            <div className="flex flex-col items-center justify-center text-white/20 h-full bg-gradient-to-br from-slate-900 to-black">
+              <Video className="w-16 h-16 mb-4 opacity-30" />
               <p className="font-mono text-sm tracking-widest uppercase">
                 OPTICAL FEED UNAVAILABLE
               </p>
               <p className="font-mono text-xs text-white/10 mt-2">No RGB camera connected</p>
+              <p className="font-mono text-[10px] text-white/5 mt-4 max-w-xs text-center">Only thermal sensor is currently active</p>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-white/20 h-full">
-              <Layers className="w-16 h-16 mb-4 opacity-50" />
+            <div className="flex flex-col items-center justify-center text-white/20 h-full bg-gradient-to-br from-slate-900 to-black">
+              <Layers className="w-16 h-16 mb-4 opacity-30" />
               <p className="font-mono text-sm tracking-widest uppercase">
                 FUSION MODE UNAVAILABLE
               </p>
               <p className="font-mono text-xs text-white/10 mt-2">Requires both thermal and RGB feeds</p>
+              <p className="font-mono text-[10px] text-white/5 mt-4 max-w-xs text-center">Optical camera not connected</p>
             </div>
           )}
 
