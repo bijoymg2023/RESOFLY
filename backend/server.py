@@ -375,28 +375,12 @@ class CaptureResponse(BaseModel):
 async def capture_snapshot(current_user: UserDB = Depends(get_current_user)):
     """Captures a FRESH frame directly from the camera stream to ensure 0-lag."""
     try:
-        # Direct connection to C++ MJPEG stream
-        # This guarantees we get the LATEST valid frame and don't read old buffered data.
-        stream_url = "http://127.0.0.1:8080/mjpeg"
-        frame_bytes = None
-        
-        logger.info("Connecting to camera for fresh snapshot...")
-        with requests.get(stream_url, stream=True, timeout=3) as r:
-            if r.status_code == 200:
-                bytes_d = bytes()
-                # Read chunks until we find a full frame
-                for chunk in r.iter_content(chunk_size=4096):
-                    bytes_d += chunk
-                    a = bytes_d.find(b'\xff\xd8')
-                    b = bytes_d.find(b'\xff\xd9')
-                    if a != -1 and b != -1:
-                        frame_bytes = bytes_d[a:b+2]
-                        break # Got one frame, exit immediately
-            else:
-                 raise HTTPException(status_code=503, detail=f"Camera Stream Error: {r.status_code}")
+        # Use robust OpenCV capture from camera module
+        frame_bytes = camera.capture_fresh_frame()
         
         if not frame_bytes:
-            raise HTTPException(status_code=503, detail="Could not grab frame from camera")
+            # Fallback or detail error
+            raise HTTPException(status_code=503, detail="Could not capture frame from camera (Check service status)")
 
         filename = f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
         filepath = CAPTURE_DIR / filename

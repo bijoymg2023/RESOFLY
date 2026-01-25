@@ -133,15 +133,15 @@ export const AlertBox = () => {
                 return (
                   <div
                     key={alert.id}
-                    className={`group flex items-start space-x-2 p-1.5 hover:bg-white/5 rounded transition-colors cursor-default ${alert.acknowledged ? 'opacity-40' : 'opacity-100'}`}
+                    className={`group flex items-start space-x-3 p-2 hover:bg-white/5 rounded transition-colors cursor-default ${alert.acknowledged ? 'opacity-40' : 'opacity-100'}`}
                   >
-                    <span className="text-white/30 shrink-0 font-mono text-[10px]">
+                    <span className="text-white/30 shrink-0 font-mono text-xs">
                       {alert.timestamp.toLocaleTimeString([], { hour12: false })}
                     </span>
-                    <span className={`uppercase font-bold shrink-0 text-[10px] ${config.textColor}`}>
+                    <span className={`uppercase font-bold shrink-0 text-xs ${config.textColor}`}>
                       {alert.type}
                     </span>
-                    <span className="text-white/80 flex-1 truncate text-[10px]">
+                    <span className="text-white/80 flex-1 truncate text-xs">
                       {alert.message}
                     </span>
 
@@ -150,7 +150,7 @@ export const AlertBox = () => {
                       {!alert.acknowledged && (
                         <button
                           onClick={(e) => acknowledgeAlert(alert.id, e)}
-                          className="text-[9px] uppercase bg-white/10 hover:bg-white/20 px-1.5 rounded text-white/70"
+                          className="text-[10px] uppercase bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded text-white/70"
                         >
                           ACK
                         </button>
@@ -163,7 +163,7 @@ export const AlertBox = () => {
             <div className="text-white/20 pt-2 animate-pulse">_</div>
           </div>
         </ScrollArea>
-      </CardContent>
-    </Card>
+      </CardContent >
+    </Card >
   );
 };

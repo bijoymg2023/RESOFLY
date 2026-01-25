@@ -85,3 +85,32 @@ def get_camera(type='thermal'):
     if thermal_instance is None:
         thermal_instance = StreamProxyCamera()
     return thermal_instance
+
+def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
+    """
+    Connects to the stream, grabs one frame cleanly, and returns JPEG bytes.
+    Uses OpenCV which handles buffering/sync better than raw sockets.
+    """
+    try:
+        cap = cv2.VideoCapture(stream_url)
+        if not cap.isOpened():
+            print(f"Error: Could not open stream {stream_url}")
+            return None
+            
+        # Try to grab a frame
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret or frame is None:
+            print("Error: Could not read frame from capture")
+            return None
+            
+        # Convert to JPEG bytes
+        success, buffer = cv2.imencode('.jpg', frame)
+        if not success:
+            return None
+            
+        return buffer.tobytes()
+    except Exception as e:
+        print(f"Capture Exception: {e}")
+        return None
