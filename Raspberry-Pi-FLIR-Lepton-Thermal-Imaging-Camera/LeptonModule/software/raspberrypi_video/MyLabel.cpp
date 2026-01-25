@@ -153,13 +153,15 @@ void MyLabel::paintEvent(QPaintEvent *event) {
     p.restore();
   }
 
-  // 3) logo
+  // 3) logo - DISABLED
+  /*
   if (!m_logo.isNull()) {
     int w = (m_logo.width() * m_logoHeight) / std::max(1, m_logo.height());
     QRect r(m_logoMargin, height() - m_logoMargin - m_logoHeight, w,
             m_logoHeight);
     p.drawPixmap(r, m_logo);
   }
+  */
 
   {
     QMutexLocker lk(&m_compMtx);
