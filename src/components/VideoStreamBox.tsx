@@ -84,7 +84,7 @@ export const VideoStreamBox = () => {
               <img
                 src={getStreamUrl('Thermal')}
                 alt="Thermal Stream"
-                className="w-full h-full object-cover"
+                className="w-full h-full object-fill"
                 key="thermal-stream"
               />
               {/* Enhanced Thermal Color Grading */}

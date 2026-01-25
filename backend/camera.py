@@ -69,31 +69,39 @@ class StreamProxyCamera(BaseCamera):
                     last_frame_received = time.time()
                     
                     # Iterate over chunks
-                    for chunk in stream.iter_content(chunk_size=1024):
+                # Iterate over chunks with larger buffer for speed
+                    for chunk in stream.iter_content(chunk_size=16384):
                         if not self.running: break
                         bytes_data += chunk
                         
-                        # Look for JPEG boundaries: 0xFF 0xD8 (Start) ... 0xFF 0xD9 (End)
-                        a = bytes_data.find(b'\xff\xd8')
-                        b = bytes_data.find(b'\xff\xd9')
-                        
-                        if a != -1 and b != -1:
-                            # We have a full JPEG
-                            jpg = bytes_data[a:b+2]
-                            bytes_data = bytes_data[b+2:] # Keep the remainder
+                        # Find JPEG markers (Start: 0xFFD8, End: 0xFFD9)
+                        while True:
+                            a = bytes_data.find(b'\xff\xd8')
+                            b = bytes_data.find(b'\xff\xd9')
                             
-                            self.frame = jpg
-                            self.last_frame_time = time.time()
-                            last_frame_received = time.time()
+                            if a != -1 and b != -1:
+                                # Found a complete frame
+                                jpg = bytes_data[a:b+2]
+                                bytes_data = bytes_data[b+2:] # Keep remainder
+                                
+                                self.frame = jpg
+                                self.last_frame_time = time.time()
+                                last_frame_received = time.time()
+                            else:
+                                break # Need more data
                         
-                        # Heartbeat check: if no new frame for 10 seconds, force reconnect
+                        # Prevent buffer bloat if no end marker found
+                        if len(bytes_data) > 1000000:
+                            bytes_data = bytes()
+                        
+                        # Heartbeat check
                         if time.time() - last_frame_received > 10:
                             print("Stream heartbeat timeout (10s). Forcing reconnect...")
                             stream.close()
                             break
                 else:
                     print(f"Stream returned status: {stream.status_code}")
-                    time.sleep(2)
+                    time.sleep(1)
                     
             except Exception as e:
                 print(f"Stream Read Error: {e}")
