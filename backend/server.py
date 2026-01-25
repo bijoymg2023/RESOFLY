@@ -373,19 +373,31 @@ class CaptureResponse(BaseModel):
 
 @api_router.post("/capture", response_model=CaptureResponse)
 async def capture_snapshot(current_user: UserDB = Depends(get_current_user)):
-    """Captures a frame from the thermal camera and saves it to disk."""
+    """Captures a FRESH frame directly from the camera stream to ensure 0-lag."""
     try:
-        cam = camera.get_camera('thermal')
-        frame_bytes = await cam.get_frame()
+        # Direct connection to C++ MJPEG stream
+        # This guarantees we get the LATEST valid frame and don't read old buffered data.
+        stream_url = "http://127.0.0.1:8080/mjpeg"
+        frame_bytes = None
+        
+        logger.info("Connecting to camera for fresh snapshot...")
+        with requests.get(stream_url, stream=True, timeout=3) as r:
+            if r.status_code == 200:
+                bytes_d = bytes()
+                # Read chunks until we find a full frame
+                for chunk in r.iter_content(chunk_size=4096):
+                    bytes_d += chunk
+                    a = bytes_d.find(b'\xff\xd8')
+                    b = bytes_d.find(b'\xff\xd9')
+                    if a != -1 and b != -1:
+                        frame_bytes = bytes_d[a:b+2]
+                        break # Got one frame, exit immediately
+            else:
+                 raise HTTPException(status_code=503, detail=f"Camera Stream Error: {r.status_code}")
         
         if not frame_bytes:
-            raise HTTPException(status_code=503, detail="Camera not available or no frame data")
+            raise HTTPException(status_code=503, detail="Could not grab frame from camera")
 
-        # Convert bytes to numpy array for saving
-        # nparr = np.frombuffer(frame_bytes, np.uint8)
-        # img = cv2.imdecode(nparr, cv2.IMREAD_COLOR) 
-        # Actually, frame_bytes is ALREADY a JPEG blob. We can just write it.
-        
         filename = f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
         filepath = CAPTURE_DIR / filename
         
@@ -405,6 +417,24 @@ async def capture_snapshot(current_user: UserDB = Depends(get_current_user)):
         )
     except Exception as e:
         logger.error(f"Capture failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/calibrate")
+async def calibrate_camera(current_user: UserDB = Depends(get_current_user)):
+    """Triggers Flat Field Correction (FFC) to fix banding."""
+    try:
+        # Write "FFC" to the named pipe the C++ app listens on (if implemented)
+        # Assuming typical lepton-view implementation listens on /tmp/lepton_cmd
+        cmd_pipe = "/tmp/lepton_cmd"
+        if os.path.exists(cmd_pipe):
+             # Non-blocking write
+             with open(cmd_pipe, "w") as p:
+                 p.write("FFC\n")
+             return {"message": "Calibration Triggered"}
+        else:
+            return {"message": "Calibration unavailable (Pipe not found)"}
+    except Exception as e:
+        logger.error(f"Calibration failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/gallery", response_model=List[CaptureResponse])

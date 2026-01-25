@@ -20,7 +20,7 @@ export const ThermalHeatMap = () => {
         const row = [];
         for (let j = 0; j < gridSize; j++) {
           // Create some interesting patterns
-          const centerDistance = Math.sqrt(Math.pow(i - gridSize/2, 2) + Math.pow(j - gridSize/2, 2));
+          const centerDistance = Math.sqrt(Math.pow(i - gridSize / 2, 2) + Math.pow(j - gridSize / 2, 2));
           const noise = (Math.random() - 0.5) * 8;
           const baseTemp = 25 + Math.sin(centerDistance * 0.5) * 10 + noise;
           row.push(Math.max(15, Math.min(45, baseTemp)));
@@ -33,7 +33,7 @@ export const ThermalHeatMap = () => {
     const updateData = () => {
       const newData = generateHeatMapData();
       setTemperatureData(newData);
-      
+
       const flatData = newData.flat();
       setMaxTemp(Math.max(...flatData));
       setMinTemp(Math.min(...flatData));
@@ -47,7 +47,7 @@ export const ThermalHeatMap = () => {
 
   const getTemperatureColor = (temp: number) => {
     const normalized = (temp - 15) / (45 - 15);
-    
+
     if (normalized < 0.3) {
       return `hsl(220, 100%, ${70 + normalized * 30}%)`;
     } else if (normalized < 0.7) {
@@ -60,96 +60,95 @@ export const ThermalHeatMap = () => {
   const gridSize = isMobile ? 12 : 16;
 
   return (
-    <Card className="h-full bg-dashboard-panel border-dashboard-panel-border">
-      <CardHeader className="pb-3 sm:pb-4">
+    <Card className="h-full bg-black/80 border border-white/10 overflow-hidden relative shadow-lg flex flex-col">
+      {/* Background Grid */}
+      <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(0,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none" />
+
+      <CardHeader className="py-3 px-4 border-b border-white/5 bg-white/[0.02]">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center text-base sm:text-lg">
-            <Thermometer className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+          <CardTitle className="flex items-center text-xs font-mono uppercase tracking-widest text-white/80">
+            <Thermometer className="w-4 h-4 mr-2" />
             {isMobile ? 'Heat Map' : 'Thermal Heat Map'}
           </CardTitle>
-          <Badge variant="outline" className="bg-thermal/20 text-thermal border-thermal/30 text-xs sm:text-sm">
-            <TrendingUp className="w-2 h-2 sm:w-3 sm:h-3 mr-1" />
-            Live
+          <Badge variant="outline" className="bg-red-500/10 text-red-500 border-red-500/20 text-[10px] font-mono animate-pulse">
+            <TrendingUp className="w-3 h-3 mr-1" />
+            LIVE
           </Badge>
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 flex flex-col overflow-hidden">
-        {/* Temperature Stats - Mobile Optimized */}
-        <div className="grid grid-cols-3 gap-2 mb-3 flex-shrink-0">
-          <div className="text-center p-2 sm:p-3 bg-muted/20 rounded-lg border border-dashboard-panel-border">
-            <p className="text-xs text-muted-foreground mb-1">Min</p>
-            <p className="text-sm font-bold text-primary">{minTemp.toFixed(1)}°C</p>
+      <CardContent className="flex-1 flex flex-col p-4 relative z-10">
+        {/* Temperature Stats */}
+        <div className="grid grid-cols-3 gap-2 mb-4 flex-shrink-0">
+          <div className="text-center p-2 bg-white/5 rounded border border-white/10">
+            <p className="text-[9px] text-white/40 uppercase tracking-wider mb-1">Min</p>
+            <p className="text-xs font-bold text-cyan-400 font-mono">{minTemp.toFixed(1)}°C</p>
           </div>
-          <div className="text-center p-2 sm:p-3 bg-muted/20 rounded-lg border border-dashboard-panel-border">
-            <p className="text-xs text-muted-foreground mb-1">Avg</p>
-            <p className="text-sm font-bold text-foreground">{avgTemp.toFixed(1)}°C</p>
+          <div className="text-center p-2 bg-white/5 rounded border border-white/10">
+            <p className="text-[9px] text-white/40 uppercase tracking-wider mb-1">Avg</p>
+            <p className="text-xs font-bold text-white font-mono">{avgTemp.toFixed(1)}°C</p>
           </div>
-          <div className="text-center p-2 sm:p-3 bg-muted/20 rounded-lg border border-dashboard-panel-border">
-            <p className="text-xs text-muted-foreground mb-1">Max</p>
-            <p className="text-sm font-bold text-thermal">{maxTemp.toFixed(1)}°C</p>
+          <div className="text-center p-2 bg-white/5 rounded border border-white/10">
+            <p className="text-[9px] text-white/40 uppercase tracking-wider mb-1">Max</p>
+            <p className="text-xs font-bold text-red-500 font-mono">{maxTemp.toFixed(1)}°C</p>
           </div>
         </div>
 
-        {/* Heat Map Grid - Mobile Responsive */}
-        <div className="flex-1 bg-muted/10 rounded-lg p-2 sm:p-3 border border-dashboard-panel-border overflow-hidden">
-          <div 
-            className={`grid gap-0.5 h-full w-full mx-auto aspect-square ${
-              isMobile ? 'max-h-[200px] max-w-[200px]' : 'max-h-[240px] max-w-[240px]'
-            }`}
-            style={{ 
-              gridTemplateColumns: `repeat(${gridSize}, 1fr)`, 
-              gridTemplateRows: `repeat(${gridSize}, 1fr)` 
+        {/* Heat Map Grid */}
+        <div className="flex-1 flex items-center justify-center p-2 border border-white/5 bg-black/50 rounded-lg shadow-inner overflow-hidden relative">
+
+          {/* Scanline */}
+          <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-500/30 animate-scan pointer-events-none z-20 shadow-[0_0_10px_rgba(34,211,238,0.5)]" />
+
+          <div
+            className={`grid gap-[2px]`}
+            style={{
+              gridTemplateColumns: `repeat(${gridSize}, 1fr)`,
+              gridTemplateRows: `repeat(${gridSize}, 1fr)`,
+              width: '100%',
+              maxWidth: '240px',
+              aspectRatio: '1/1'
             }}
           >
             {temperatureData.map((row, i) =>
               row.map((temp, j) => (
                 <div
                   key={`${i}-${j}`}
-                  className={`rounded-sm transition-all duration-300 relative group ${
-                    isMobile ? 'hover:scale-105' : 'hover:scale-110 hover:z-10'
-                  }`}
+                  className="rounded-[1px] transition-colors duration-500 relative"
                   style={{
                     backgroundColor: getTemperatureColor(temp),
+                    opacity: 0.9
                   }}
                   title={`${temp.toFixed(1)}°C`}
-                >
-                  <div className="absolute inset-0 bg-background/0 group-hover:bg-background/20 rounded-sm" />
-                </div>
+                />
               ))
             )}
           </div>
         </div>
 
-        {/* Temperature Scale - Mobile Optimized */}
-        <div className="mt-3 flex-shrink-0">
-          <div className="flex justify-between text-xs text-muted-foreground mb-1">
+        {/* Temperature Scale */}
+        <div className="mt-4 flex-shrink-0">
+          <div className="flex justify-between text-[9px] text-white/30 mb-1 uppercase tracking-wider font-mono">
             <span>Cool</span>
             <span>Hot</span>
           </div>
-          <div 
-            className="h-1.5 rounded-full"
+          <div
+            className="h-1 rounded-full relative"
             style={{
               background: 'linear-gradient(to right, hsl(220, 100%, 70%), hsl(60, 100%, 70%), hsl(14, 100%, 70%))'
             }}
-          />
-          <div className="flex justify-between text-xs text-muted-foreground mt-1">
+          >
+            {/* Indicator for Avg Temp */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-white border border-black rounded-full shadow-lg transition-all duration-1000"
+              style={{ left: `${((avgTemp - 15) / (45 - 15)) * 100}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[9px] text-white/30 mt-1 font-mono">
             <span>15°C</span>
             <span>45°C</span>
           </div>
         </div>
-
-        {/* Alert for high temperatures */}
-        {maxTemp > 40 && (
-          <div className="mt-2 p-2 bg-warning/20 border border-warning/30 rounded-lg flex-shrink-0">
-            <div className="flex items-center text-warning">
-              <AlertTriangle className="w-3 h-3 mr-2" />
-              <span className="text-xs font-medium">
-                {isMobile ? 'High temperature detected' : 'High temperature detected in thermal zone'}
-              </span>
-            </div>
-          </div>
-        )}
       </CardContent>
     </Card>
   );

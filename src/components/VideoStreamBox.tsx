@@ -6,13 +6,11 @@ import {
   Camera,
   Layers,
   Image as ImageIcon,
-  Maximize,
-  Settings,
+  ScanLine,
   Video,
   Thermometer,
-  Play,
-  Pause,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 interface Capture {
@@ -28,6 +26,7 @@ export const VideoStreamBox = () => {
   const [latestCapture, setLatestCapture] = useState<Capture | null>(null);
   const [gallery, setGallery] = useState<Capture[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isCalibrating, setIsCalibrating] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const { token } = useAuth();
   const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
@@ -80,6 +79,20 @@ export const VideoStreamBox = () => {
     }
   };
 
+  const handleCalibrate = async () => {
+    setIsCalibrating(true);
+    try {
+      await fetch('/api/calibrate', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      // Wait a clearer visual indicator time
+      setTimeout(() => setIsCalibrating(false), 2000);
+    } catch (e) {
+      setIsCalibrating(false);
+    }
+  };
+
   const videoTypes = [
     { key: 'RGB' as VideoType, label: 'OPTICAL', icon: Video },
     { key: 'Thermal' as VideoType, label: 'THERMAL', icon: Thermometer },
@@ -87,7 +100,7 @@ export const VideoStreamBox = () => {
   ];
 
   return (
-    <Card className="h-full bg-[#0A0A0A] border border-white/10 overflow-hidden relative group shadow-2xl flex flex-col">
+    <Card className="h-full bg-black border border-white/10 overflow-hidden relative group shadow-2xl flex flex-col rounded-xl">
       {/* Header / Tabs */}
       <div className="absolute top-0 left-0 right-0 z-20 flex justify-between items-start p-4 bg-gradient-to-b from-black/90 to-transparent pointer-events-none">
         {/* Stream Type Tabs */}
@@ -109,24 +122,41 @@ export const VideoStreamBox = () => {
           ))}
         </div>
 
-        {/* Capture Action (Only in Thermal) */}
+        {/* Actions (Only in Thermal) */}
         {activeType === 'Thermal' && (
-          <div className="pointer-events-auto">
+          <div className="pointer-events-auto flex space-x-2">
+            {/* Calibrate Button */}
+            <Button
+              onClick={handleCalibrate}
+              disabled={isCalibrating || isCapturing}
+              size="sm"
+              variant="outline"
+              className={`border-white/20 bg-black/40 text-cyan-500 hover:text-cyan-400 text-[10px] h-8 ${isCalibrating ? 'animate-pulse border-cyan-500' : ''}`}
+            >
+              <RefreshCw className={`w-3 h-3 mr-2 ${isCalibrating ? 'animate-spin' : ''}`} />
+              {isCalibrating ? 'CALIBRATING' : 'FFC'}
+            </Button>
+
+            {/* Capture Button */}
             <Button
               onClick={handleCapture}
               disabled={isCapturing}
-              className={`bg-red-600 hover:bg-red-500 text-white font-bold tracking-wider border border-red-400/30 shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all ${isCapturing ? 'opacity-50' : ''}`}
+              size="sm"
+              className={`bg-red-600 hover:bg-red-500 text-white font-bold tracking-wider border border-red-400/30 shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all h-8 ${isCapturing ? 'opacity-50' : ''}`}
             >
-              <Camera className={`w-4 h-4 mr-2 ${isCapturing ? 'animate-pulse' : ''}`} />
-              {isCapturing ? 'CAPTURING...' : 'CAPTURE'}
+              <Camera className={`w-3 h-3 mr-2 ${isCapturing ? 'animate-pulse' : ''}`} />
+              {isCapturing ? 'CAPTURING' : 'CAPTURE'}
             </Button>
           </div>
         )}
       </div>
 
-      <CardContent className="flex-1 p-0 h-full relative flex flex-col">
+      <CardContent className="flex-1 p-0 h-full relative flex flex-col bg-[#050505]">
         {/* Content Area */}
-        <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
+        <div className="relative flex-1 flex items-center justify-center overflow-hidden">
+
+          {/* Background Grid */}
+          <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]" />
 
           {activeType === 'Thermal' ? (
             <>
@@ -138,12 +168,12 @@ export const VideoStreamBox = () => {
                   className="w-full h-full object-contain transition-opacity duration-300"
                 />
               ) : (
-                <div className="text-white/30 font-mono flex flex-col items-center">
-                  <ImageIcon className="w-12 h-12 mb-4 opacity-20" />
-                  <p>NO IMAGES CAPTURED</p>
+                <div className="text-white/30 font-mono flex flex-col items-center z-10">
+                  <ImageIcon className="w-16 h-16 mb-4 opacity-10" />
+                  <p className="tracking-widest text-xs">NO IMAGES CAPTURED</p>
                   {captureError && (
-                    <div className="mt-4 text-red-500 bg-red-500/10 px-4 py-2 rounded border border-red-500/20 flex items-center">
-                      <AlertCircle className="w-4 h-4 mr-2" />
+                    <div className="mt-4 text-red-500 bg-red-500/10 px-4 py-2 rounded border border-red-500/20 flex items-center text-xs">
+                      <AlertCircle className="w-3 h-3 mr-2" />
                       {captureError}
                     </div>
                   )}
@@ -155,64 +185,77 @@ export const VideoStreamBox = () => {
                 <div className="absolute inset-0 bg-white animate-flash pointer-events-none z-50 mix-blend-overlay" />
               )}
 
-              {/* Timestamp Info */}
-              {selectedImage && (
-                <div className="absolute bottom-6 right-6 text-right font-mono text-[10px] text-cyan-500/60 bg-black/60 px-2 py-1 rounded backdrop-blur z-20">
-                  <div>FILE: {selectedImage.filename}</div>
-                  <div>TIME: {selectedImage.timestamp}</div>
+              {/* Calibration Overlay */}
+              {isCalibrating && (
+                <div className="absolute inset-0 bg-black/80 z-40 flex items-center justify-center backdrop-blur-sm">
+                  <div className="text-cyan-500 font-mono text-sm animate-pulse tracking-widest">
+                    CALIBRATING SENSOR...
+                  </div>
                 </div>
               )}
+
+              {/* Timestamp Info */}
+              {selectedImage && (
+                <div className="absolute top-20 right-4 text-right font-mono text-[9px] text-cyan-500/60 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
+                  <div>ID: {selectedImage.filename.substring(8, 20)}...</div>
+                  <div>TS: {selectedImage.timestamp}</div>
+                </div>
+              )}
+
+              {/* Gallery Strip (Overlay at Bottom) */}
+              <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black via-black/80 to-transparent flex items-end px-4 pb-4 space-x-2 overflow-x-auto z-30 group-hover:opacity-100 transition-opacity duration-500 scrollbar-none mask-image-gradient">
+                {gallery.map((img) => (
+                  <button
+                    key={img.filename}
+                    onClick={() => setSelectedImage(img)}
+                    className={`relative h-12 w-16 min-w-[64px] rounded border overflow-hidden transition-all hover:scale-110 hover:border-white ${selectedImage?.filename === img.filename ? 'border-cyan-500 opacity-100 ring-1 ring-cyan-500/50' : 'border-white/10 opacity-50 grayscale hover:grayscale-0'}`}
+                  >
+                    <img src={img.url} alt="thumbnail" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+
             </>
           ) : (
             /* Offline / Placeholder for RGB/Fusion */
-            <div className="flex flex-col items-center justify-center h-full bg-black">
-              <div className="relative">
-                {activeType === 'RGB' ? <Video className="w-20 h-20 text-red-500/20" /> : <Layers className="w-20 h-20 text-yellow-500/20" />}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className={`w-16 h-[2px] rotate-45 ${activeType === 'RGB' ? 'bg-red-500/50' : 'bg-yellow-500/50'}`} />
+            <div className="flex flex-col items-center justify-center h-full w-full bg-black relative overflow-hidden">
+              {/* Static Noise Animation */}
+              <div className="absolute inset-0 opacity-5 bg-[url('https://upload.wikimedia.org/wikipedia/commons/7/76/Noise_tv.gif')] bg-repeat opacity-10 mix-blend-overlay pointer-events-none" />
+
+              <div className="z-10 flex flex-col items-center">
+                <div className="relative mb-6">
+                  {activeType === 'RGB' ? <Video className="w-16 h-16 text-red-900/40" /> : <Layers className="w-16 h-16 text-yellow-900/40" />}
+                  <ScanLine className="absolute inset-0 w-16 h-16 text-white/5 animate-scan" />
                 </div>
+
+                <div className="flex items-center space-x-2 px-4 py-1 bg-white/5 rounded border border-white/10 backdrop-blur">
+                  <div className={`w-2 h-2 rounded-full animate-pulse ${activeType === 'RGB' ? 'bg-red-500' : 'bg-yellow-500'}`} />
+                  <span className="font-mono text-xl font-bold tracking-[0.2em] text-white/40">NO SIGNAL</span>
+                </div>
+                <p className="font-mono text-[9px] text-white/20 mt-3 tracking-widest uppercase">
+                  {activeType === 'RGB' ? 'Optical Feed Disconnected' : 'Fusion Sensor Unavailable'}
+                </p>
               </div>
-              <p className={`font-mono text-2xl font-bold mt-6 tracking-[0.3em] ${activeType === 'RGB' ? 'text-red-500/80' : 'text-yellow-500/80'}`}>
-                OFFLINE
-              </p>
-              <p className="font-mono text-[10px] text-white/30 mt-2 tracking-widest">{activeType === 'RGB' ? 'OPTICAL SENSOR' : 'FUSION MODE'}</p>
             </div>
           )}
 
           {/* HUD Overlay (Static - Always visible on Thermal) */}
           {activeType === 'Thermal' && (
-            <div className="absolute inset-4 pointer-events-none z-10 border border-white/5 rounded-lg opacity-50">
-              <div className="absolute top-0 left-0 w-4 h-4 border-l border-t border-cyan-500/30" />
-              <div className="absolute top-0 right-0 w-4 h-4 border-r border-t border-cyan-500/30" />
-              <div className="absolute bottom-0 left-0 w-4 h-4 border-l border-b border-cyan-500/30" />
-              <div className="absolute bottom-0 right-0 w-4 h-4 border-r border-b border-cyan-500/30" />
+            <div className="absolute inset-4 pointer-events-none z-10 border border-white/5 rounded-lg opacity-30">
+              <div className="absolute top-0 left-0 w-4 h-4 border-l-2 border-t-2 border-cyan-500/30" />
+              <div className="absolute top-0 right-0 w-4 h-4 border-r-2 border-t-2 border-cyan-500/30" />
+              <div className="absolute bottom-0 left-0 w-4 h-4 border-l-2 border-b-2 border-cyan-500/30" />
+              <div className="absolute bottom-0 right-0 w-4 h-4 border-r-2 border-b-2 border-cyan-500/30" />
 
-              {/* Crosshair */}
+              {/* Center Crosshair */}
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-20">
-                <div className="w-8 h-8 border border-white/50 rounded-full" />
-                <div className="w-1 h-1 bg-cyan-400 rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                <div className="w-8 h-8 border border-white/50 rounded-full flex items-center justify-center">
+                  <div className="w-0.5 h-0.5 bg-cyan-400" />
+                </div>
               </div>
             </div>
           )}
         </div>
-
-        {/* Gallery Strip (Bottom - Only for Thermal) */}
-        {activeType === 'Thermal' && (
-          <div className="h-24 bg-black/90 border-t border-white/10 flex items-center px-4 space-x-2 overflow-x-auto scrollbar-thin scrollbar-thumb-white/20">
-            {gallery.length === 0 && (
-              <span className="text-xs text-white/20 font-mono w-full text-center">GALLERY EMPTY</span>
-            )}
-            {gallery.map((img) => (
-              <button
-                key={img.filename}
-                onClick={() => setSelectedImage(img)}
-                className={`relative h-20 min-w-[100px] border-2 rounded overflow-hidden transition-all ${selectedImage?.filename === img.filename ? 'border-cyan-500 opacity-100 scale-105' : 'border-transparent opacity-50 hover:opacity-100'}`}
-              >
-                <img src={img.url} alt="thumbnail" className="w-full h-full object-cover" />
-              </button>
-            ))}
-          </div>
-        )}
       </CardContent>
     </Card>
   );

@@ -121,12 +121,11 @@ export const AlertBox = () => {
         {/* CRT Scanline Effect */}
         <div className="absolute inset-0 pointer-events-none z-10 opacity-5 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))]" style={{ backgroundSize: "100% 2px, 3px 100%" }} />
 
-        <ScrollArea className="h-full">
-          <div className="p-4 space-y-1">
+        <ScrollArea className="h-[200px] sm:h-[250px] pr-4">
+          <div className="space-y-1">
             {alerts.length === 0 ? (
-              <div className="text-white/20 italic p-2">
-                <span>{'>'} No active system events...</span>
-                <span className="animate-pulse">_</span>
+              <div className="text-white/20 italic p-2 text-center text-xs">
+                <span>{'>'} System Systems Normal...</span>
               </div>
             ) : (
               alerts.map((alert) => {
@@ -134,15 +133,15 @@ export const AlertBox = () => {
                 return (
                   <div
                     key={alert.id}
-                    className={`group flex items-start space-x-3 p-1.5 hover:bg-white/5 rounded transition-colors cursor-default ${alert.acknowledged ? 'opacity-40' : 'opacity-100'}`}
+                    className={`group flex items-start space-x-2 p-1.5 hover:bg-white/5 rounded transition-colors cursor-default ${alert.acknowledged ? 'opacity-40' : 'opacity-100'}`}
                   >
-                    <span className="text-white/30 shrink-0">
-                      [{alert.timestamp.toLocaleTimeString([], { hour12: false })}]
+                    <span className="text-white/30 shrink-0 font-mono text-[10px]">
+                      {alert.timestamp.toLocaleTimeString([], { hour12: false })}
                     </span>
-                    <span className={`uppercase font-bold shrink-0 ${config.textColor}`}>
+                    <span className={`uppercase font-bold shrink-0 text-[10px] ${config.textColor}`}>
                       {alert.type}
                     </span>
-                    <span className="text-white/80 flex-1 truncate">
+                    <span className="text-white/80 flex-1 truncate text-[10px]">
                       {alert.message}
                     </span>
 
