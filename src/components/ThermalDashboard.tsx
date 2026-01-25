@@ -190,7 +190,7 @@ const ThermalDashboard = () => {
           <div className="xl:col-span-8 space-y-4 lg:space-y-6">
 
             {/* Primary content constraint */}
-            <div className="min-h-[250px] sm:min-h-[350px] md:min-h-[450px]">
+            <div className="min-h-[400px] sm:min-h-[500px] md:min-h-[600px] lg:min-h-[700px]">
               <VideoStreamBox />
             </div>
 
