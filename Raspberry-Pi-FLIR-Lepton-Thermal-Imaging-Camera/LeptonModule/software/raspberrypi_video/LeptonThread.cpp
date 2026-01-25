@@ -28,8 +28,9 @@ LeptonThread::LeptonThread() {
   myImageHeight = 60;
 
   //
-  spiSpeed =
-      20 * 1000 * 1000; // SPI bus speed 20MHz (Required for Lepton 3.x sync)
+  // spiSpeed = 20 * 1000 * 1000; // 20MHz
+  spiSpeed = 5 * 1000 * 1000; // 5MHz (Safe Mode) // SPI bus speed 20MHz
+                              // (Required for Lepton 3.x sync)
 
   // min/max value for scaling
   autoRangeMin = true;
