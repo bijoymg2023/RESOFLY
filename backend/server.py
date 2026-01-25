@@ -7,6 +7,8 @@ from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
 import asyncio
+import glob
+import cv2
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -358,6 +360,79 @@ async def video_feed_rgb(token: Optional[str] = None):
 
 
 # --------------------------
+# Snapshot / Gallery API
+# --------------------------
+
+CAPTURE_DIR = ROOT_DIR / "static" / "captures"
+CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
+
+class CaptureResponse(BaseModel):
+    url: str
+    filename: str
+    timestamp: str
+
+@api_router.post("/capture", response_model=CaptureResponse)
+async def capture_snapshot(current_user: UserDB = Depends(get_current_user)):
+    """Captures a frame from the thermal camera and saves it to disk."""
+    try:
+        cam = camera.get_camera('thermal')
+        frame_bytes = await cam.get_frame()
+        
+        if not frame_bytes:
+            raise HTTPException(status_code=503, detail="Camera not available or no frame data")
+
+        # Convert bytes to numpy array for saving
+        # nparr = np.frombuffer(frame_bytes, np.uint8)
+        # img = cv2.imdecode(nparr, cv2.IMREAD_COLOR) 
+        # Actually, frame_bytes is ALREADY a JPEG blob. We can just write it.
+        
+        filename = f"capture_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
+        filepath = CAPTURE_DIR / filename
+        
+        with open(filepath, "wb") as f:
+            f.write(frame_bytes)
+            
+        # Clean up old images (Keep last 100)
+        files = sorted(glob.glob(str(CAPTURE_DIR / "capture_*.jpg")))
+        if len(files) > 100:
+            for f in files[:-100]:
+                os.remove(f)
+
+        return CaptureResponse(
+            url=f"/static/captures/{filename}",
+            filename=filename,
+            timestamp=datetime.now().isoformat()
+        )
+    except Exception as e:
+        logger.error(f"Capture failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/gallery", response_model=List[CaptureResponse])
+async def get_gallery(current_user: UserDB = Depends(get_current_user)):
+    """Returns list of captured images, sorted newest first."""
+    files = sorted(glob.glob(str(CAPTURE_DIR / "capture_*.jpg")), reverse=True)
+    response = []
+    
+    for f in files:
+        filename = os.path.basename(f)
+        # Extract timestamp from filename capture_YYYYMMDD_HHMMSS_micros.jpg
+        # Or just use file mtime? Filename is safer if touched.
+        try:
+            ts_str = filename.replace("capture_", "").replace(".jpg", "")
+            # Basic parsing or just return isoformat of mtime
+            timestamp = datetime.fromtimestamp(os.path.getmtime(f)).isoformat()
+        except:
+            timestamp = ""
+            
+        response.append(CaptureResponse(
+            url=f"/static/captures/{filename}",
+            filename=filename,
+            timestamp=timestamp
+        ))
+    return response
+
+
+# --------------------------
 # App Application
 # --------------------------
 app = FastAPI(title="RESOFLY API")
@@ -462,6 +537,9 @@ app.include_router(api_router)
 # Static Files & SPA Fallback
 if os.path.exists("../dist"):
     app.mount("/assets", StaticFiles(directory="../dist/assets"), name="assets")
+    
+    # Mount Static Captures
+    app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
     
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
