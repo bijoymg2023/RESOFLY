@@ -121,7 +121,7 @@ export const AlertBox = () => {
         {/* CRT Scanline Effect */}
         <div className="absolute inset-0 pointer-events-none z-10 opacity-5 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))]" style={{ backgroundSize: "100% 2px, 3px 100%" }} />
 
-        <ScrollArea className="h-[200px] sm:h-[250px] pr-4">
+        <ScrollArea className="flex-1 w-full h-full pr-4">
           <div className="space-y-1">
             {alerts.length === 0 ? (
               <div className="text-white/20 italic p-2 text-center text-xs">

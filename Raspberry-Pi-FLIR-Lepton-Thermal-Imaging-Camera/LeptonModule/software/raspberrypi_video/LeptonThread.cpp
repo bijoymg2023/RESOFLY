@@ -29,8 +29,7 @@ LeptonThread::LeptonThread() {
 
   //
   // spiSpeed = 20 * 1000 * 1000; // 20MHz
-  spiSpeed = 5 * 1000 * 1000; // 5MHz (Safe Mode) // SPI bus speed 20MHz
-                              // (Required for Lepton 3.x sync)
+  spiSpeed = 18 * 1000 * 1000; // 18MHz (Optimal for Lepton 3.x Sync)
 
   // min/max value for scaling
   autoRangeMin = true;
