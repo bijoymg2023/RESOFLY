@@ -21,7 +21,7 @@ LAPTOP_IP = "192.168.10.1"      # Laptop static IP (send raw data here)
 LAPTOP_PORT = 5005              # UDP port for raw data
 PI_RECEIVE_PORT = 5006          # UDP port to receive processed frames
 HTTP_PORT = 8080                # MJPEG stream port
-SPI_SPEED = 20000000            # 20 MHz SPI clock
+SPI_SPEED = 5000000             # 5 MHz SPI clock (lowered for stability)
 
 # Lepton 3.5 specs
 PACKET_SIZE = 164
