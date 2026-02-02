@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -10,7 +10,9 @@ import {
   Video,
   Thermometer,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Radio,
+  Grid
 } from 'lucide-react';
 
 interface Capture {
@@ -20,21 +22,37 @@ interface Capture {
 }
 
 type VideoType = 'RGB' | 'Thermal' | 'Overlay';
+type ThermalMode = 'live' | 'gallery';
 
 export const VideoStreamBox = () => {
   const [activeType, setActiveType] = useState<VideoType>('Thermal');
+  const [thermalMode, setThermalMode] = useState<ThermalMode>('live');
   const [latestCapture, setLatestCapture] = useState<Capture | null>(null);
   const [gallery, setGallery] = useState<Capture[]>([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [streamError, setStreamError] = useState(false);
   const { token } = useAuth();
   const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Stream URL - connects to the forwarder on port 8080
+  const THERMAL_STREAM_URL = `${window.location.protocol}//${window.location.hostname}:8080/stream`;
 
   // Fetch gallery on mount
   useEffect(() => {
     fetchGallery();
   }, [token]);
+
+  // Handle stream errors
+  const handleStreamError = () => {
+    setStreamError(true);
+  };
+
+  const handleStreamLoad = () => {
+    setStreamError(false);
+  };
 
   const fetchGallery = async () => {
     try {
@@ -67,6 +85,8 @@ export const VideoStreamBox = () => {
         setLatestCapture(newCapture);
         setSelectedImage(newCapture);
         await fetchGallery();
+        // Switch to gallery to show the captured image
+        setThermalMode('gallery');
       } else {
         const err = await res.json();
         setCaptureError(err.detail || "Capture Failed");
@@ -86,7 +106,6 @@ export const VideoStreamBox = () => {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
-      // Wait a clearer visual indicator time
       setTimeout(() => setIsCalibrating(false), 2000);
     } catch (e) {
       setIsCalibrating(false);
@@ -125,6 +144,24 @@ export const VideoStreamBox = () => {
         {/* Actions (Only in Thermal) */}
         {activeType === 'Thermal' && (
           <div className="pointer-events-auto flex space-x-2">
+            {/* Live/Gallery Toggle */}
+            <div className="flex bg-black/40 rounded-md border border-white/20 overflow-hidden">
+              <button
+                onClick={() => setThermalMode('live')}
+                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'live' ? 'bg-green-500/20 text-green-400' : 'text-white/40'}`}
+              >
+                <Radio className="w-3 h-3" />
+                <span>LIVE</span>
+              </button>
+              <button
+                onClick={() => setThermalMode('gallery')}
+                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'gallery' ? 'bg-purple-500/20 text-purple-400' : 'text-white/40'}`}
+              >
+                <Grid className="w-3 h-3" />
+                <span>GALLERY</span>
+              </button>
+            </div>
+
             {/* Calibrate Button */}
             <Button
               onClick={handleCalibrate}
@@ -160,24 +197,83 @@ export const VideoStreamBox = () => {
 
           {activeType === 'Thermal' ? (
             <>
-              {/* Main Image */}
-              {selectedImage ? (
-                <img
-                  src={selectedImage.url}
-                  alt="Selected Thermal Capture"
-                  className="w-full h-full object-contain transition-opacity duration-300"
-                />
-              ) : (
-                <div className="text-white/30 font-mono flex flex-col items-center z-10">
-                  <ImageIcon className="w-16 h-16 mb-4 opacity-10" />
-                  <p className="tracking-widest text-xs">NO IMAGES CAPTURED</p>
-                  {captureError && (
-                    <div className="mt-4 text-red-500 bg-red-500/10 px-4 py-2 rounded border border-red-500/20 flex items-center text-xs">
-                      <AlertCircle className="w-3 h-3 mr-2" />
-                      {captureError}
+              {/* LIVE STREAM MODE */}
+              {thermalMode === 'live' ? (
+                <>
+                  {streamError ? (
+                    <div className="text-white/30 font-mono flex flex-col items-center z-10">
+                      <AlertCircle className="w-16 h-16 mb-4 text-red-500/50" />
+                      <p className="tracking-widest text-xs text-red-400">STREAM OFFLINE</p>
+                      <p className="text-[10px] mt-2 text-white/30">Check forwarder on port 8080</p>
+                      <button
+                        onClick={() => setStreamError(false)}
+                        className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
+                      >
+                        Retry Connection
+                      </button>
+                    </div>
+                  ) : (
+                    <img
+                      ref={imgRef}
+                      src={THERMAL_STREAM_URL}
+                      alt="Live Thermal Feed"
+                      className="w-full h-full object-contain"
+                      onError={handleStreamError}
+                      onLoad={handleStreamLoad}
+                    />
+                  )}
+
+                  {/* Live Indicator */}
+                  {!streamError && (
+                    <div className="absolute top-20 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
+                      <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                      <span className="font-mono text-[9px] text-red-400">LIVE</span>
                     </div>
                   )}
-                </div>
+                </>
+              ) : (
+                /* GALLERY MODE */
+                <>
+                  {selectedImage ? (
+                    <img
+                      src={selectedImage.url}
+                      alt="Selected Thermal Capture"
+                      className="w-full h-full object-contain transition-opacity duration-300"
+                    />
+                  ) : (
+                    <div className="text-white/30 font-mono flex flex-col items-center z-10">
+                      <ImageIcon className="w-16 h-16 mb-4 opacity-10" />
+                      <p className="tracking-widest text-xs">NO IMAGES CAPTURED</p>
+                      {captureError && (
+                        <div className="mt-4 text-red-500 bg-red-500/10 px-4 py-2 rounded border border-red-500/20 flex items-center text-xs">
+                          <AlertCircle className="w-3 h-3 mr-2" />
+                          {captureError}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Timestamp Info */}
+                  {selectedImage && (
+                    <div className="absolute top-20 right-4 text-right font-mono text-[9px] text-cyan-500/60 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
+                      <div>ID: {selectedImage.filename.substring(8, 20)}...</div>
+                      <div>TS: {selectedImage.timestamp}</div>
+                    </div>
+                  )}
+
+                  {/* Gallery Strip */}
+                  <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black via-black/80 to-transparent flex items-end px-4 pb-4 space-x-2 overflow-x-auto z-30 scrollbar-none">
+                    {gallery.map((img) => (
+                      <button
+                        key={img.filename}
+                        onClick={() => setSelectedImage(img)}
+                        className={`relative h-12 w-16 min-w-[64px] rounded border overflow-hidden transition-all hover:scale-110 hover:border-white ${selectedImage?.filename === img.filename ? 'border-cyan-500 opacity-100 ring-1 ring-cyan-500/50' : 'border-white/10 opacity-50 grayscale hover:grayscale-0'}`}
+                      >
+                        <img src={img.url} alt="thumbnail" className="w-full h-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </>
               )}
 
               {/* Flash Overlay */}
@@ -193,33 +289,10 @@ export const VideoStreamBox = () => {
                   </div>
                 </div>
               )}
-
-              {/* Timestamp Info */}
-              {selectedImage && (
-                <div className="absolute top-20 right-4 text-right font-mono text-[9px] text-cyan-500/60 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
-                  <div>ID: {selectedImage.filename.substring(8, 20)}...</div>
-                  <div>TS: {selectedImage.timestamp}</div>
-                </div>
-              )}
-
-              {/* Gallery Strip (Overlay at Bottom) */}
-              <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black via-black/80 to-transparent flex items-end px-4 pb-4 space-x-2 overflow-x-auto z-30 group-hover:opacity-100 transition-opacity duration-500 scrollbar-none mask-image-gradient">
-                {gallery.map((img) => (
-                  <button
-                    key={img.filename}
-                    onClick={() => setSelectedImage(img)}
-                    className={`relative h-12 w-16 min-w-[64px] rounded border overflow-hidden transition-all hover:scale-110 hover:border-white ${selectedImage?.filename === img.filename ? 'border-cyan-500 opacity-100 ring-1 ring-cyan-500/50' : 'border-white/10 opacity-50 grayscale hover:grayscale-0'}`}
-                  >
-                    <img src={img.url} alt="thumbnail" className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-
             </>
           ) : (
             /* Offline / Placeholder for RGB/Fusion */
             <div className="flex flex-col items-center justify-center h-full w-full bg-black relative overflow-hidden">
-              {/* Static Noise Animation */}
               <div className="absolute inset-0 opacity-5 bg-[url('https://upload.wikimedia.org/wikipedia/commons/7/76/Noise_tv.gif')] bg-repeat opacity-10 mix-blend-overlay pointer-events-none" />
 
               <div className="z-10 flex flex-col items-center">
@@ -239,7 +312,7 @@ export const VideoStreamBox = () => {
             </div>
           )}
 
-          {/* HUD Overlay (Static - Always visible on Thermal) */}
+          {/* HUD Overlay */}
           {activeType === 'Thermal' && (
             <div className="absolute inset-4 pointer-events-none z-10 border border-white/5 rounded-lg opacity-30">
               <div className="absolute top-0 left-0 w-4 h-4 border-l-2 border-t-2 border-cyan-500/30" />
