@@ -111,6 +111,7 @@ def receive_processed_frames():
         
         # Buffer for reassembling chunks: {frame_num: {chunk_num: data, 'total': total_chunks, 'received': count}}
         reassembly_buffer = {}
+        max_packet_size = 65535
         
         while True:
             try:
