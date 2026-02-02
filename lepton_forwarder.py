@@ -1,116 +1,228 @@
 #!/usr/bin/env python3
 """
-Lepton Forwarder - Runs on Raspberry Pi
-Reads raw thermal frames from FLIR Lepton via SPI and forwards to laptop via UDP.
-Minimal processing to reduce Pi load.
+Lepton Forwarder (Round-Trip) - Runs on Raspberry Pi
+1. Reads raw thermal frames from FLIR Lepton via SPI
+2. Forwards raw data to laptop via UDP
+3. Receives processed JPEG frames back from laptop
+4. Serves MJPEG stream for dashboard
 """
 
 import spidev
 import socket
 import struct
+import threading
 import time
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import sys
 
 # ==== CONFIGURATION ====
-LAPTOP_IP = "192.168.10.1"  # Laptop static IP
-LAPTOP_PORT = 5005          # UDP port to send to
-SPI_SPEED = 20000000        # 20 MHz SPI clock
+LAPTOP_IP = "192.168.10.1"      # Laptop static IP (send raw data here)
+LAPTOP_PORT = 5005              # UDP port for raw data
+PI_RECEIVE_PORT = 5006          # UDP port to receive processed frames
+HTTP_PORT = 8080                # MJPEG stream port
+SPI_SPEED = 20000000            # 20 MHz SPI clock
 
 # Lepton 3.5 specs
 PACKET_SIZE = 164
 PACKETS_PER_FRAME = 60
-FRAME_WIDTH = 80
-FRAME_HEIGHT = 60
-FRAME_SIZE_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 2  # 9600 bytes (uint16)
+FRAME_WIDTH = 160               # Lepton 3.5 = 160x120
+FRAME_HEIGHT = 120
+PACKETS_PER_SEGMENT = 60
+SEGMENTS_PER_FRAME = 4          # Lepton 3.5 has 4 segments
+FRAME_SIZE_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 2  # 38400 bytes
 
-# ==== SETUP ====
-print(f"[FORWARDER] Starting Lepton Forwarder")
-print(f"[FORWARDER] Target: {LAPTOP_IP}:{LAPTOP_PORT}")
+# ==== GLOBALS ====
+current_jpeg = None
+jpeg_lock = threading.Lock()
+frame_count = 0
 
-# Initialize SPI
-spi = spidev.SpiDev()
-spi.open(0, 0)  # SPI0, CE0
-spi.max_speed_hz = SPI_SPEED
-spi.mode = 0b11  # CPOL=1, CPHA=1
-
-# Initialize UDP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-def read_frame():
-    """
-    Read a complete frame from Lepton.
-    Returns raw 16-bit pixel data as bytes (9600 bytes for 80x60).
-    """
-    frame_data = bytearray(FRAME_SIZE_BYTES)
-    row = 0
-    max_retries = 1000
-    retries = 0
+# ==== HTTP SERVER FOR MJPEG ====
+class MJPEGHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass  # Suppress logging
     
-    while row < FRAME_HEIGHT and retries < max_retries:
-        packet = spi.readbytes(PACKET_SIZE)
-        
-        # Check for discard packet (ID nibble = 0x0F)
-        if (packet[0] & 0x0F) == 0x0F:
-            retries += 1
-            continue
-        
-        packet_row = packet[1]
-        
-        # Check if we got the expected row
-        if packet_row != row:
-            # Out of sync, reset
-            row = 0
-            retries += 1
-            continue
-        
-        # Extract pixel data (skip 4-byte header)
-        for col in range(FRAME_WIDTH):
-            hi = packet[4 + col * 2]
-            lo = packet[5 + col * 2]
-            offset = (row * FRAME_WIDTH + col) * 2
-            frame_data[offset] = hi
-            frame_data[offset + 1] = lo
-        
-        row += 1
-        retries = 0
-    
-    if retries >= max_retries:
-        print("[FORWARDER] Warning: Max retries reached, partial frame")
-    
-    return bytes(frame_data)
-
-def main():
-    frame_count = 0
-    start_time = time.time()
-    
-    print("[FORWARDER] Starting frame capture and forwarding...")
-    
-    try:
-        while True:
-            # Read frame from Lepton
-            frame_data = read_frame()
+    def do_GET(self):
+        if self.path == '/stream' or self.path == '/api/stream/thermal':
+            self.send_response(200)
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
             
-            # Add frame header (frame number + timestamp)
+            try:
+                while True:
+                    with jpeg_lock:
+                        if current_jpeg:
+                            frame = current_jpeg
+                        else:
+                            # Placeholder if no frame yet
+                            frame = None
+                    
+                    if frame:
+                        self.wfile.write(b'--frame\r\n')
+                        self.wfile.write(b'Content-Type: image/jpeg\r\n\r\n')
+                        self.wfile.write(frame)
+                        self.wfile.write(b'\r\n')
+                    
+                    time.sleep(0.033)  # ~30 fps max
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        elif self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html')
+            self.end_headers()
+            html = b'''<!DOCTYPE html>
+<html><head><title>Thermal Stream</title>
+<style>body{background:#000;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;}
+img{max-width:100%;border:2px solid #0f0;}</style></head>
+<body><img src="/stream" /></body></html>'''
+            self.wfile.write(html)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def start_http_server():
+    server = HTTPServer(('0.0.0.0', HTTP_PORT), MJPEGHandler)
+    print(f"[PI] MJPEG server on port {HTTP_PORT}")
+    server.serve_forever()
+
+# ==== RECEIVE PROCESSED FRAMES FROM LAPTOP ====
+def receive_processed_frames():
+    global current_jpeg, frame_count
+    
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(('0.0.0.0', PI_RECEIVE_PORT))
+    sock.settimeout(5.0)
+    
+    print(f"[PI] Listening for processed frames on port {PI_RECEIVE_PORT}")
+    
+    # Buffer for large JPEG (may come in chunks)
+    max_packet_size = 65535
+    
+    while True:
+        try:
+            data, addr = sock.recvfrom(max_packet_size)
+            
+            if len(data) > 8:
+                # Extract header
+                frame_num, jpeg_size = struct.unpack('>II', data[:8])
+                jpeg_data = data[8:]
+                
+                with jpeg_lock:
+                    current_jpeg = jpeg_data
+                    frame_count += 1
+                
+                if frame_count % 27 == 0:
+                    print(f"[PI] Received frame {frame_num}, size {len(jpeg_data)} bytes")
+        
+        except socket.timeout:
+            print("[PI] Waiting for frames from laptop...")
+        except Exception as e:
+            print(f"[PI] Receive error: {e}")
+
+# ==== READ AND FORWARD RAW FRAMES ====
+def read_and_forward():
+    print("[PI] Initializing SPI...")
+    
+    # Initialize SPI
+    spi = spidev.SpiDev()
+    spi.open(0, 0)
+    spi.max_speed_hz = SPI_SPEED
+    spi.mode = 0b11
+    
+    # UDP socket for sending
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    print(f"[PI] Forwarding raw frames to {LAPTOP_IP}:{LAPTOP_PORT}")
+    
+    send_frame_count = 0
+    
+    while True:
+        try:
+            # Read one complete frame (4 segments for Lepton 3.5)
+            frame_data = bytearray(FRAME_SIZE_BYTES)
+            
+            for segment in range(SEGMENTS_PER_FRAME):
+                segment_row = 0
+                retries = 0
+                max_retries = 500
+                
+                while segment_row < (FRAME_HEIGHT // SEGMENTS_PER_FRAME) and retries < max_retries:
+                    packet = spi.readbytes(PACKET_SIZE)
+                    
+                    # Check for discard packet
+                    if (packet[0] & 0x0F) == 0x0F:
+                        retries += 1
+                        continue
+                    
+                    packet_row = packet[1]
+                    
+                    # For Lepton 3.5, check segment number in packet 20
+                    if packet_row == 20:
+                        pkt_segment = (packet[0] >> 4) & 0x0F
+                        if pkt_segment != (segment + 1):
+                            segment_row = 0
+                            retries += 1
+                            continue
+                    
+                    if packet_row != segment_row:
+                        segment_row = 0
+                        retries += 1
+                        continue
+                    
+                    # Extract pixel data
+                    actual_row = segment * (FRAME_HEIGHT // SEGMENTS_PER_FRAME) + segment_row
+                    for col in range(FRAME_WIDTH // 2):  # Each packet has 80 pixels
+                        hi = packet[4 + col * 2]
+                        lo = packet[5 + col * 2]
+                        # Lepton 3.5: two packets per row (left and right halves)
+                        offset = (actual_row * FRAME_WIDTH + col) * 2
+                        frame_data[offset] = hi
+                        frame_data[offset + 1] = lo
+                    
+                    segment_row += 1
+                    retries = 0
+            
+            # Pack and send frame
             timestamp = int(time.time() * 1000) & 0xFFFFFFFF
-            header = struct.pack('>II', frame_count, timestamp)
+            header = struct.pack('>II', send_frame_count, timestamp)
             
-            # Send via UDP (header + raw frame data)
-            packet = header + frame_data
+            # Send in chunks if needed (UDP limit ~65KB)
+            packet = header + bytes(frame_data)
             sock.sendto(packet, (LAPTOP_IP, LAPTOP_PORT))
             
-            frame_count += 1
+            send_frame_count += 1
             
-            # Print stats every 27 frames (~3 seconds at 9fps)
-            if frame_count % 27 == 0:
-                elapsed = time.time() - start_time
-                fps = frame_count / elapsed
-                print(f"[FORWARDER] Frames: {frame_count}, FPS: {fps:.1f}")
+            if send_frame_count % 27 == 0:
+                print(f"[PI] Sent frame {send_frame_count}")
+        
+        except Exception as e:
+            print(f"[PI] SPI read error: {e}")
+            time.sleep(0.1)
+
+# ==== MAIN ====
+def main():
+    print("=" * 50)
+    print("  LEPTON FORWARDER (Round-Trip Mode)")
+    print("=" * 50)
+    print(f"[PI] Raw data → {LAPTOP_IP}:{LAPTOP_PORT}")
+    print(f"[PI] Processed frames ← port {PI_RECEIVE_PORT}")
+    print(f"[PI] Dashboard → http://localhost:{HTTP_PORT}")
+    print("=" * 50)
     
+    # Start HTTP server thread
+    http_thread = threading.Thread(target=start_http_server, daemon=True)
+    http_thread.start()
+    
+    # Start frame receiver thread
+    receiver_thread = threading.Thread(target=receive_processed_frames, daemon=True)
+    receiver_thread.start()
+    
+    # Main thread: read SPI and forward
+    try:
+        read_and_forward()
     except KeyboardInterrupt:
-        print("\n[FORWARDER] Shutting down...")
-    finally:
-        spi.close()
-        sock.close()
+        print("\n[PI] Shutting down...")
 
 if __name__ == "__main__":
     main()

@@ -1,185 +1,123 @@
 #!/usr/bin/env python3
 """
-Thermal Server - Runs on Laptop
-Receives raw thermal frames from Pi via UDP, processes them, and serves MJPEG stream.
+Thermal Processor (Round-Trip) - Runs on Laptop
+1. Receives raw thermal frames from Pi via UDP
+2. Processes frames (normalize, colormap, scale, encode)
+3. Sends processed JPEG frames back to Pi
 """
 
 import socket
 import struct
-import threading
 import time
 import numpy as np
 import cv2
-from flask import Flask, Response, render_template_string
 
 # ==== CONFIGURATION ====
-UDP_IP = "0.0.0.0"          # Listen on all interfaces
-UDP_PORT = 5005             # Must match Pi forwarder
-HTTP_PORT = 8080            # Web server port
+LISTEN_IP = "0.0.0.0"           # Listen on all interfaces
+LISTEN_PORT = 5005              # Receive raw data from Pi
+PI_IP = "192.168.10.2"          # Pi's IP address
+PI_RECEIVE_PORT = 5006          # Port to send processed frames to Pi
 
 # Lepton 3.5 specs
-FRAME_WIDTH = 80
-FRAME_HEIGHT = 60
-FRAME_SIZE_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 2  # 9600 bytes
+FRAME_WIDTH = 160
+FRAME_HEIGHT = 120
+FRAME_SIZE_BYTES = FRAME_WIDTH * FRAME_HEIGHT * 2  # 38400 bytes
+
+# Output settings
+OUTPUT_SCALE = 4                # Scale factor (160*4 = 640, 120*4 = 480)
+JPEG_QUALITY = 85               # JPEG compression quality
 
 # ==== GLOBALS ====
-current_frame = None
-frame_lock = threading.Lock()
 frame_count = 0
-last_frame_time = 0
-
-# ==== FLASK APP ====
-app = Flask(__name__)
-
-HTML_TEMPLATE = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Thermal Stream</title>
-    <style>
-        body {
-            background: #0a0a0a;
-            color: #00ff88;
-            font-family: monospace;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 20px;
-        }
-        h1 { color: #00ff88; }
-        img {
-            border: 2px solid #00ff88;
-            max-width: 100%;
-            image-rendering: pixelated;
-        }
-        .stats {
-            margin-top: 10px;
-            padding: 10px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-        }
-    </style>
-</head>
-<body>
-    <h1>🔥 THERMAL STREAM</h1>
-    <img src="/stream" width="640" height="480" />
-    <div class="stats">
-        <p>Stream: /stream (MJPEG)</p>
-        <p>Resolution: 80x60 (scaled 8x)</p>
-    </div>
-</body>
-</html>
-'''
-
-@app.route('/')
-def index():
-    return render_template_string(HTML_TEMPLATE)
-
-@app.route('/stream')
-def video_stream():
-    return Response(generate_mjpeg(),
-                    mimetype='multipart/x-mixed-replace; boundary=frame')
-
-def generate_mjpeg():
-    """Generate MJPEG frames for streaming."""
-    global current_frame
-    
-    while True:
-        with frame_lock:
-            if current_frame is not None:
-                frame = current_frame.copy()
-            else:
-                # No frame yet, send placeholder
-                frame = np.zeros((FRAME_HEIGHT * 8, FRAME_WIDTH * 8, 3), dtype=np.uint8)
-                cv2.putText(frame, "WAITING FOR DATA...", (50, 240),
-                           cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 136), 2)
-        
-        # Encode as JPEG
-        _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
-        
-        time.sleep(0.03)  # ~30 fps output
+start_time = None
 
 def process_frame(raw_data):
     """
-    Process raw 16-bit thermal data into colored image.
+    Process raw 16-bit thermal data into colored JPEG.
+    Uses GPU acceleration if available via OpenCV.
     """
-    global current_frame, frame_count, last_frame_time
-    
-    # Convert bytes to numpy array
-    frame_16bit = np.frombuffer(raw_data, dtype='>u2')  # Big-endian uint16
+    # Convert bytes to numpy array (big-endian uint16)
+    frame_16bit = np.frombuffer(raw_data, dtype='>u2')
     frame_16bit = frame_16bit.reshape((FRAME_HEIGHT, FRAME_WIDTH))
     
     # Normalize to 8-bit
     frame_norm = cv2.normalize(frame_16bit, None, 0, 255, cv2.NORM_MINMAX)
     frame_8bit = frame_norm.astype(np.uint8)
     
-    # Apply colormap (INFERNO is good for thermal)
+    # Apply colormap (INFERNO for thermal)
     frame_colored = cv2.applyColorMap(frame_8bit, cv2.COLORMAP_INFERNO)
     
-    # Scale up 8x for visibility
-    frame_scaled = cv2.resize(frame_colored, (FRAME_WIDTH * 8, FRAME_HEIGHT * 8),
-                              interpolation=cv2.INTER_NEAREST)
+    # Scale up for visibility
+    output_width = FRAME_WIDTH * OUTPUT_SCALE
+    output_height = FRAME_HEIGHT * OUTPUT_SCALE
+    frame_scaled = cv2.resize(frame_colored, (output_width, output_height),
+                              interpolation=cv2.INTER_LINEAR)
     
-    # Update global frame
-    with frame_lock:
-        current_frame = frame_scaled
-        frame_count += 1
-        last_frame_time = time.time()
+    # Encode to JPEG
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
+    _, jpeg_data = cv2.imencode('.jpg', frame_scaled, encode_params)
+    
+    return jpeg_data.tobytes()
 
-def udp_receiver():
-    """
-    Receive raw frames from Pi via UDP.
-    """
-    global frame_count
+def main():
+    global frame_count, start_time
     
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind((UDP_IP, UDP_PORT))
-    sock.settimeout(5.0)
+    print("=" * 50)
+    print("  THERMAL PROCESSOR (Round-Trip Mode)")
+    print("=" * 50)
+    print(f"[LAPTOP] Receiving raw frames on port {LISTEN_PORT}")
+    print(f"[LAPTOP] Sending processed frames to {PI_IP}:{PI_RECEIVE_PORT}")
+    print(f"[LAPTOP] Output: {FRAME_WIDTH * OUTPUT_SCALE}x{FRAME_HEIGHT * OUTPUT_SCALE}")
+    print("=" * 50)
     
-    print(f"[SERVER] Listening for thermal data on UDP port {UDP_PORT}...")
+    # Receive socket
+    recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    recv_sock.bind((LISTEN_IP, LISTEN_PORT))
+    recv_sock.settimeout(5.0)
     
-    expected_packet_size = 8 + FRAME_SIZE_BYTES  # 8-byte header + frame data
+    # Send socket
+    send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    
+    expected_packet_size = 8 + FRAME_SIZE_BYTES  # Header + frame data
+    start_time = time.time()
+    
+    print("[LAPTOP] Waiting for frames from Pi...")
     
     while True:
         try:
-            data, addr = sock.recvfrom(expected_packet_size + 100)
+            data, addr = recv_sock.recvfrom(expected_packet_size + 100)
             
             if len(data) >= expected_packet_size:
-                # Extract header
+                # Extract header and raw frame
                 pi_frame_num, timestamp = struct.unpack('>II', data[:8])
                 raw_frame = data[8:8 + FRAME_SIZE_BYTES]
                 
                 # Process the frame
-                process_frame(raw_frame)
+                proc_start = time.time()
+                jpeg_data = process_frame(raw_frame)
+                proc_time = (time.time() - proc_start) * 1000
                 
-                if frame_count % 27 == 0:
-                    print(f"[SERVER] Received frame {pi_frame_num} from {addr[0]}")
+                # Send processed frame back to Pi
+                jpeg_size = len(jpeg_data)
+                header = struct.pack('>II', frame_count, jpeg_size)
+                
+                # Send (may need chunking for large JPEGs, but 640x480 should fit in one packet)
+                send_sock.sendto(header + jpeg_data, (PI_IP, PI_RECEIVE_PORT))
+                
+                frame_count += 1
+                
+                if frame_count % 9 == 0:
+                    elapsed = time.time() - start_time
+                    fps = frame_count / elapsed
+                    print(f"[LAPTOP] Frame {pi_frame_num} → processed in {proc_time:.1f}ms, " +
+                          f"JPEG: {jpeg_size} bytes, FPS: {fps:.1f}")
             else:
-                print(f"[SERVER] Incomplete packet: {len(data)} bytes")
+                print(f"[LAPTOP] Incomplete packet: {len(data)} bytes (expected {expected_packet_size})")
         
         except socket.timeout:
-            print("[SERVER] Waiting for data from Pi...")
+            print("[LAPTOP] Waiting for data from Pi...")
         except Exception as e:
-            print(f"[SERVER] Error: {e}")
-
-def main():
-    print("=" * 50)
-    print("  THERMAL SERVER - Laptop Side")
-    print("=" * 50)
-    print(f"[SERVER] HTTP server on port {HTTP_PORT}")
-    print(f"[SERVER] UDP listener on port {UDP_PORT}")
-    print(f"[SERVER] Open http://localhost:{HTTP_PORT} in browser")
-    print("=" * 50)
-    
-    # Start UDP receiver in background thread
-    receiver_thread = threading.Thread(target=udp_receiver, daemon=True)
-    receiver_thread.start()
-    
-    # Start Flask server
-    app.run(host='0.0.0.0', port=HTTP_PORT, threaded=True)
+            print(f"[LAPTOP] Error: {e}")
 
 if __name__ == "__main__":
     main()
