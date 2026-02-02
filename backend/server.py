@@ -348,10 +348,26 @@ async def gen_frames(camera_type='thermal'):
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
+async def proxy_thermal_stream():
+    """Proxy the thermal stream from the lepton forwarder on port 8080."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream('GET', 'http://127.0.0.1:8080/stream') as response:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+    except Exception as e:
+        logger.error(f"Thermal proxy error: {e}")
+        # Yield a placeholder frame on error
+        yield b'--frame\r\nContent-Type: text/plain\r\n\r\nStream unavailable\r\n'
+
 @api_router.get("/stream/thermal")
 async def video_feed_thermal(token: Optional[str] = None):
-    # For now, allowing public access or verify token if present
-    return StreamingResponse(gen_frames('thermal'), media_type="multipart/x-mixed-replace; boundary=frame")
+    """Proxies thermal stream from the lepton forwarder (port 8080) for Cloudflare access."""
+    return StreamingResponse(
+        proxy_thermal_stream(), 
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 @api_router.get("/stream/rgb")
 async def video_feed_rgb(token: Optional[str] = None):

@@ -37,8 +37,8 @@ export const VideoStreamBox = () => {
   const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // Stream URL - connects to the forwarder on port 8080
-  const THERMAL_STREAM_URL = `${window.location.protocol}//${window.location.hostname}:8080/stream`;
+  // Stream URL - uses the proxied endpoint through main backend (works with Cloudflare)
+  const THERMAL_STREAM_URL = `/api/stream/thermal`;
 
   // Fetch gallery on mount
   useEffect(() => {
