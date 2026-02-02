@@ -121,9 +121,9 @@ export const VideoStreamBox = () => {
   return (
     <Card className="h-full bg-black border border-white/10 overflow-hidden relative group shadow-2xl flex flex-col rounded-xl">
       {/* Header / Tabs */}
-      <div className="absolute top-0 left-0 right-0 z-50 flex justify-between items-start p-4 bg-gradient-to-b from-black via-black/80 to-transparent pointer-events-none">
+      <div className="relative z-20 flex justify-between items-start p-4 bg-[#0A0A0A] border-b border-white/5">
         {/* Stream Type Tabs */}
-        <div className="pointer-events-auto flex space-x-1 bg-black/80 backdrop-blur-md p-1.5 rounded-lg border border-white/20 shadow-lg">
+        <div className="flex space-x-1 bg-black/60 p-1 rounded-lg border border-white/10">
           {videoTypes.map((type) => (
             <button
               key={type.key}
@@ -131,8 +131,8 @@ export const VideoStreamBox = () => {
               className={`
                         px-3 py-1.5 rounded-md text-[10px] font-bold tracking-wider flex items-center space-x-2 transition-all duration-300
                         ${activeType === type.key
-                  ? 'bg-cyan-500 text-black shadow-[0_0_15px_rgba(34,211,238,0.4)]'
-                  : 'text-white/60 hover:text-white hover:bg-white/10'}
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 shadow-[0_0_10px_rgba(34,211,238,0.2)]'
+                  : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}
                     `}
             >
               <type.icon className="w-3 h-3" />
