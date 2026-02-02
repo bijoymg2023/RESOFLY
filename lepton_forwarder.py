@@ -12,6 +12,7 @@ import socket
 import struct
 import threading
 import time
+import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import sys
 
@@ -82,43 +83,60 @@ img{max-width:100%;border:2px solid #0f0;}</style></head>
             self.end_headers()
 
 def start_http_server():
-    server = HTTPServer(('0.0.0.0', HTTP_PORT), MJPEGHandler)
-    print(f"[PI] MJPEG server on port {HTTP_PORT}")
-    server.serve_forever()
+    try:
+        server = HTTPServer(('0.0.0.0', HTTP_PORT), MJPEGHandler)
+        print(f"[PI] MJPEG server on port {HTTP_PORT}")
+        server.serve_forever()
+    except OSError as e:
+        print(f"[PI] HTTP SERVER ERROR: {e}")
+        print(f"[PI] Port {HTTP_PORT} may be in use. Run: sudo fuser -k {HTTP_PORT}/tcp")
+    except Exception as e:
+        print(f"[PI] HTTP SERVER ERROR: {e}")
+        traceback.print_exc()
 
 # ==== RECEIVE PROCESSED FRAMES FROM LAPTOP ====
 def receive_processed_frames():
     global current_jpeg, frame_count
     
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(('0.0.0.0', PI_RECEIVE_PORT))
-    sock.settimeout(5.0)
-    
-    print(f"[PI] Listening for processed frames on port {PI_RECEIVE_PORT}")
-    
-    # Buffer for large JPEG (may come in chunks)
-    max_packet_size = 65535
-    
-    while True:
-        try:
-            data, addr = sock.recvfrom(max_packet_size)
-            
-            if len(data) > 8:
-                # Extract header
-                frame_num, jpeg_size = struct.unpack('>II', data[:8])
-                jpeg_data = data[8:]
-                
-                with jpeg_lock:
-                    current_jpeg = jpeg_data
-                    frame_count += 1
-                
-                if frame_count % 27 == 0:
-                    print(f"[PI] Received frame {frame_num}, size {len(jpeg_data)} bytes")
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(('0.0.0.0', PI_RECEIVE_PORT))
+        sock.settimeout(5.0)
         
-        except socket.timeout:
-            print("[PI] Waiting for frames from laptop...")
-        except Exception as e:
-            print(f"[PI] Receive error: {e}")
+        print(f"[PI] Listening for processed frames on port {PI_RECEIVE_PORT}")
+        
+        # Buffer for large JPEG (may come in chunks)
+        max_packet_size = 65535
+        
+        while True:
+            try:
+                data, addr = sock.recvfrom(max_packet_size)
+                
+                if len(data) > 8:
+                    # Extract header
+                    frame_num, jpeg_size = struct.unpack('>II', data[:8])
+                    jpeg_data = data[8:]
+                    
+                    with jpeg_lock:
+                        current_jpeg = jpeg_data
+                        frame_count += 1
+                    
+                    if frame_count % 27 == 0:
+                        print(f"[PI] Received frame {frame_num}, size {len(jpeg_data)} bytes")
+            
+            except socket.timeout:
+                print("[PI] Waiting for frames from laptop...")
+            except Exception as e:
+                print(f"[PI] Receive error: {e}")
+    except OSError as e:
+        print(f"[PI] SOCKET ERROR: {e}")
+        print(f"[PI] Port {PI_RECEIVE_PORT} may be in use. Run: sudo fuser -k {PI_RECEIVE_PORT}/tcp")
+        traceback.print_exc()
+    except Exception as e:
+        print(f"[PI] RECEIVER ERROR: {e}")
+        traceback.print_exc()
+
 
 # ==== READ AND FORWARD RAW FRAMES ====
 def read_and_forward():
