@@ -23,6 +23,9 @@ PI_RECEIVE_PORT = 5006          # UDP port to receive processed frames
 HTTP_PORT = 8080                # MJPEG stream port
 SPI_SPEED = 5000000             # 5 MHz SPI clock (lowered for stability)
 
+# Set to True to test pipeline with fake data (no camera needed)
+TEST_MODE = True
+
 # Lepton 3.5 specs
 PACKET_SIZE = 164
 PACKETS_PER_FRAME = 60
@@ -140,13 +143,17 @@ def receive_processed_frames():
 
 # ==== READ AND FORWARD RAW FRAMES ====
 def read_and_forward():
-    print("[PI] Initializing SPI...")
+    import random
     
-    # Initialize SPI
-    spi = spidev.SpiDev()
-    spi.open(0, 0)
-    spi.max_speed_hz = SPI_SPEED
-    spi.mode = 0b11
+    if TEST_MODE:
+        print("[PI] *** TEST MODE - Using fake thermal data ***")
+    else:
+        print("[PI] Initializing SPI...")
+        # Initialize SPI
+        spi = spidev.SpiDev()
+        spi.open(0, 0)
+        spi.max_speed_hz = SPI_SPEED
+        spi.mode = 0b11
     
     # UDP socket for sending
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -157,49 +164,71 @@ def read_and_forward():
     
     while True:
         try:
-            # Read one complete frame (4 segments for Lepton 3.5)
             frame_data = bytearray(FRAME_SIZE_BYTES)
             
-            for segment in range(SEGMENTS_PER_FRAME):
-                segment_row = 0
-                retries = 0
-                max_retries = 500
+            if TEST_MODE:
+                # Generate fake thermal gradient with moving hot spot
+                t = time.time()
+                hot_x = int((FRAME_WIDTH / 2) + 30 * (0.5 + 0.5 * (t % 6) / 3))
+                hot_y = int((FRAME_HEIGHT / 2) + 20 * (0.5 + 0.5 * ((t * 0.7) % 6) / 3))
                 
-                while segment_row < (FRAME_HEIGHT // SEGMENTS_PER_FRAME) and retries < max_retries:
-                    packet = spi.readbytes(PACKET_SIZE)
+                for y in range(FRAME_HEIGHT):
+                    for x in range(FRAME_WIDTH):
+                        # Distance from center (creates gradient)
+                        dx = x - hot_x
+                        dy = y - hot_y
+                        dist = (dx*dx + dy*dy) ** 0.5
+                        
+                        # Temperature value (16-bit) - hotter in center
+                        temp = max(0, min(65535, int(40000 - dist * 300 + random.randint(-500, 500))))
+                        
+                        offset = (y * FRAME_WIDTH + x) * 2
+                        frame_data[offset] = (temp >> 8) & 0xFF
+                        frame_data[offset + 1] = temp & 0xFF
+                
+                time.sleep(0.111)  # ~9 fps to match Lepton
+            else:
+                # Read one complete frame (4 segments for Lepton 3.5)
+                for segment in range(SEGMENTS_PER_FRAME):
+                    segment_row = 0
+                    retries = 0
+                    max_retries = 500
                     
-                    # Check for discard packet
-                    if (packet[0] & 0x0F) == 0x0F:
-                        retries += 1
-                        continue
-                    
-                    packet_row = packet[1]
-                    
-                    # For Lepton 3.5, check segment number in packet 20
-                    if packet_row == 20:
-                        pkt_segment = (packet[0] >> 4) & 0x0F
-                        if pkt_segment != (segment + 1):
+                    while segment_row < (FRAME_HEIGHT // SEGMENTS_PER_FRAME) and retries < max_retries:
+                        packet = spi.readbytes(PACKET_SIZE)
+                        
+                        # Check for discard packet
+                        if (packet[0] & 0x0F) == 0x0F:
+                            retries += 1
+                            continue
+                        
+                        packet_row = packet[1]
+                        
+                        # For Lepton 3.5, check segment number in packet 20
+                        if packet_row == 20:
+                            pkt_segment = (packet[0] >> 4) & 0x0F
+                            if pkt_segment != (segment + 1):
+                                segment_row = 0
+                                retries += 1
+                                continue
+                        
+                        if packet_row != segment_row:
                             segment_row = 0
                             retries += 1
                             continue
-                    
-                    if packet_row != segment_row:
-                        segment_row = 0
-                        retries += 1
-                        continue
-                    
-                    # Extract pixel data
-                    actual_row = segment * (FRAME_HEIGHT // SEGMENTS_PER_FRAME) + segment_row
-                    for col in range(FRAME_WIDTH // 2):  # Each packet has 80 pixels
-                        hi = packet[4 + col * 2]
-                        lo = packet[5 + col * 2]
-                        # Lepton 3.5: two packets per row (left and right halves)
-                        offset = (actual_row * FRAME_WIDTH + col) * 2
-                        frame_data[offset] = hi
-                        frame_data[offset + 1] = lo
-                    
-                    segment_row += 1
-                    retries = 0
+                        
+                        # Extract pixel data
+                        actual_row = segment * (FRAME_HEIGHT // SEGMENTS_PER_FRAME) + segment_row
+                        for col in range(FRAME_WIDTH // 2):  # Each packet has 80 pixels
+                            hi = packet[4 + col * 2]
+                            lo = packet[5 + col * 2]
+                            # Lepton 3.5: two packets per row (left and right halves)
+                            offset = (actual_row * FRAME_WIDTH + col) * 2
+                            frame_data[offset] = hi
+                            frame_data[offset + 1] = lo
+                        
+                        segment_row += 1
+                        retries = 0
             
             # Pack and send frame
             timestamp = int(time.time() * 1000) & 0xFFFFFFFF
@@ -215,7 +244,7 @@ def read_and_forward():
                 print(f"[PI] Sent frame {send_frame_count}")
         
         except Exception as e:
-            print(f"[PI] SPI read error: {e}")
+            print(f"[PI] Error: {e}")
             time.sleep(0.1)
 
 # ==== MAIN ====
