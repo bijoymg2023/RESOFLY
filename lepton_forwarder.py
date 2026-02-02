@@ -24,7 +24,7 @@ HTTP_PORT = 8080                # MJPEG stream port
 SPI_SPEED = 5000000             # 5 MHz SPI clock (lowered for stability)
 
 # Set to True to test pipeline with fake data (no camera needed)
-TEST_MODE = True
+TEST_MODE = False
 
 # Lepton 3.5 specs
 PACKET_SIZE = 164
