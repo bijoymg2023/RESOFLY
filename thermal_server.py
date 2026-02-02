@@ -99,10 +99,22 @@ def main():
                 
                 # Send processed frame back to Pi
                 jpeg_size = len(jpeg_data)
-                header = struct.pack('>II', frame_count, jpeg_size)
                 
-                # Send (may need chunking for large JPEGs, but 640x480 should fit in one packet)
-                send_sock.sendto(header + jpeg_data, (PI_IP, PI_RECEIVE_PORT))
+                # Chunk the JPEG if too large (UDP max ~65KB, use 60KB to be safe)
+                MAX_CHUNK_SIZE = 60000
+                if jpeg_size <= MAX_CHUNK_SIZE:
+                    # Single packet: header format = frame_num, total_size, chunk_num(0), total_chunks(1)
+                    header = struct.pack('>IIHH', frame_count, jpeg_size, 0, 1)
+                    send_sock.sendto(header + jpeg_data, (PI_IP, PI_RECEIVE_PORT))
+                else:
+                    # Multiple packets needed
+                    total_chunks = (jpeg_size + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
+                    for chunk_num in range(total_chunks):
+                        start = chunk_num * MAX_CHUNK_SIZE
+                        end = min(start + MAX_CHUNK_SIZE, jpeg_size)
+                        chunk_data = jpeg_data[start:end]
+                        header = struct.pack('>IIHH', frame_count, jpeg_size, chunk_num, total_chunks)
+                        send_sock.sendto(header + chunk_data, (PI_IP, PI_RECEIVE_PORT))
                 
                 frame_count += 1
                 
