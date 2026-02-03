@@ -62,10 +62,10 @@ def read_and_forward(test_mode=False):
         
         if not use_pylepton:
             print("[PI] Initializing SPI...")
-            # Initialize SPI
+            # Initialize SPI - using CS1 (CE1, Pin 26) since camera is wired there
             try:
                 spi = spidev.SpiDev()
-                spi.open(0, 0)
+                spi.open(0, 1)  # CS1 instead of CS0
                 spi.max_speed_hz = SPI_SPEED
                 spi.mode = 0b11
                 print("[PI] SPI initialized successfully")

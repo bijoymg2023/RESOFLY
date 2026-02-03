@@ -6,7 +6,7 @@ import sys
 print("Opening SPI...")
 try:
     spi = spidev.SpiDev()
-    spi.open(0, 0)
+    spi.open(0, 1)  # CS1 (CE1, Pin 26)
     spi.max_speed_hz = 5000000
     spi.mode = 0b11
     print("SPI interface opened.")
