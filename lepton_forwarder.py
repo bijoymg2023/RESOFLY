@@ -201,17 +201,19 @@ def read_and_forward(test_mode=False):
 
 # ==== MAIN ====
 def main():
+    global LAPTOP_IP
+    
     parser = argparse.ArgumentParser(description='Lepton Forwarder - Send thermal frames to laptop')
     parser.add_argument('--test', action='store_true', 
                         help='Use fake thermal data (no camera needed)')
-    parser.add_argument('--ip', type=str, default=LAPTOP_IP,
+    parser.add_argument('--ip', type=str, default=None,
                         help=f'Laptop IP address (default: {LAPTOP_IP})')
     args = parser.parse_args()
     
     # Update laptop IP if specified
-    global LAPTOP_IP
-    if args.ip != LAPTOP_IP:
+    if args.ip:
         LAPTOP_IP = args.ip
+
     
     print("=" * 50)
     print("  LEPTON FORWARDER (One-Way)")
