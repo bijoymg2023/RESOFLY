@@ -38,34 +38,52 @@ FRAME_TIMEOUT_SECONDS = 5       # Timeout for a single frame
 def read_and_forward(test_mode=False):
     import random
     
+    use_pylepton = False
+    lepton = None
+    spi = None
+    
     if test_mode:
         print("[PI] *** TEST MODE - Using fake thermal data ***")
         print("[PI] No camera needed - sending simulated frames")
-        spi = None
     else:
-        print("[PI] Initializing SPI...")
-        # Initialize SPI
+        # Try pylepton first (handles camera initialization properly)
         try:
-            spi = spidev.SpiDev()
-            spi.open(0, 0)
-            spi.max_speed_hz = SPI_SPEED
-            spi.mode = 0b11
-            print("[PI] SPI initialized successfully")
-        except FileNotFoundError:
-            print("[PI] SPI INIT ERROR: SPI device not found!")
-            print("[PI] Make sure SPI is enabled: sudo raspi-config -> Interface Options -> SPI")
-            sys.exit(1)
-        except PermissionError:
-            print("[PI] SPI INIT ERROR: Permission denied!")
-            print("[PI] Try running with sudo: sudo python3 lepton_forwarder.py")
-            sys.exit(1)
+            from pylepton import Lepton
+            print("[PI] Using pylepton library for camera capture")
+            lepton = Lepton()
+            lepton.__enter__()  # Initialize
+            use_pylepton = True
+            print("[PI] Lepton camera initialized via pylepton")
+        except ImportError:
+            print("[PI] pylepton not installed, using raw SPI")
+            print("[PI] For better reliability: pip3 install pylepton")
         except Exception as e:
-            print(f"[PI] SPI INIT ERROR: {e}")
-            sys.exit(1)
+            print(f"[PI] pylepton init failed: {e}, falling back to raw SPI")
         
-        print("[PI] Waiting for Lepton to stabilize (2 seconds)...")
-        time.sleep(2)
-        print("[PI] Starting frame capture...")
+        if not use_pylepton:
+            print("[PI] Initializing SPI...")
+            # Initialize SPI
+            try:
+                spi = spidev.SpiDev()
+                spi.open(0, 0)
+                spi.max_speed_hz = SPI_SPEED
+                spi.mode = 0b11
+                print("[PI] SPI initialized successfully")
+            except FileNotFoundError:
+                print("[PI] SPI INIT ERROR: SPI device not found!")
+                print("[PI] Make sure SPI is enabled: sudo raspi-config -> Interface Options -> SPI")
+                sys.exit(1)
+            except PermissionError:
+                print("[PI] SPI INIT ERROR: Permission denied!")
+                print("[PI] Try running with sudo: sudo python3 lepton_forwarder.py")
+                sys.exit(1)
+            except Exception as e:
+                print(f"[PI] SPI INIT ERROR: {e}")
+                sys.exit(1)
+            
+            print("[PI] Waiting for Lepton to stabilize (2 seconds)...")
+            time.sleep(2)
+            print("[PI] Starting frame capture...")
     
     # UDP socket for sending
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -103,8 +121,29 @@ def read_and_forward(test_mode=False):
                         frame_data[offset + 1] = temp & 0xFF
                 
                 time.sleep(0.111)  # ~9 fps to match Lepton
+            elif use_pylepton:
+                # Capture using pylepton library
+                try:
+                    frame_array, _ = lepton.capture()
+                    # Convert numpy array to raw bytes (big-endian 16-bit)
+                    # pylepton returns 80x60 for Lepton 2.x or 160x120 for Lepton 3.x
+                    import numpy as np
+                    if frame_array.shape != (FRAME_HEIGHT, FRAME_WIDTH):
+                        # Resize if dimensions don't match expected
+                        import cv2
+                        frame_array = cv2.resize(frame_array, (FRAME_WIDTH, FRAME_HEIGHT))
+                    # Convert to bytes
+                    frame_16bit = frame_array.astype(np.uint16)
+                    frame_data = frame_16bit.tobytes()
+                except Exception as e:
+                    print(f"[PI] pylepton capture error: {e}")
+                    failed_frames += 1
+                    if failed_frames >= 5:
+                        print("[PI] Too many failed captures, exiting")
+                        break
+                    continue
             else:
-                # Read one complete frame (4 segments for Lepton 3.5)
+                # Read one complete frame (4 segments for Lepton 3.5) using raw SPI
                 frame_complete = True
                 total_retries = 0
                 
