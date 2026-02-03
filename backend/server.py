@@ -349,11 +349,11 @@ async def gen_frames(camera_type='thermal'):
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
 async def proxy_thermal_stream():
-    """Proxy the thermal stream from the lepton forwarder on port 8080."""
+    """Proxy the thermal stream from the local thermal server on port 8081."""
     import httpx
     try:
         async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream('GET', 'http://127.0.0.1:8080/stream') as response:
+            async with client.stream('GET', 'http://127.0.0.1:8081/stream') as response:
                 async for chunk in response.aiter_bytes():
                     yield chunk
     except Exception as e:
@@ -363,7 +363,7 @@ async def proxy_thermal_stream():
 
 @api_router.get("/stream/thermal")
 async def video_feed_thermal(token: Optional[str] = None):
-    """Proxies thermal stream from the lepton forwarder (port 8080) for Cloudflare access."""
+    """Proxies thermal stream from the local thermal server (port 8081)."""
     return StreamingResponse(
         proxy_thermal_stream(), 
         media_type="multipart/x-mixed-replace; boundary=frame"

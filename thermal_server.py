@@ -1,22 +1,25 @@
 #!/usr/bin/env python3
 """
-Thermal Processor (Round-Trip) - Runs on Laptop
+Thermal Processor (Local Serve) - Runs on Laptop
 1. Receives raw thermal frames from Pi via UDP
 2. Processes frames (normalize, colormap, scale, encode)
-3. Sends processed JPEG frames back to Pi
+3. Serves MJPEG stream locally for Backend to consume
 """
 
 import socket
 import struct
 import time
+import threading
+import traceback
+import sys
 import numpy as np
 import cv2
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # ==== CONFIGURATION ====
 LISTEN_IP = "0.0.0.0"           # Listen on all interfaces
 LISTEN_PORT = 5005              # Receive raw data from Pi
-PI_IP = "192.168.10.2"          # Pi's IP address
-PI_RECEIVE_PORT = 5006          # Port to send processed frames to Pi
+HTTP_PORT = 8081                # Local MJPEG stream port (Different from Pi's 8080)
 
 # Lepton 3.5 specs
 FRAME_WIDTH = 160
@@ -30,6 +33,54 @@ JPEG_QUALITY = 85               # JPEG compression quality
 # ==== GLOBALS ====
 frame_count = 0
 start_time = None
+current_jpeg = None
+jpeg_lock = threading.Lock()
+
+# ==== HTTP SERVER FOR MJPEG ====
+class MJPEGHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass  # Suppress logging
+    
+    def do_GET(self):
+        if self.path == '/stream' or self.path == '/api/stream/thermal':
+            self.send_response(200)
+            self.send_header('Content-Type', 'multipart/x-mixed-replace; boundary=frame')
+            self.send_header('Cache-Control', 'no-cache')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            
+            try:
+                while True:
+                    with jpeg_lock:
+                        if current_jpeg:
+                            frame = current_jpeg
+                        else:
+                            frame = None
+                    
+                    if frame:
+                        self.wfile.write(b'--frame\r\n')
+                        self.wfile.write(b'Content-Type: image/jpeg\r\n\r\n')
+                        self.wfile.write(frame)
+                        self.wfile.write(b'\r\n')
+                    
+                    time.sleep(0.033)  # ~30 fps max
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+def start_http_server():
+    try:
+        server = HTTPServer(('0.0.0.0', HTTP_PORT), MJPEGHandler)
+        print(f"[LAPTOP] MJPEG server on port {HTTP_PORT}")
+        server.serve_forever()
+    except OSError as e:
+        print(f"[LAPTOP] HTTP SERVER ERROR: {e}")
+        print(f"[LAPTOP] Port {HTTP_PORT} may be in use.")
+    except Exception as e:
+        print(f"[LAPTOP] HTTP SERVER ERROR: {e}")
+        traceback.print_exc()
 
 def process_frame(raw_data):
     """
@@ -60,23 +111,24 @@ def process_frame(raw_data):
     return jpeg_data.tobytes()
 
 def main():
-    global frame_count, start_time
+    global frame_count, start_time, current_jpeg
     
     print("=" * 50)
-    print("  THERMAL PROCESSOR (Round-Trip Mode)")
+    print("  THERMAL PROCESSOR (Local Serve Mode)")
     print("=" * 50)
     print(f"[LAPTOP] Receiving raw frames on port {LISTEN_PORT}")
-    print(f"[LAPTOP] Sending processed frames to {PI_IP}:{PI_RECEIVE_PORT}")
+    print(f"[LAPTOP] Serving MJPEG stream on http://localhost:{HTTP_PORT}/stream")
     print(f"[LAPTOP] Output: {FRAME_WIDTH * OUTPUT_SCALE}x{FRAME_HEIGHT * OUTPUT_SCALE}")
     print("=" * 50)
+    
+    # Start HTTP server
+    http_thread = threading.Thread(target=start_http_server, daemon=True)
+    http_thread.start()
     
     # Receive socket
     recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     recv_sock.bind((LISTEN_IP, LISTEN_PORT))
     recv_sock.settimeout(5.0)
-    
-    # Send socket
-    send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     
     expected_packet_size = 8 + FRAME_SIZE_BYTES  # Header + frame data
     start_time = time.time()
@@ -97,32 +149,17 @@ def main():
                 jpeg_data = process_frame(raw_frame)
                 proc_time = (time.time() - proc_start) * 1000
                 
-                # Send processed frame back to Pi
-                jpeg_size = len(jpeg_data)
-                
-                # Chunk the JPEG if too large (UDP max ~65KB, use 60KB to be safe)
-                MAX_CHUNK_SIZE = 60000
-                if jpeg_size <= MAX_CHUNK_SIZE:
-                    # Single packet: header format = frame_num, total_size, chunk_num(0), total_chunks(1)
-                    header = struct.pack('>IIHH', frame_count, jpeg_size, 0, 1)
-                    send_sock.sendto(header + jpeg_data, (PI_IP, PI_RECEIVE_PORT))
-                else:
-                    # Multiple packets needed
-                    total_chunks = (jpeg_size + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
-                    for chunk_num in range(total_chunks):
-                        start = chunk_num * MAX_CHUNK_SIZE
-                        end = min(start + MAX_CHUNK_SIZE, jpeg_size)
-                        chunk_data = jpeg_data[start:end]
-                        header = struct.pack('>IIHH', frame_count, jpeg_size, chunk_num, total_chunks)
-                        send_sock.sendto(header + chunk_data, (PI_IP, PI_RECEIVE_PORT))
+                # Update global buffer
+                with jpeg_lock:
+                    current_jpeg = jpeg_data
                 
                 frame_count += 1
                 
-                if frame_count % 9 == 0:
+                if frame_count % 27 == 0:
                     elapsed = time.time() - start_time
                     fps = frame_count / elapsed
                     print(f"[LAPTOP] Frame {pi_frame_num} → processed in {proc_time:.1f}ms, " +
-                          f"JPEG: {jpeg_size} bytes, FPS: {fps:.1f}")
+                          f"FPS: {fps:.1f}")
             else:
                 print(f"[LAPTOP] Incomplete packet: {len(data)} bytes (expected {expected_packet_size})")
         
