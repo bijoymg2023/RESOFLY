@@ -53,7 +53,7 @@ except Exception as e:
 # Step 5: Configure and test
 print("[5/5] Configuring SPI (18 MHz, Mode 3)...")
 try:
-    spi.max_speed_hz = 18000000
+    spi.max_speed_hz = 10000000  # 10 MHz
     spi.mode = 0b11
     print("      SPI configured ✓")
 except Exception as e:

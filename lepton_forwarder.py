@@ -19,7 +19,7 @@ import argparse
 # ==== CONFIGURATION ====
 LAPTOP_IP = "192.168.10.1"      # Laptop static IP (send raw user data here)
 LAPTOP_PORT = 5005              # UDP port for raw data
-SPI_SPEED = 18000000            # 18 MHz SPI clock (matches working C++ reference)
+SPI_SPEED = 10000000            # 10 MHz SPI clock (more reliable with longer wires)
 
 # Lepton 3.5 specs
 PACKET_SIZE = 164
