@@ -2,65 +2,90 @@
 """
 SPI Check for FLIR Lepton 3.5
 Tests basic SPI communication with the camera.
+Step-by-step diagnostics to find where it hangs.
 """
 
-import spidev
-import time
 import sys
-
-SPI_SPEED = 18000000  # 18 MHz (matches working C++ reference)
+import time
 
 print("=" * 50)
-print("  LEPTON SPI CHECK")
+print("  LEPTON SPI CHECK (Diagnostic Mode)")
 print("=" * 50)
 
-print(f"[CHECK] Opening SPI at {SPI_SPEED // 1000000} MHz...")
-try:
-    spi = spidev.SpiDev()
-    spi.open(0, 1)  # CS1 (CE1, Pin 26)
-    spi.max_speed_hz = SPI_SPEED
-    spi.mode = 0b11  # SPI_MODE_3
-    print("[CHECK] SPI interface opened successfully")
-except Exception as e:
-    print(f"[CHECK] FAILED to open SPI: {e}")
-    print("[CHECK] Make sure SPI is enabled: sudo raspi-config -> Interface Options -> SPI")
+# Step 1: Check if spidev exists
+print("[1/5] Checking for SPI device files...")
+import os
+if os.path.exists("/dev/spidev0.0"):
+    print("      Found /dev/spidev0.0")
+if os.path.exists("/dev/spidev0.1"):
+    print("      Found /dev/spidev0.1 ✓")
+else:
+    print("      ERROR: /dev/spidev0.1 not found!")
+    print("      Run: sudo raspi-config -> Interface Options -> SPI -> Enable")
+    print("      Then reboot the Pi")
     sys.exit(1)
 
-print("[CHECK] Reading 10 test packets...")
-valid_packets = 0
-discard_packets = 0
+# Step 2: Import spidev
+print("[2/5] Importing spidev module...")
+try:
+    import spidev
+    print("      spidev imported ✓")
+except ImportError:
+    print("      ERROR: spidev not installed!")
+    print("      Run: sudo apt install python3-spidev")
+    sys.exit(1)
 
-for i in range(10):
+# Step 3: Create SpiDev object
+print("[3/5] Creating SpiDev object...")
+spi = spidev.SpiDev()
+print("      SpiDev created ✓")
+
+# Step 4: Open SPI port
+print("[4/5] Opening SPI port 0.1 (CS1)...")
+sys.stdout.flush()
+try:
+    spi.open(0, 1)
+    print("      SPI opened ✓")
+except Exception as e:
+    print(f"      ERROR opening SPI: {e}")
+    sys.exit(1)
+
+# Step 5: Configure and test
+print("[5/5] Configuring SPI (18 MHz, Mode 3)...")
+try:
+    spi.max_speed_hz = 18000000
+    spi.mode = 0b11
+    print("      SPI configured ✓")
+except Exception as e:
+    print(f"      ERROR configuring SPI: {e}")
+    spi.close()
+    sys.exit(1)
+
+print("\n[TEST] Reading 5 packets from Lepton...")
+sys.stdout.flush()
+
+valid = 0
+discard = 0
+for i in range(5):
     try:
-        packet = spi.readbytes(164)  # Lepton packet size
-        
-        # Check if discard packet (ID nibble = 0x0F)
+        packet = spi.readbytes(164)
         if (packet[0] & 0x0F) == 0x0F:
-            discard_packets += 1
+            discard += 1
+            print(f"       Packet {i}: discard")
         else:
-            valid_packets += 1
-            packet_num = packet[1]
-            print(f"  Packet {i}: ID nibble={packet[0] & 0x0F:X}, Packet#={packet_num}")
-        
-        time.sleep(0.01)  # Small delay between reads
+            valid += 1
+            print(f"       Packet {i}: valid (num={packet[1]})")
     except Exception as e:
-        print(f"[CHECK] FAILED to read packet {i}: {e}")
-        spi.close()
-        sys.exit(1)
+        print(f"       Packet {i}: ERROR - {e}")
+    time.sleep(0.01)
 
 spi.close()
 
-print("=" * 50)
-print(f"[CHECK] Results: {valid_packets} valid, {discard_packets} discard packets")
-
-if valid_packets > 0:
-    print("[CHECK] ✓ SUCCESS: Camera is responding over SPI!")
-    print("[CHECK] You can now run: sudo python3 lepton_forwarder.py")
-elif discard_packets == 10:
-    print("[CHECK] ⚠ Camera sending discard packets - may need more warm-up time")
-    print("[CHECK] Wait 2-3 minutes after power-on, then try again")
+print("\n" + "=" * 50)
+if valid > 0:
+    print("✓ SUCCESS: Lepton is responding!")
+elif discard > 0:
+    print("⚠ Lepton sending discard packets - needs warm-up time (2-3 min)")
 else:
-    print("[CHECK] ✗ FAILED: No valid data received")
-    print("[CHECK] Check wiring: MISO→Pin21, CLK→Pin23, CS→Pin26")
-
+    print("✗ FAILED: Check wiring - MISO(21), CLK(23), CS(26)")
 print("=" * 50)
