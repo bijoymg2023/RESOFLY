@@ -42,7 +42,7 @@ def read_and_forward(test_mode=False):
         print("[PI] Initializing SPI (18 MHz, Mode 3)...")
         try:
             spi = spidev.SpiDev()
-            spi.open(0, 1)  # CS1 (CE1, Pin 26)
+            spi.open(0, 0)  # CS0 (CE0, Pin 24)
             spi.max_speed_hz = SPI_SPEED
             spi.mode = 0b11  # SPI_MODE_3 (CPOL=1, CPHA=1)
             print("[PI] SPI initialized successfully")
@@ -118,7 +118,7 @@ def read_and_forward(test_mode=False):
                             if resets >= 100:
                                 spi.close()
                                 time.sleep(0.2)  # 200ms wait
-                                spi.open(0, 1)
+                                spi.open(0, 0)  # CS0 (CE0, Pin 24)
                                 spi.max_speed_hz = SPI_SPEED
                                 spi.mode = 0b11
                                 resets = 0

@@ -41,10 +41,10 @@ spi = spidev.SpiDev()
 print("      SpiDev created ✓")
 
 # Step 4: Open SPI port
-print("[4/5] Opening SPI port 0.1 (CS1)...")
+print("[4/5] Opening SPI port 0.0 (CS0 - Pin 24)...")
 sys.stdout.flush()
 try:
-    spi.open(0, 1)
+    spi.open(0, 0)  # CS0 (CE0, Pin 24)
     print("      SPI opened ✓")
 except Exception as e:
     print(f"      ERROR opening SPI: {e}")
