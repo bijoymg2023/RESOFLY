@@ -99,9 +99,12 @@ def capture_frame(spi):
     frame_data = bytearray(FRAME_SIZE_BYTES)
     
     for seg_idx in range(SEGMENTS_PER_FRAME):
+        print(f"[PI] Capturing segment {seg_idx + 1}/4...", end='', flush=True)
         segment_data = capture_segment(spi, seg_idx)
         if segment_data is None:
+            print(" FAILED")
             return None
+        print(" OK")
         
         # Copy segment to frame
         rows_per_seg = FRAME_HEIGHT // SEGMENTS_PER_FRAME  # 30 rows
@@ -125,8 +128,11 @@ def capture_segment(spi, expected_segment):
     segment_data = bytearray(PACKETS_PER_SEGMENT * PACKET_SIZE)
     
     retries = 0
-    max_retries = 500
+    max_retries = 750  # Increased for more patience
     pkt_idx = 0
+    discards = 0
+    seq_errors = 0
+    seg_errors = 0
     
     while pkt_idx < PACKETS_PER_SEGMENT and retries < max_retries:
         packet = spi.readbytes(PACKET_SIZE)
