@@ -136,7 +136,7 @@ httpResponse(const QByteArray &body,
 MjpegServer::MjpegServer(MyLabel *source, AppCfg *cfg, quint16 port,
                          QObject *parent)
     : QTcpServer(parent), m_source(source), m_cfg(cfg), m_port(port) {
-  listen(QHostAddress::LocalHost, m_port);
+  listen(QHostAddress::Any, m_port);
 }
 
 void MjpegServer::incomingConnection(qintptr socketDescriptor) {
