@@ -109,7 +109,7 @@ void LeptonThread::run() {
   uint16_t n_zero_value_drop_frame = 0;
 
   // open spi port
-  SpiOpenPort(1, spiSpeed);  // Use CS1 (spidev0.1) - camera is on CE1
+  SpiOpenPort(0, spiSpeed);  // Use CS0 (spidev0.0) - User wiring on Pin 24
 
   while (true) {
 
@@ -129,9 +129,9 @@ void LeptonThread::run() {
         usleep(1000); // Quick delay between retries
         // Re-sync after 100 failed packets (more aggressive)
         if (resets >= 100) {
-          SpiClosePort(1);
+          SpiClosePort(0);
           usleep(200000); // Wait 200ms for sync
-          SpiOpenPort(1, spiSpeed);
+          SpiOpenPort(0, spiSpeed);
           resets = 0;
           spi_resets++;
           // Full camera reboot after 5 SPI resets to prevent permanent freeze
@@ -305,7 +305,7 @@ void LeptonThread::run() {
   }
 
   // finally, close SPI port just bcuz
-  SpiClosePort(1);
+  SpiClosePort(0);
 }
 
 void LeptonThread::performFFC() {
