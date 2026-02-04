@@ -14,7 +14,7 @@ import argparse
 # ==== CONFIGURATION ====
 LAPTOP_IP = "192.168.10.1"
 LAPTOP_PORT = 5005
-SPI_SPEED = 10000000  # 10 MHz
+SPI_SPEED = 18000000  # 18 MHz (Optimal for Lepton 3.5)
 
 # Lepton 3.5 specs
 PACKET_SIZE = 164

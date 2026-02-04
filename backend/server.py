@@ -353,7 +353,7 @@ async def proxy_thermal_stream():
     import httpx
     try:
         async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream('GET', 'http://127.0.0.1:8080/mjpeg') as response:
+            async with client.stream('GET', 'http://127.0.0.1:8081/stream') as response:
                 async for chunk in response.aiter_bytes():
                     yield chunk
     except Exception as e:
