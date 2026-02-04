@@ -46,6 +46,7 @@ def read_and_forward(test_mode=False):
     print(f"[PI] Sending to {LAPTOP_IP}:{LAPTOP_PORT}")
     
     frame_count = 0
+    consecutive_failures = 0
     
     while True:
         try:
@@ -55,7 +56,14 @@ def read_and_forward(test_mode=False):
             else:
                 frame_data = capture_frame(spi)
                 if frame_data is None:
+                    consecutive_failures += 1
+                    if consecutive_failures >= 3:
+                        print(f"[PI] {consecutive_failures} failures, resyncing...")
+                        sync_vospi(spi)
+                        consecutive_failures = 0
                     continue
+                
+                consecutive_failures = 0
             
             # Send frame
             timestamp = int(time.time() * 1000) & 0xFFFFFFFF
@@ -63,8 +71,7 @@ def read_and_forward(test_mode=False):
             sock.sendto(header + frame_data, (LAPTOP_IP, LAPTOP_PORT))
             
             frame_count += 1
-            if frame_count % 9 == 0:
-                print(f"[PI] Sent frame {frame_count}")
+            print(f"[PI] >>> Sent frame {frame_count} ({len(frame_data)} bytes)")
                 
         except Exception as e:
             print(f"[PI] Error: {e}")
