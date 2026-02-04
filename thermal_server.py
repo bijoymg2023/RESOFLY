@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Thermal Processor (Local Serve) - Runs on Laptop
-1. Receives raw thermal frames from Pi via UDP
+Thermal Processor with Return Stream - Runs on Laptop
+1. Receives raw thermal frames from Pi via UDP (port 5005)
 2. Processes frames (normalize, colormap, scale, encode)
-3. Serves MJPEG stream locally for Backend to consume
+3. Sends processed JPEG back to Pi via UDP (port 5006)
+4. Also serves local MJPEG stream for debugging
 """
 
 import socket
@@ -12,6 +13,7 @@ import time
 import threading
 import traceback
 import sys
+import argparse
 import numpy as np
 import cv2
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -19,7 +21,11 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 # ==== CONFIGURATION ====
 LISTEN_IP = "0.0.0.0"           # Listen on all interfaces
 LISTEN_PORT = 5005              # Receive raw data from Pi
-HTTP_PORT = 8081                # Local MJPEG stream port (Different from Pi's 8080)
+HTTP_PORT = 8081                # Local MJPEG stream port (for debugging)
+
+# Return stream to Pi
+PI_IP = "192.168.10.2"          # Pi's IP address (default, can be overridden)
+PI_RETURN_PORT = 5006           # Port on Pi to receive processed frames
 
 # Lepton 3.5 specs
 FRAME_WIDTH = 160
@@ -36,7 +42,7 @@ start_time = None
 current_jpeg = None
 jpeg_lock = threading.Lock()
 
-# ==== HTTP SERVER FOR MJPEG ====
+# ==== HTTP SERVER FOR LOCAL MJPEG (DEBUG) ====
 class MJPEGHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass  # Suppress logging
@@ -73,7 +79,7 @@ class MJPEGHandler(BaseHTTPRequestHandler):
 def start_http_server():
     try:
         server = HTTPServer(('0.0.0.0', HTTP_PORT), MJPEGHandler)
-        print(f"[LAPTOP] MJPEG server on port {HTTP_PORT}")
+        print(f"[LAPTOP] Local MJPEG server on port {HTTP_PORT} (for debug)")
         server.serve_forever()
     except OSError as e:
         print(f"[LAPTOP] HTTP SERVER ERROR: {e}")
@@ -85,7 +91,6 @@ def start_http_server():
 def process_frame(raw_data):
     """
     Process raw 16-bit thermal data into colored JPEG.
-    Uses GPU acceleration if available via OpenCV.
     """
     # Convert bytes to numpy array (big-endian uint16)
     frame_16bit = np.frombuffer(raw_data, dtype='>u2')
@@ -111,24 +116,35 @@ def process_frame(raw_data):
     return jpeg_data.tobytes()
 
 def main():
-    global frame_count, start_time, current_jpeg
+    global frame_count, start_time, current_jpeg, PI_IP
     
-    print("=" * 50)
-    print("  THERMAL PROCESSOR (Local Serve Mode)")
-    print("=" * 50)
+    parser = argparse.ArgumentParser(description='Thermal Processor with Return Stream')
+    parser.add_argument('--pi-ip', type=str, default=PI_IP,
+                        help=f'Pi IP address for return stream (default: {PI_IP})')
+    args = parser.parse_args()
+    
+    PI_IP = args.pi_ip
+    
+    print("=" * 60)
+    print("  THERMAL PROCESSOR (Two-Way Mode)")
+    print("=" * 60)
     print(f"[LAPTOP] Receiving raw frames on port {LISTEN_PORT}")
-    print(f"[LAPTOP] Serving MJPEG stream on http://localhost:{HTTP_PORT}/stream")
+    print(f"[LAPTOP] Sending processed frames to {PI_IP}:{PI_RETURN_PORT}")
+    print(f"[LAPTOP] Local debug stream: http://localhost:{HTTP_PORT}/stream")
     print(f"[LAPTOP] Output: {FRAME_WIDTH * OUTPUT_SCALE}x{FRAME_HEIGHT * OUTPUT_SCALE}")
-    print("=" * 50)
+    print("=" * 60)
     
-    # Start HTTP server
+    # Start HTTP server for local debugging
     http_thread = threading.Thread(target=start_http_server, daemon=True)
     http_thread.start()
     
-    # Receive socket
+    # Receive socket (from Pi)
     recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     recv_sock.bind((LISTEN_IP, LISTEN_PORT))
     recv_sock.settimeout(5.0)
+    
+    # Send socket (back to Pi)
+    send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     
     expected_packet_size = 8 + FRAME_SIZE_BYTES  # Header + frame data
     start_time = time.time()
@@ -149,9 +165,19 @@ def main():
                 jpeg_data = process_frame(raw_frame)
                 proc_time = (time.time() - proc_start) * 1000
                 
-                # Update global buffer
+                # Update local buffer (for debug stream)
                 with jpeg_lock:
                     current_jpeg = jpeg_data
+                
+                # Send processed frame back to Pi
+                # Header: frame_num (4 bytes) + jpeg_size (4 bytes) + jpeg_data
+                return_header = struct.pack('>II', pi_frame_num, len(jpeg_data))
+                return_packet = return_header + jpeg_data
+                
+                try:
+                    send_sock.sendto(return_packet, (PI_IP, PI_RETURN_PORT))
+                except Exception as e:
+                    print(f"[LAPTOP] Failed to send to Pi: {e}")
                 
                 frame_count += 1
                 
@@ -159,7 +185,7 @@ def main():
                     elapsed = time.time() - start_time
                     fps = frame_count / elapsed
                     print(f"[LAPTOP] Frame {pi_frame_num} → processed in {proc_time:.1f}ms, " +
-                          f"FPS: {fps:.1f}")
+                          f"sent to Pi, FPS: {fps:.1f}")
             else:
                 print(f"[LAPTOP] Incomplete packet: {len(data)} bytes (expected {expected_packet_size})")
         
