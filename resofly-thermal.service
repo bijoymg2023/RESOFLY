@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 User=team13
-WorkingDirectory=/home/team13/ResoFly/RESOFLY
+WorkingDirectory=/home/team13/RESOFLY
 ExecStart=/usr/bin/python3 thermal_server.py
 Restart=always
 RestartSec=5
