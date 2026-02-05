@@ -4,19 +4,17 @@
 #include <ctime>
 #include <stdint.h>
 
+#include <QImage>
+#include <QPixmap>
 #include <QThread>
 #include <QtCore>
-#include <QPixmap>
-#include <QImage>
-#include <QString>
 
 #define PACKET_SIZE 164
-#define PACKET_SIZE_UINT16 (PACKET_SIZE/2)
+#define PACKET_SIZE_UINT16 (PACKET_SIZE / 2)
 #define PACKETS_PER_FRAME 60
-#define FRAME_SIZE_UINT16 (PACKET_SIZE_UINT16*PACKETS_PER_FRAME)
+#define FRAME_SIZE_UINT16 (PACKET_SIZE_UINT16 * PACKETS_PER_FRAME)
 
-class LeptonThread : public QThread
-{
+class LeptonThread : public QThread {
   Q_OBJECT;
 
 public:
@@ -30,7 +28,7 @@ public:
   void setAutomaticScalingRange();
   void useRangeMinValue(uint16_t);
   void useRangeMaxValue(uint16_t);
-  void setBackgroundMode(const QString& mode);
+  void useDestinationIP(const char *); // New method
   void run();
 
 public slots:
@@ -41,7 +39,6 @@ signals:
   void updateImage(QImage);
 
 private:
-
   void log_message(uint16_t, std::string);
   uint16_t loglevel;
   int typeColormap;
@@ -56,12 +53,10 @@ private:
   int myImageWidth;
   int myImageHeight;
   QImage myImage;
-  QString m_backgroundMode = "black";
 
-  uint8_t result[PACKET_SIZE*PACKETS_PER_FRAME];
-  uint8_t shelf[4][PACKET_SIZE*PACKETS_PER_FRAME];
+  uint8_t result[PACKET_SIZE * PACKETS_PER_FRAME];
+  uint8_t shelf[4][PACKET_SIZE * PACKETS_PER_FRAME];
   uint16_t *frameBuffer;
-
 };
 
 #endif

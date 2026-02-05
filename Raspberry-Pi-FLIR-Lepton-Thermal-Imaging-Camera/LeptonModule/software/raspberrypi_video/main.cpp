@@ -1,25 +1,77 @@
-#include "CmdServer.h"
-#include "Config.h"
-#include "LeptonThread.h"
-#include "MjpegServer.h"
-#include "MyLabel.h"
-#include "UsbCamThread.h"
 #include <QApplication>
-#include <QCoreApplication>
-#include <QFileInfo>
-#include <QVBoxLayout>
-#include <QWidget>
+#include <QMessageBox>
+#include <QMutex>
+#include <QThread>
+
+#include <QColor>
+#include <QLabel>
+#include <QPushButton>
+#include <QString>
+#include <QtDebug>
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <libgen.h>
+
+#include "LeptonThread.h"
+#include "MyLabel.h"
+
+void printUsage(char *cmd) {
+  char *cmdname = basename(cmd);
+  printf("Usage: %s [OPTION]...\n"
+         " -h      display this help and exit\n"
+         " -cm x   select colormap\n"
+         "           1 : rainbow\n"
+         "           2 : grayscale\n"
+         "           3 : ironblack [default]\n"
+         " -tl x   select type of Lepton\n"
+         "           2 : Lepton 2.x [default]\n"
+         "           3 : Lepton 3.x\n"
+         "               [for your reference] Please use nice command\n"
+         "                 e.g. sudo nice -n 0 ./%s -tl 3\n"
+         " -ss x   SPI bus speed [MHz] (10 - 30)\n"
+         "           20 : 20MHz [default]\n"
+         " -min x  override minimum value for scaling (0 - 65535)\n"
+         "           [default] automatic scaling range adjustment\n"
+         "           e.g. -min 30000\n"
+         " -max x  override maximum value for scaling (0 - 65535)\n"
+         "           [default] automatic scaling range adjustment\n"
+         "           e.g. -max 32000\n"
+         " -d x    log level (0-255)\n"
+         "",
+         cmdname, cmdname);
+  return;
+}
 
 int main(int argc, char **argv) {
-  int typeColormap = 3;
-  int typeLepton = 2;
-  int spiSpeed = 20;
-  int rangeMin = -1;
-  int rangeMax = -1;
+  int typeColormap = 3; // colormap_ironblack
+  int typeLepton = 2;   // Lepton 2.x
+  int spiSpeed = 20;    // SPI bus speed 20MHz
+  int rangeMin = -1;    //
+  int rangeMax = -1;    //
   int loglevel = 0;
+  char targetIP[32] = "127.0.0.1"; // Default IP (Localhost)
 
+  // Parse Arguments
   for (int i = 1; i < argc; i++) {
-    if ((strcmp(argv[i], "-cm") == 0) && (i + 1 != argc)) {
+    if (strcmp(argv[i], "-h") == 0) {
+      printUsage(argv[0]);
+      printf(" -ip x   Destination IP (default: 127.0.0.1)\n");
+      exit(0);
+    } else if ((strcmp(argv[i], "-ip") == 0) && (i + 1 != argc)) {
+      strncpy(targetIP, argv[i + 1], 31);
+      i++;
+    } else if (strcmp(argv[i], "-d") == 0) {
+      int val = 3;
+      if ((i + 1 != argc) && (strncmp(argv[i + 1], "-", 1) != 0)) {
+        val = std::atoi(argv[i + 1]);
+        i++;
+      }
+      if (0 <= val) {
+        loglevel = val & 0xFF;
+      }
+    } else if ((strcmp(argv[i], "-cm") == 0) && (i + 1 != argc)) {
       int val = std::atoi(argv[i + 1]);
       if ((val == 1) || (val == 2)) {
         typeColormap = val;
@@ -49,84 +101,30 @@ int main(int argc, char **argv) {
         rangeMax = val;
         i++;
       }
-    } else if ((strcmp(argv[i], "-d") == 0) && (i + 1 != argc)) {
-      int val = std::atoi(argv[i + 1]);
-      if (0 <= val) {
-        loglevel = val & 0xFF;
-        i++;
-      }
     }
   }
 
-  QApplication a(argc, argv);
+  // Headless Application
+  QCoreApplication a(argc, argv); // Changed from QApplication
 
-  AppCfg cfg;
-
-  QString cfgPath = QCoreApplication::applicationDirPath() + "/config.json";
-  if (argc >= 2 && QString(argv[1]).endsWith(".json")) {
-    cfgPath = argv[1];
-  }
-
-  bool ok = ConfigIO::load(cfgPath, cfg);
-  qDebug() << "CONFIG LOAD" << cfgPath << ok << "bg=" << cfg.background
-           << "usb_dev=" << cfg.usb.device;
-  qDebug() << "CFG thermal" << cfg.thermal.xform.offset_x
-           << cfg.thermal.xform.offset_y << cfg.thermal.xform.scale
-           << cfg.thermal.xform.rotate_deg;
-
-  qDebug() << "CFG usb" << cfg.usb.xform.offset_x << cfg.usb.xform.offset_y
-           << cfg.usb.xform.scale << cfg.usb.xform.rotate_deg;
-
-  // OVERRIDE: Force zoom out (0.5x scale) as requested
-  cfg.thermal.xform.scale = 0.5;
-
-  QWidget *w = new QWidget;
-  QVBoxLayout *layout = new QVBoxLayout(w);
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setSpacing(0);
-
-  MyLabel *myLabel = new MyLabel(w);
-  myLabel->setLogo("flir_logo.png",
-                   50, // height
-                   30  // margin from edges in pixels
-  );
-  layout->addWidget(myLabel);
-  myLabel->setConfig(cfg);
-  static MjpegServer *http = nullptr;
-  http = new MjpegServer(myLabel, &cfg, 8080, w);
-  qDebug() << "HTTP MJPEG on port 8080";
-  CmdServer *cmd = new CmdServer("/tmp/lepton_cmd", cfgPath, &cfg, w);
-
+  // create a thread to gather SPI data
   LeptonThread *thread = new LeptonThread();
-  thread->setBackgroundMode(cfg.background);
   thread->setLogLevel(loglevel);
   thread->useColormap(typeColormap);
   thread->useLepton(typeLepton);
   thread->useSpiSpeedMhz(spiSpeed);
   thread->setAutomaticScalingRange();
-
-  QObject::connect(cmd, &CmdServer::configChanged, [&cfg, myLabel, thread]() {
-    myLabel->setConfig(cfg);
-    thread->setBackgroundMode(cfg.background);
-  });
-
   if (0 <= rangeMin)
     thread->useRangeMinValue(rangeMin);
   if (0 <= rangeMax)
     thread->useRangeMaxValue(rangeMax);
 
-  QObject::connect(thread, SIGNAL(updateImage(QImage)), myLabel,
-                   SLOT(setImage(QImage)));
+  // Note: No more signal connection to GUI labels
+
   thread->start();
 
-  UsbCamThread *cam = new UsbCamThread(cfg.usb.device);
-  cam->setSize(cfg.usb.width, cfg.usb.height);
-  cam->setFps(cfg.usb.fps);
-  QObject::connect(cam, SIGNAL(updateCamera(QImage)), myLabel,
-                   SLOT(setCameraImage(QImage)));
-  cam->start();
+  printf("RESOFLY Thermal Streamer Started (Headless)\n");
+  printf("Streaming to 192.168.10.1:5005\n");
 
-  w->resize(640, 480);
-  w->show();
   return a.exec();
 }

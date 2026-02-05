@@ -5,8 +5,8 @@ Wants=resofly-thermal.service
 
 [Service]
 User=root
-WorkingDirectory=/home/team13/ResoFly/lepton/LeptonModule/software/raspberrypi_video
-ExecStart=/home/team13/ResoFly/lepton/LeptonModule/software/raspberrypi_video/raspberrypi_video -ip 127.0.0.1
+WorkingDirectory=/home/team13/RESOFLY/Raspberry-Pi-FLIR-Lepton-Thermal-Imaging-Camera/LeptonModule/software/raspberrypi_video
+ExecStart=/home/team13/RESOFLY/Raspberry-Pi-FLIR-Lepton-Thermal-Imaging-Camera/LeptonModule/software/raspberrypi_video/raspberrypi_video -ip 127.0.0.1
 Restart=always
 RestartSec=5
 

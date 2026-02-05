@@ -1,4 +1,5 @@
 #include <iostream>
+#include <unistd.h>
 
 #include "LeptonThread.h"
 
@@ -6,13 +7,25 @@
 #include "Palettes.h"
 #include "SPI.h"
 
+// Networking Headers
+#include <QBuffer>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+
 #define PACKET_SIZE 164
 #define PACKET_SIZE_UINT16 (PACKET_SIZE / 2)
 #define PACKETS_PER_FRAME 60
 #define FRAME_SIZE_UINT16 (PACKET_SIZE_UINT16 * PACKETS_PER_FRAME)
-#define FPS 27
+#define FPS 27;
 
-LeptonThread::LeptonThread() {
+// Hardcoded Destination (Localhost for Pi-only mode)
+#define DEST_IP "127.0.0.1"
+#define DEST_PORT 5005
+int sock;
+struct sockaddr_in destAddr;
+
+LeptonThread::LeptonThread() : QThread() {
   //
   loglevel = 0;
 
@@ -23,19 +36,25 @@ LeptonThread::LeptonThread() {
   selectedColormapSize = get_size_colormap_ironblack();
 
   //
-  typeLepton = 3; // 2:Lepton 2.x  / 3:Lepton 3.x
+  typeLepton = 2; // 2:Lepton 2.x  / 3:Lepton 3.x
   myImageWidth = 80;
   myImageHeight = 60;
 
   //
-  // spiSpeed = 20 * 1000 * 1000; // 20MHz
-  spiSpeed = 18 * 1000 * 1000; // 18MHz (Optimal for Lepton 3.x Sync)
+  spiSpeed = 20 * 1000 * 1000; // SPI bus speed 20MHz
 
   // min/max value for scaling
   autoRangeMin = true;
   autoRangeMax = true;
   rangeMin = 30000;
   rangeMax = 32000;
+
+  // Initialize UDP Socket
+  sock = socket(AF_INET, SOCK_DGRAM, 0);
+  memset(&destAddr, 0, sizeof(destAddr));
+  destAddr.sin_family = AF_INET;
+  destAddr.sin_port = htons(DEST_PORT);
+  inet_pton(AF_INET, DEST_IP, &destAddr.sin_addr);
 }
 
 LeptonThread::~LeptonThread() {}
@@ -95,9 +114,13 @@ void LeptonThread::useRangeMaxValue(uint16_t newMaxValue) {
   rangeMax = newMaxValue;
 }
 
+void LeptonThread::useDestinationIP(const char *ip) {
+  inet_pton(AF_INET, ip, &destAddr.sin_addr);
+}
+
 void LeptonThread::run() {
   // create the initial image
-  myImage = QImage(myImageWidth, myImageHeight, QImage::Format_RGB16);
+  myImage = QImage(myImageWidth, myImageHeight, QImage::Format_RGB888);
 
   const int *colormap = selectedColormap;
   const int colormapSize = selectedColormapSize;
@@ -109,39 +132,35 @@ void LeptonThread::run() {
   uint16_t n_zero_value_drop_frame = 0;
 
   // open spi port
-  SpiOpenPort(0, spiSpeed);  // Use CS0 (spidev0.0) - User wiring on Pin 24
+  SpiOpenPort(0, spiSpeed);
 
   while (true) {
 
     // read data packets from lepton over SPI
     int resets = 0;
-    static int spi_resets = 0; // Track SPI resets for camera reboot
     int segmentNumber = -1;
     for (int j = 0; j < PACKETS_PER_FRAME; j++) {
       // if it's a drop packet, reset j to 0, set to -1 so he'll be at 0 again
       // loop
-      read(spi_cs1_fd, result + sizeof(uint8_t) * PACKET_SIZE * j,
+      read(spi_cs0_fd, result + sizeof(uint8_t) * PACKET_SIZE * j,
            sizeof(uint8_t) * PACKET_SIZE);
       int packetNumber = result[j * PACKET_SIZE + 1];
       if (packetNumber != j) {
         j = -1;
         resets += 1;
-        usleep(1000); // Quick delay between retries
-        // Re-sync after 100 failed packets (more aggressive)
-        if (resets >= 100) {
+        usleep(1000);
+        // Note: we've selected 750 resets as an arbitrary limit, since there
+        // should never be 750 "null" packets between two valid transmissions at
+        // the current poll rate By polling faster, developers may easily exceed
+        // this count, and the down period between frames may then be flagged as
+        // a loss of sync
+        if (resets == 750) {
           SpiClosePort(0);
-          usleep(200000); // Wait 200ms for sync
+          lepton_reboot();
+          n_wrong_segment = 0;
+          n_zero_value_drop_frame = 0;
+          usleep(750000);
           SpiOpenPort(0, spiSpeed);
-          resets = 0;
-          spi_resets++;
-          // Full camera reboot after 5 SPI resets to prevent permanent freeze
-          if (spi_resets >= 5) {
-            log_message(1, "[RECOVERY] Performing full camera reboot");
-            lepton_reboot();
-            usleep(1000000); // Wait 1 second after reboot
-            lepton_perform_ffc();
-            spi_resets = 0;
-          }
         }
         continue;
       }
@@ -182,7 +201,6 @@ void LeptonThread::run() {
       memcpy(shelf[segmentNumber - 1], result,
              sizeof(uint8_t) * PACKET_SIZE * PACKETS_PER_FRAME);
       if (segmentNumber != 4) {
-        usleep(500); // Small delay between segments for better sync
         continue;
       }
       iSegmentStop = 4;
@@ -194,7 +212,7 @@ void LeptonThread::run() {
 
     if ((autoRangeMin == true) || (autoRangeMax == true)) {
       if (autoRangeMin == true) {
-        minValue = 65535;
+        maxValue = 65535;
       }
       if (autoRangeMax == true) {
         maxValue = 0;
@@ -263,22 +281,6 @@ void LeptonThread::run() {
         if (colormapSize <= ofs_b)
           ofs_b = colormapSize - 1;
         color = qRgb(colormap[ofs_r], colormap[ofs_g], colormap[ofs_b]);
-
-        // Make grayscale pixels black, keep colored pixels as-is
-        // background mode: if black -> make grayscale pixels black (for
-        // transparency keying) if grey -> keep grayscale as grayscale
-        bool blackBg = (m_backgroundMode == "black");
-        if (blackBg) {
-          // If the colormap output is grayscale-ish (R==G==B), force it to
-          // black
-          int r = qRed(color), g = qGreen(color), b = qBlue(color);
-          if (r == g && g == b) {
-            color = qRgb(0, 0, 0);
-          }
-        } else {
-          // leave 'color' unchanged (grey background stays grey)
-        }
-
         if (typeLepton == 3) {
           column = (i % PACKET_SIZE_UINT16) - 2 +
                    (myImageWidth / 2) *
@@ -301,7 +303,43 @@ void LeptonThread::run() {
     }
 
     // lets emit the signal for update
+    // Emit signal (optional if GUI is gone, but keep for now)
     emit updateImage(myImage);
+
+    // ---- NETWORK STREAMING ----
+    // Compress QImage to JPEG
+    QByteArray byteArray;
+    QBuffer buffer(&byteArray);
+    buffer.open(QIODevice::WriteOnly);
+    myImage.save(&buffer, "JPG", 85); // Quality 85
+
+    // Prepare Header: Frame Count (4B) + Timestamp (4B)
+    // Simplified for C++: just frame count for now or rough timestamp
+    static uint32_t frameCounter = 0;
+    frameCounter++;
+    uint32_t ts = (uint32_t)time(NULL);
+
+    // Pack header (Big Endian)
+    uint32_t header[2];
+    header[0] = htonl(frameCounter);
+    header[1] = htonl(ts);
+
+    // Send Header + JPEG
+    // Note: sendto expects one contiguous buffer, closely mimic python behavior
+    // We send payload directly.
+
+    // Create combined buffer
+    QByteArray packet;
+    packet.append((const char *)header, 8);
+    packet.append(byteArray);
+
+    sendto(sock, packet.data(), packet.size(), 0, (struct sockaddr *)&destAddr,
+           sizeof(destAddr));
+
+    if (frameCounter % 100 == 0) {
+      std::cout << "Sent Frame " << frameCounter << " (" << packet.size()
+                << " bytes)" << std::endl;
+    }
   }
 
   // finally, close SPI port just bcuz
@@ -317,8 +355,4 @@ void LeptonThread::log_message(uint16_t level, std::string msg) {
   if (level <= loglevel) {
     std::cerr << msg << std::endl;
   }
-}
-
-void LeptonThread::setBackgroundMode(const QString &mode) {
-  m_backgroundMode = mode.toLower();
 }
