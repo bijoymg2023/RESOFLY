@@ -121,10 +121,11 @@ int main(int argc, char **argv) {
 
   // Note: No more signal connection to GUI labels
 
+  thread->useDestinationIP(targetIP);
   thread->start();
 
   printf("RESOFLY Thermal Streamer Started (Headless)\n");
-  printf("Streaming to 192.168.10.1:5005\n");
+  printf("Streaming to %s:5005\n", targetIP);
 
   return a.exec();
 }
