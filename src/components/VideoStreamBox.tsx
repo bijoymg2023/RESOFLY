@@ -204,7 +204,7 @@ export const VideoStreamBox = () => {
                     <div className="text-white/30 font-mono flex flex-col items-center z-10">
                       <AlertCircle className="w-16 h-16 mb-4 text-red-500/50" />
                       <p className="tracking-widest text-xs text-red-400">STREAM OFFLINE</p>
-                      <p className="text-[10px] mt-2 text-white/30">Check forwarder on port 8080</p>
+                      <p className="text-[10px] mt-2 text-white/30">Check forwarder on port 8081</p>
                       <button
                         onClick={() => setStreamError(false)}
                         className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
