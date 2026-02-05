@@ -1,0 +1,14 @@
+[Unit]
+Description=ResoFly C++ Streamer (Headless)
+After=network.target resofly-thermal.service
+Wants=resofly-thermal.service
+
+[Service]
+User=root
+WorkingDirectory=/home/team13/ResoFly/lepton/LeptonModule/software/raspberrypi_video
+ExecStart=/home/team13/ResoFly/lepton/LeptonModule/software/raspberrypi_video/raspberrypi_video -ip 127.0.0.1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

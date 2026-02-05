@@ -1,0 +1,13 @@
+[Unit]
+Description=ResoFly Thermal Server (Python Receiver)
+After=network.target
+
+[Service]
+User=team13
+WorkingDirectory=/home/team13/ResoFly/RESOFLY
+ExecStart=/usr/bin/python3 thermal_server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

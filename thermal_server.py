@@ -24,8 +24,8 @@ LISTEN_PORT = 5005              # Receive raw data from Pi
 HTTP_PORT = 8081                # Local MJPEG stream port (for debugging)
 
 # Return stream to Pi
-PI_IP = "192.168.10.2"          # Pi's IP address (default, can be overridden)
-PI_RETURN_PORT = 5006           # Port on Pi to receive processed frames
+# PI_IP = "192.168.10.2"          # Pi's IP address (default, can be overridden)
+# PI_RETURN_PORT = 5006           # Port on Pi to receive processed frames (DEPRECATED)
 
 # Lepton 3.5 specs
 FRAME_WIDTH = 160
@@ -79,59 +79,25 @@ class MJPEGHandler(BaseHTTPRequestHandler):
 def start_http_server():
     try:
         server = HTTPServer(('0.0.0.0', HTTP_PORT), MJPEGHandler)
-        print(f"[LAPTOP] Local MJPEG server on port {HTTP_PORT} (for debug)")
+        print(f"[THERMAL] MJPEG server on port {HTTP_PORT}")
         server.serve_forever()
     except OSError as e:
-        print(f"[LAPTOP] HTTP SERVER ERROR: {e}")
-        print(f"[LAPTOP] Port {HTTP_PORT} may be in use.")
+        print(f"[THERMAL] HTTP SERVER ERROR: {e}")
+        print(f"[THERMAL] Port {HTTP_PORT} may be in use.")
     except Exception as e:
-        print(f"[LAPTOP] HTTP SERVER ERROR: {e}")
+        print(f"[THERMAL] HTTP SERVER ERROR: {e}")
         traceback.print_exc()
 
-def process_frame(raw_data):
-    """
-    Process raw 16-bit thermal data into colored JPEG.
-    """
-    # Convert bytes to numpy array (big-endian uint16)
-    frame_16bit = np.frombuffer(raw_data, dtype='>u2')
-    frame_16bit = frame_16bit.reshape((FRAME_HEIGHT, FRAME_WIDTH))
-    
-    # Normalize to 8-bit
-    frame_norm = cv2.normalize(frame_16bit, None, 0, 255, cv2.NORM_MINMAX)
-    frame_8bit = frame_norm.astype(np.uint8)
-    
-    # Apply colormap (INFERNO for thermal)
-    frame_colored = cv2.applyColorMap(frame_8bit, cv2.COLORMAP_INFERNO)
-    
-    # Scale up for visibility
-    output_width = FRAME_WIDTH * OUTPUT_SCALE
-    output_height = FRAME_HEIGHT * OUTPUT_SCALE
-    frame_scaled = cv2.resize(frame_colored, (output_width, output_height),
-                              interpolation=cv2.INTER_LINEAR)
-    
-    # Encode to JPEG
-    encode_params = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
-    _, jpeg_data = cv2.imencode('.jpg', frame_scaled, encode_params)
-    
-    return jpeg_data.tobytes()
+
 
 def main():
-    global frame_count, start_time, current_jpeg, PI_IP
-    
-    parser = argparse.ArgumentParser(description='Thermal Processor with Return Stream')
-    parser.add_argument('--pi-ip', type=str, default=PI_IP,
-                        help=f'Pi IP address for return stream (default: {PI_IP})')
-    args = parser.parse_args()
-    
-    PI_IP = args.pi_ip
+    global frame_count, start_time, current_jpeg
     
     print("=" * 60)
-    print("  THERMAL PROCESSOR (Two-Way Mode)")
+    print("  THERMAL SERVER (Pi Receiver)")
     print("=" * 60)
-    print(f"[LAPTOP] Receiving raw frames on port {LISTEN_PORT}")
-    print(f"[LAPTOP] Sending processed frames to {PI_IP}:{PI_RETURN_PORT}")
-    print(f"[LAPTOP] Local debug stream: http://localhost:{HTTP_PORT}/stream")
-    print(f"[LAPTOP] Output: {FRAME_WIDTH * OUTPUT_SCALE}x{FRAME_HEIGHT * OUTPUT_SCALE}")
+    print(f"[THERMAL] Receiving JPEG frames on port {LISTEN_PORT}")
+    print(f"[THERMAL] Serving MJPEG stream at http://0.0.0.0:{HTTP_PORT}/stream")
     print("=" * 60)
     
     # Start HTTP server for local debugging
@@ -143,56 +109,44 @@ def main():
     recv_sock.bind((LISTEN_IP, LISTEN_PORT))
     recv_sock.settimeout(5.0)
     
-    # Send socket (back to Pi)
-    send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    
-    expected_packet_size = 8 + FRAME_SIZE_BYTES  # Header + frame data
+    # Processed JPEG stream doesn't have fixed packet size, but use safe buffer
+    max_packet_size = 65535  # UDP Max
     start_time = time.time()
     
-    print("[LAPTOP] Waiting for frames from Pi...")
+    print("[THERMAL] Waiting for frames...")
     
     while True:
         try:
-            data, addr = recv_sock.recvfrom(expected_packet_size + 100)
+            data, addr = recv_sock.recvfrom(max_packet_size)
             
-            if len(data) >= expected_packet_size:
-                # Extract header and raw frame
+            if len(data) >= 8:
+                # Extract header and JPEG frame
                 pi_frame_num, timestamp = struct.unpack('>II', data[:8])
-                raw_frame = data[8:8 + FRAME_SIZE_BYTES]
+                jpeg_data = data[8:] # The rest is the JPEG
                 
-                # Process the frame
-                proc_start = time.time()
-                jpeg_data = process_frame(raw_frame)
-                proc_time = (time.time() - proc_start) * 1000
+                # No processing needed - Pi did it!
+                proc_time = 0 
                 
                 # Update local buffer (for debug stream)
                 with jpeg_lock:
                     current_jpeg = jpeg_data
                 
-                # Send processed frame back to Pi
-                # Header: frame_num (4 bytes) + jpeg_size (4 bytes) + jpeg_data
-                return_header = struct.pack('>II', pi_frame_num, len(jpeg_data))
-                return_packet = return_header + jpeg_data
-                
-                try:
-                    send_sock.sendto(return_packet, (PI_IP, PI_RETURN_PORT))
-                except Exception as e:
-                    print(f"[LAPTOP] Failed to send to Pi: {e}")
+                # No return stream needed
                 
                 frame_count += 1
                 
                 if frame_count % 27 == 0:
                     elapsed = time.time() - start_time
                     fps = frame_count / elapsed
-                    print(f"[LAPTOP] Frame {pi_frame_num} → processed in {proc_time:.1f}ms, " +
-                          f"sent to Pi, FPS: {fps:.1f}")
+                    print(f"[THERMAL] Frame {pi_frame_num} received, FPS: {fps:.1f}")
             else:
-                print(f"[LAPTOP] Incomplete packet: {len(data)} bytes (expected {expected_packet_size})")
+                 # print(f"[THERMAL] Ignored small packet: {len(data)} bytes")
+                 pass
         
         except socket.timeout:
-            print("[LAPTOP] Waiting for data from Pi...")
+            print("[THERMAL] Waiting for data...")
         except Exception as e:
-            print(f"[LAPTOP] Error: {e}")
+            print(f"[THERMAL] Error: {e}")
 
 if __name__ == "__main__":
     main()
