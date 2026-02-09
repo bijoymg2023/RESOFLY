@@ -145,7 +145,7 @@ class ThermalDetector:
         if self.adaptive:
             mean = np.mean(blurred)
             std = np.std(blurred)
-            thresh_val = int(min(250, mean + 1.5 * std))
+            thresh_val = int(min(180, mean + 1.5 * std))  # Clamp to 180 to prevent runaway
             thresh_val = max(thresh_val, HUMAN_TEMP_THRESHOLD_INTENSITY)
         else:
             thresh_val = HUMAN_TEMP_THRESHOLD_INTENSITY
@@ -210,7 +210,7 @@ class ThermalFramePipeline:
     
     def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
         self.source = source
-        self.detector = ThermalDetector(adaptive=True, min_area=40)
+        self.detector = ThermalDetector(adaptive=True, min_area=30)  # Lower min_area
         self.on_detection = on_detection
         
         self.frame_number = 0
@@ -218,7 +218,7 @@ class ThermalFramePipeline:
         self.current_hotspots: List[Hotspot] = []
         
         # Alert throttling (prevent flooding)
-        self.alert_cooldown = 3.0  # seconds
+        self.alert_cooldown = 1.0  # seconds (Reduced from 3.0s)
         self.last_alert_time = 0
         
         # Stats
@@ -244,7 +244,7 @@ class ThermalFramePipeline:
         self.current_hotspots, binary = self.detector.process(frame)
         
         # Filter high-confidence detections
-        valid = [h for h in self.current_hotspots if h.confidence >= 0.6]
+        valid = [h for h in self.current_hotspots if h.confidence >= 0.5]  # Lower conf threshold
         
         if valid:
             self.detection_count += 1
@@ -257,7 +257,7 @@ class ThermalFramePipeline:
                 
                 # Create detection event
                 event = DetectionEvent(
-                    hotspots=valid[:3],  # Top 3
+                    hotspots=valid[:5],  # Top 5 (was 3)
                     timestamp=timestamp,
                     frame_number=self.frame_number,
                     total_count=len(valid)
