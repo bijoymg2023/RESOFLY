@@ -157,7 +157,7 @@ class RpicamCamera(BaseCamera):
                 # Stable low latency tuning:
                 # - 640x480 @ 30fps (Prevent CPU overload)
                 # - exposure sport: faster shutter speed for motion
-                # - quality 30: balance
+                # - quality 60: clearer image
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -165,7 +165,7 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "30",
+                    "--quality", "60",
                     "--exposure", "sport",
                     "--inline",            
                     "--nopreview",
