@@ -118,60 +118,118 @@ def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
 
 
 # ========================================
-# Pi Camera (RGB) Support using rpicam-still
+# Pi Camera (RGB) Support using rpicam-vid (Optimized)
 # ========================================
 
 class RpicamCamera(BaseCamera):
     """
-    Pi Camera using rpicam-still command.
-    Captures individual frames - simple and reliable.
+    Pi Camera using rpicam-vid subprocess for continuous video streaming.
+    Outputs MJPEG directly to stdout for high performance (30fps+).
     """
-    def __init__(self, resolution=(640, 480)):
+    def __init__(self, resolution=(1280, 720), framerate=30):
         self.resolution = resolution
+        self.framerate = framerate
         self.frame = None
         self.running = True
         self.available = False
-        self.temp_file = "/tmp/resofly_rgb_stream.jpg"
+        self.process = None
+        self.lock = threading.Lock()
         
-        # Check if rpicam-still is available
+        # Check if rpicam-vid is available
         import shutil
-        if shutil.which("rpicam-still"):
+        if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera initialized at {resolution}")
+            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps")
             
-            # Start background capture thread
-            self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+            # Start video streaming thread
+            self.thread = threading.Thread(target=self._stream_loop, daemon=True)
             self.thread.start()
         else:
-            print("rpicam-still not found - Pi Camera disabled")
+            print("rpicam-vid not found - Pi Camera disabled")
     
-    def _capture_loop(self):
-        """Background thread to continuously capture frames using rpicam-still."""
+    def _stream_loop(self):
+        """Background thread to continuously stream video using rpicam-vid."""
+        import subprocess
+        
         while self.running and self.available:
             try:
-                # Capture frame using rpicam-still (same as user's Flask code)
-                os.system(f"rpicam-still -o {self.temp_file} -t 1 --width {self.resolution[0]} --height {self.resolution[1]} -n > /dev/null 2>&1")
+                # Start rpicam-vid outputting MJPEG to stdout
+                # -t 0: Run indefinitely
+                # --inline: Inline headers for robust streaming
+                # --listen: Wait for connection (optional, using stdout here)
+                cmd = [
+                    "rpicam-vid",
+                    "-t", "0",
+                    "--width", str(self.resolution[0]),
+                    "--height", str(self.resolution[1]),
+                    "--framerate", str(self.framerate),
+                    "--codec", "mjpeg",
+                    "--inline", # Important for streaming
+                    "-n",       # No preview
+                    "-o", "-"   # Output to stdout
+                ]
                 
-                # Read the captured image
-                if os.path.exists(self.temp_file):
-                    with open(self.temp_file, "rb") as f:
-                        self.frame = f.read()
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=10**6
+                )
+                
+                print("rpicam-vid stream started")
+                
+                # Read MJPEG frames from stdout
+                buffer = b''
+                while self.running and self.process.poll() is None:
+                    chunk = self.process.stdout.read(8192)
+                    if not chunk:
+                        break
+                    
+                    buffer += chunk
+                    
+                    # Find JPEG frame boundaries
+                    start = buffer.find(b'\xff\xd8')
+                    end = buffer.find(b'\xff\xd9')
+                    
+                    if start != -1 and end != -1 and end > start:
+                        # Extract complete frame
+                        new_frame = buffer[start:end+2]
+                        
+                        with self.lock:
+                            self.frame = new_frame
+                            
+                        # Move buffer forward
+                        buffer = buffer[end+2:]
+                        
+                        # Prevent buffer overflow if parsing fails
+                        if len(buffer) > 1024*1024: # 1MB safety limit
+                            buffer = b''
                 
             except Exception as e:
-                print(f"RpicamCamera capture error: {e}")
-                time.sleep(0.5)
+                print(f"RpicamCamera stream error: {e}")
+                time.sleep(1)
+            finally:
+                if self.process:
+                    try:
+                        self.process.terminate()
+                        self.process.wait(timeout=1)
+                    except:
+                        pass
+                    self.process = None
+                time.sleep(2) # Wait before restart
     
     async def get_frame(self):
-        return self.frame
+        with self.lock:
+            return self.frame
     
     def is_available(self):
         return self.available
     
     def __del__(self):
         self.running = False
-        if os.path.exists(self.temp_file):
+        if self.process:
             try:
-                os.remove(self.temp_file)
+                self.process.terminate()
             except:
                 pass
 
@@ -180,30 +238,11 @@ class RpicamCamera(BaseCamera):
 rgb_camera_instance = None
 
 def get_rgb_camera():
-    """Get RGB camera instance (Pi Camera via rpicam-still)."""
+    """Get RGB camera instance (Pi Camera via rpicam-vid)."""
     global rgb_camera_instance
     if rgb_camera_instance is None:
         rgb_camera_instance = RpicamCamera()
     return rgb_camera_instance
-
-
-def generate_rgb_frames_sync():
-    """Sync generator for MJPEG stream (Flask-style direct capture)."""
-    temp_file = "/tmp/resofly_rgb_direct.jpg"
-    
-    while True:
-        # Capture fresh frame directly (matching user's Flask code)
-        os.system(f"rpicam-still -o {temp_file} -t 1 --width 640 --height 480 -n > /dev/null 2>&1")
-        
-        try:
-            with open(temp_file, "rb") as f:
-                frame = f.read()
-                yield (
-                    b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-                )
-        except:
-            pass
 
 
 async def generate_rgb_stream():
@@ -225,4 +264,4 @@ async def generate_rgb_stream():
                 b'Waiting for camera...\r\n'
             )
         
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(0.016) # ~60 FPS polling rate (limited by camera framerate)
