@@ -41,7 +41,7 @@ export const VideoStreamBox = () => {
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
 
   // Demo video files from dataset folder
-  const demoVideos = ['/dataset/test1.mp4', '/dataset/test2.mp4'];
+  const demoVideos = ['/dataset/test2.mp4', '/dataset/test1.mp4'];
 
   // Stream URL - uses the proxied endpoint through main backend (works with Cloudflare)
   const THERMAL_STREAM_URL = `/api/stream/thermal`;
