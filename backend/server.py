@@ -364,6 +364,34 @@ async def video_feed_rgb(token: Optional[str] = None):
         }
     )
 
+@api_router.get("/stream/rgb/frame")
+async def rgb_single_frame(t: Optional[str] = None):
+    """Returns a single JPEG frame from Pi Camera. Use ?t=timestamp for cache busting."""
+    from fastapi.responses import Response
+    
+    rgb_camera = camera.get_rgb_camera()
+    frame = await rgb_camera.get_frame()
+    
+    if frame:
+        return Response(
+            content=frame,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
+    else:
+        # Return a 1x1 transparent pixel if no frame available
+        return Response(
+            content=b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82',
+            media_type="image/png",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0"
+            }
+        )
+
 
 # --------------------------
 # Snapshot / Gallery API

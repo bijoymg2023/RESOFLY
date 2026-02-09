@@ -24,6 +24,71 @@ interface Capture {
 type VideoType = 'RGB' | 'Thermal' | 'Overlay';
 type ThermalMode = 'live' | 'gallery';
 
+// RGB Camera Stream component using polling for Cloudflare compatibility
+const RgbCameraStream: React.FC<{
+  onError: () => void;
+  hasError: boolean;
+  onRetry: () => void;
+}> = ({ onError, hasError, onRetry }) => {
+  const [frameUrl, setFrameUrl] = useState(`/api/stream/rgb/frame?t=${Date.now()}`);
+  const [fps, setFps] = useState(0);
+  const frameCountRef = useRef(0);
+
+  useEffect(() => {
+    if (hasError) return;
+
+    // Refresh frame every 100ms (~10fps)
+    const interval = setInterval(() => {
+      setFrameUrl(`/api/stream/rgb/frame?t=${Date.now()}`);
+      frameCountRef.current++;
+    }, 100);
+
+    // Calculate FPS every second
+    const fpsInterval = setInterval(() => {
+      setFps(frameCountRef.current);
+      frameCountRef.current = 0;
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(fpsInterval);
+    };
+  }, [hasError]);
+
+  if (hasError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full w-full bg-black">
+        <Video className="w-16 h-16 mb-4 text-red-500/50" />
+        <p className="tracking-widest text-xs text-red-400">CAMERA OFFLINE</p>
+        <p className="text-[10px] mt-2 text-white/30">Pi Camera not connected</p>
+        <button
+          onClick={onRetry}
+          className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
+        >
+          Retry Connection
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-full">
+      <img
+        src={frameUrl}
+        alt="Live RGB Feed"
+        className="w-full h-full object-contain"
+        onError={onError}
+      />
+
+      {/* Live Indicator */}
+      <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
+        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+        <span className="font-mono text-[9px] text-green-400">LIVE {fps}fps</span>
+      </div>
+    </div>
+  );
+};
+
 export const VideoStreamBox = () => {
   const [activeType, setActiveType] = useState<VideoType>('Thermal');
   const [thermalMode, setThermalMode] = useState<ThermalMode>('live');
@@ -306,38 +371,8 @@ export const VideoStreamBox = () => {
               )}
             </>
           ) : activeType === 'RGB' ? (
-            /* RGB Camera Stream from Pi Camera */
-            <div className="relative w-full h-full">
-              {rgbStreamError ? (
-                <div className="flex flex-col items-center justify-center h-full w-full bg-black">
-                  <Video className="w-16 h-16 mb-4 text-red-500/50" />
-                  <p className="tracking-widest text-xs text-red-400">CAMERA OFFLINE</p>
-                  <p className="text-[10px] mt-2 text-white/30">Pi Camera not connected</p>
-                  <button
-                    onClick={() => setRgbStreamError(false)}
-                    className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
-                  >
-                    Retry Connection
-                  </button>
-                </div>
-              ) : (
-                <img
-                  src="/api/stream/rgb"
-                  alt="Live RGB Feed"
-                  className="w-full h-full object-contain"
-                  onError={() => setRgbStreamError(true)}
-                  onLoad={() => setRgbStreamError(false)}
-                />
-              )}
-
-              {/* Live Indicator */}
-              {!rgbStreamError && (
-                <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  <span className="font-mono text-[9px] text-green-400">LIVE</span>
-                </div>
-              )}
-            </div>
+            /* RGB Camera Stream from Pi Camera - Using polling for Cloudflare compatibility */
+            <RgbCameraStream onError={() => setRgbStreamError(true)} hasError={rgbStreamError} onRetry={() => setRgbStreamError(false)} />
           ) : (
             /* Offline / Placeholder for Fusion */
             <div className="flex flex-col items-center justify-center h-full w-full bg-black relative overflow-hidden">
