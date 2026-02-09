@@ -154,10 +154,10 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # Low-latency drone FPV (optimized for Cloudflare):
-                # - 640x480 @ 30fps (low bandwidth)
-                # - exposure sport: fast shutter
-                # - quality 50: balance clarity/speed
+                # High clarity drone FPV:
+                # - 640x480 @ 30fps
+                # - quality 70: clear image
+                # - sharpness 1.5: sharper edges
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -165,7 +165,8 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "50",
+                    "--quality", "70",
+                    "--sharpness", "1.5",
                     "--exposure", "sport",
                     "--inline",            
                     "--nopreview",
