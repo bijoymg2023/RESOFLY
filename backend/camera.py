@@ -154,10 +154,10 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # High clarity drone FPV:
+                # WORKING CONFIG (user confirmed 'perfect'):
                 # - 640x480 @ 30fps
-                # - quality 70: clear image
-                # - sharpness 1.5: sharper edges
+                # - exposure sport: fast shutter for motion
+                # - quality 60: clear image
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -165,8 +165,7 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "70",
-                    "--sharpness", "1.5",
+                    "--quality", "60",
                     "--exposure", "sport",
                     "--inline",            
                     "--nopreview",
