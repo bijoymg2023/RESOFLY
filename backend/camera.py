@@ -154,10 +154,10 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # WORKING CONFIG (user confirmed 'perfect'):
-                # - 640x480 @ 30fps
-                # - exposure sport: fast shutter for motion
-                # - quality 60: clear image
+                # Stable low latency tuning:
+                # - 640x480 @ 30fps (Prevent CPU overload)
+                # - exposure sport: faster shutter speed for motion
+                # - quality 60: clearer image
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -181,39 +181,51 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print("rpicam-vid stream started (real-time mode)")
+                print("rpicam-vid stream started (60fps)")
                 
                 # Read MJPEG frames from stdout
                 buffer = b''
                 while self.running and self.process.poll() is None:
-                    chunk = self.process.stdout.read(16384)
+                    # Read a large chunk to drain pipe
+                    chunk = self.process.stdout.read(32768)
                     if not chunk:
                         break
                     
                     buffer += chunk
                     
-                    # GREEDY REAL-TIME LOGIC:
-                    # Find the LAST complete frame and skip everything older
-                    # This ensures we always display the most recent frame (no lag)
-                    last_end = buffer.rfind(b'\xff\xd9')
+                    # GREEDY FRAME PARSING:
+                    # Find the LAST complete frame in the buffer and discard everything before it.
+                    # This ensures we always show the freshest frame and never lag behind.
                     
-                    if last_end != -1:
-                        frame_end = last_end + 2
-                        # Find the start marker for this frame (search backwards)
-                        frame_start = buffer.rfind(b'\xff\xd8', 0, last_end)
+                    last_frame_end = buffer.rfind(b'\xff\xd9')
+                    
+                    if last_frame_end != -1:
+                        # Found at least one frame end.
+                        # Now find the start of THIS frame
+                        packet_end = last_frame_end + 2
+                        
+                        # Search backwards for start of this frame
+                        frame_start = buffer.rfind(b'\xff\xd8', 0, last_frame_end)
                         
                         if frame_start != -1:
                             # Extract the latest complete frame
-                            new_frame = buffer[frame_start:frame_end]
+                            new_frame = buffer[frame_start:packet_end]
                             
                             with self.lock:
                                 self.frame = new_frame
                             
-                            # Discard everything up to and including this frame
-                            buffer = buffer[frame_end:]
+                            # DISCARD processed data and OLD frames
+                            # Keep only what's after the last frame end (start of next frame)
+                            buffer = buffer[packet_end:]
+                        else:
+                            # We have an end but no start? (partial buffer)
+                            # Keep buffer as is, wait for more data?
+                            # Or discard if buffer is too big to be a fragment?
+                            if len(buffer) > 500000:
+                                buffer = b''
                     
-                    # Safety: prevent buffer overflow
-                    if len(buffer) > 500000:
+                    # Safety valve
+                    if len(buffer) > 1000000:
                         buffer = b''
                 
             except Exception as e:
