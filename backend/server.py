@@ -355,7 +355,13 @@ async def video_feed_rgb(token: Optional[str] = None):
     """RGB Camera Stream from Pi Camera."""
     return StreamingResponse(
         camera.generate_rgb_stream(), 
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "keep-alive"
+        }
     )
 
 
