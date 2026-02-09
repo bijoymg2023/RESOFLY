@@ -1,116 +1,70 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { apiFetch } from '@/lib/api';
 import {
   AlertTriangle,
   Info,
   CheckCircle,
   XCircle,
-  Clock,
-  X,
-  ChevronDown,
-  ChevronUp
+  Activity,
+  Flame
 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-
-interface Alert {
-  id: string;
-  type: 'error' | 'warning' | 'info' | 'success';
-  title: string;
-  message: string;
-  timestamp: Date;
-  acknowledged: boolean;
-}
+import { useDetection } from '@/contexts/DetectionContext';
 
 const alertTypes = {
+  LIFE: {
+    icon: Activity,
+    color: 'text-red-500',
+    bgColor: 'bg-red-500/20'
+  },
+  FIRE: {
+    icon: Flame,
+    color: 'text-orange-500',
+    bgColor: 'bg-orange-500/20'
+  },
   error: {
     icon: XCircle,
-    color: 'destructive',
-    bgColor: 'bg-destructive/20',
-    borderColor: 'border-destructive/30',
-    textColor: 'text-destructive'
+    color: 'text-red-500',
+    bgColor: 'bg-destructive/20'
   },
   warning: {
     icon: AlertTriangle,
-    color: 'warning',
-    bgColor: 'bg-warning/20',
-    borderColor: 'border-warning/30',
-    textColor: 'text-warning'
+    color: 'text-yellow-500',
+    bgColor: 'bg-yellow-500/20'
   },
   info: {
     icon: Info,
-    color: 'primary',
-    bgColor: 'bg-primary/20',
-    borderColor: 'border-primary/30',
-    textColor: 'text-primary'
+    color: 'text-blue-500',
+    bgColor: 'bg-blue-500/20'
   },
   success: {
     icon: CheckCircle,
-    color: 'success',
-    bgColor: 'bg-success/20',
-    borderColor: 'border-success/30',
-    textColor: 'text-success'
+    color: 'text-green-500',
+    bgColor: 'bg-green-500/20'
+  },
+  vehicle: {
+    icon: Info,
+    color: 'text-blue-400',
+    bgColor: 'bg-blue-500/10'
+  },
+  other: {
+    icon: Info,
+    color: 'text-gray-400',
+    bgColor: 'bg-gray-500/10'
   }
 };
 
-const API_URL = '/api';
-
 export const AlertBox = () => {
-  const [expandedAlert, setExpandedAlert] = useState<string | null>(null);
-  const isMobile = useIsMobile();
-  const queryClient = useQueryClient();
-
-  // Fetch Alerts
-  const { data: alerts = [] } = useQuery<Alert[]>({
-    queryKey: ['alerts'],
-    queryFn: async () => {
-      const res = await apiFetch(`${API_URL}/alerts`);
-      if (!res.ok) throw new Error('Failed to fetch alerts');
-      const data = await res.json();
-      // Ensure timestamps are Date objects
-      return data.map((alert: any) => ({
-        ...alert,
-        timestamp: new Date(alert.timestamp)
-      }));
-    },
-    refetchInterval: 5000,
-  });
-
-  // Acknowledge Mutation
-  const acknowledgeMutation = useMutation({
-    mutationFn: async (alertId: string) => {
-      await apiFetch(`${API_URL}/alerts/${alertId}/acknowledge`, { method: 'PATCH' });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-    }
-  });
-
-  // Delete Mutation
-  const deleteMutation = useMutation({
-    mutationFn: async (alertId: string) => {
-      await fetch(`${API_URL}/alerts/${alertId}`, { method: 'DELETE' });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-    }
-  });
-
-  const acknowledgeAlert = (alertId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    acknowledgeMutation.mutate(alertId);
-  };
+  const { alerts } = useDetection();
 
   return (
     <Card className="bg-[#0A0A0A]/90 border border-white/10 backdrop-blur-sm flex flex-col overflow-hidden shadow-xl h-full min-h-[280px]">
       <CardHeader className="py-3 px-4 border-b border-white/5 bg-black/40 flex flex-row items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-          <CardTitle className="text-xs font-mono uppercase tracking-widest text-white/60">System Events Log</CardTitle>
+          <CardTitle className="text-xs font-mono uppercase tracking-widest text-white/60">Event Log</CardTitle>
         </div>
         <Badge variant="outline" className="text-[10px] font-mono border-white/10 text-white/40 bg-white/5">
           {alerts.length} EVENTS
@@ -129,28 +83,32 @@ export const AlertBox = () => {
               </div>
             ) : (
               alerts.map((alert) => {
-                const config = alertTypes[alert.type];
+                const config = alertTypes[alert.type] || alertTypes.info;
+                const Icon = config.icon;
+
                 return (
                   <div
                     key={alert.id}
-                    className={`group flex items-start space-x-3 p-2 hover:bg-white/5 rounded transition-colors cursor-default ${alert.acknowledged ? 'opacity-40' : 'opacity-100'}`}
+                    className={`group flex items-start space-x-3 p-2 hover:bg-white/5 rounded transition-colors cursor-default border-b border-white/5 last:border-0`}
                   >
-                    <span className="text-white/30 shrink-0 font-mono text-xs">
-                      {alert.timestamp.toLocaleTimeString([], { hour12: false })}
+                    <span className="text-white/30 shrink-0 font-mono text-xs w-16">
+                      {alert.timestamp}
                     </span>
-                    <span className={`uppercase font-bold shrink-0 text-xs ${config.textColor}`}>
+                    <span className={`uppercase font-bold shrink-0 text-xs ${config.color} flex items-center w-24`}>
+                      <Icon className="w-3 h-3 mr-1" />
                       {alert.type}
                     </span>
                     <span className="text-white/80 flex-1 truncate text-xs">
-                      {alert.message}
+                      {alert.type === 'LIFE'
+                        ? `Human Signature (Conf: ${(alert.confidence * 100).toFixed(0)}%)`
+                        : `Detection Event at ${alert.lat.toFixed(4)}, ${alert.lon.toFixed(4)}`
+                      }
                     </span>
-
-
                   </div>
                 );
               })
             )}
-            <div className="text-white/20 pt-2 animate-pulse">_</div>
+            <div className="text-white/20 pt-2 animate-pulse px-2">_</div>
           </div>
         </ScrollArea>
       </CardContent >
