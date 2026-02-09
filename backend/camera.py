@@ -78,13 +78,13 @@ class StreamProxyCamera(BaseCamera):
         self.running = False
 
 # Global Singleton
-thermal_instance = None 
+camera_instance = None 
 
-def get_camera(type='thermal'):
-    global thermal_instance
-    if thermal_instance is None:
-        thermal_instance = StreamProxyCamera()
-    return thermal_instance
+def get_camera(type='rgb'):
+    global camera_instance
+    if camera_instance is None:
+        camera_instance = StreamProxyCamera()
+    return camera_instance
 
 def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
     """

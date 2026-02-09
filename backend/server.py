@@ -348,26 +348,7 @@ async def gen_frames(camera_type='thermal'):
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-async def proxy_thermal_stream():
-    """Proxy the thermal stream from the local thermal server on port 8081."""
-    import httpx
-    try:
-        async with httpx.AsyncClient(timeout=None) as client:
-            async with client.stream('GET', 'http://127.0.0.1:8081/stream') as response:
-                async for chunk in response.aiter_bytes():
-                    yield chunk
-    except Exception as e:
-        logger.error(f"Thermal proxy error: {e}")
-        # Yield a placeholder frame on error
-        yield b'--frame\r\nContent-Type: text/plain\r\n\r\nStream unavailable\r\n'
 
-@api_router.get("/stream/thermal")
-async def video_feed_thermal(token: Optional[str] = None):
-    """Proxies thermal stream from the local thermal server (port 8081)."""
-    return StreamingResponse(
-        proxy_thermal_stream(), 
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
 
 @api_router.get("/stream/rgb")
 async def video_feed_rgb(token: Optional[str] = None):
@@ -419,23 +400,7 @@ async def capture_snapshot(current_user: UserDB = Depends(get_current_user)):
         logger.error(f"Capture failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.post("/calibrate")
-async def calibrate_camera(current_user: UserDB = Depends(get_current_user)):
-    """Triggers Flat Field Correction (FFC) to fix banding."""
-    try:
-        # Write "FFC" to the named pipe the C++ app listens on (if implemented)
-        # Assuming typical lepton-view implementation listens on /tmp/lepton_cmd
-        cmd_pipe = "/tmp/lepton_cmd"
-        if os.path.exists(cmd_pipe):
-             # Non-blocking write
-             with open(cmd_pipe, "w") as p:
-                 p.write("FFC\n")
-             return {"message": "Calibration Triggered"}
-        else:
-            return {"message": "Calibration unavailable (Pipe not found)"}
-    except Exception as e:
-        logger.error(f"Calibration failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+
 
 @api_router.get("/gallery", response_model=List[CaptureResponse])
 async def get_gallery(current_user: UserDB = Depends(get_current_user)):
