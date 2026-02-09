@@ -33,7 +33,6 @@ export const VideoStreamBox = () => {
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState(false);
-  const [rgbStreamError, setRgbStreamError] = useState(false);
   const { token } = useAuth();
   const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -307,36 +306,18 @@ export const VideoStreamBox = () => {
             </>
           ) : activeType === 'RGB' ? (
             /* RGB Camera Stream from Pi Camera */
-            <div className="relative w-full h-full">
-              {rgbStreamError ? (
-                <div className="flex flex-col items-center justify-center h-full w-full bg-black">
-                  <Video className="w-16 h-16 mb-4 text-red-500/50" />
-                  <p className="tracking-widest text-xs text-red-400">CAMERA OFFLINE</p>
-                  <p className="text-[10px] mt-2 text-white/30">Pi Camera not connected</p>
-                  <button
-                    onClick={() => setRgbStreamError(false)}
-                    className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
-                  >
-                    Retry Connection
-                  </button>
-                </div>
-              ) : (
-                <img
-                  src="/api/stream/rgb"
-                  alt="Live RGB Feed"
-                  className="w-full h-full object-contain"
-                  onError={() => setRgbStreamError(true)}
-                  onLoad={() => setRgbStreamError(false)}
-                />
-              )}
+            <div className="relative w-full h-full bg-black">
+              <img
+                src="/api/stream/rgb"
+                alt="Live RGB Feed"
+                className="w-full h-full object-contain"
+              />
 
               {/* Live Indicator */}
-              {!rgbStreamError && (
-                <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                  <span className="font-mono text-[9px] text-green-400">LIVE</span>
-                </div>
-              )}
+              <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="font-mono text-[9px] text-green-400">LIVE</span>
+              </div>
             </div>
           ) : (
             /* Offline / Placeholder for Fusion */

@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 import time
 import asyncio
 import threading
@@ -117,74 +118,142 @@ def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
 
 
 # ========================================
-# Pi Camera (RGB) Support
+# Pi Camera (RGB) Support using rpicam-vid (Optimized)
 # ========================================
 
-class PiCamera(BaseCamera):
+class RpicamCamera(BaseCamera):
     """
-    Native Pi Camera using picamera2 library.
-    Falls back gracefully if not available.
+    Pi Camera using rpicam-vid subprocess for continuous video streaming.
+    Outputs MJPEG directly to stdout for high performance (30fps+).
     """
-    def __init__(self, resolution=(1280, 720), framerate=30):
+    def __init__(self, resolution=(640, 480), framerate=30):
         self.resolution = resolution
         self.framerate = framerate
-        self.camera = None
-        self.available = False
         self.frame = None
         self.running = True
+        self.available = False
+        self.process = None
+        self.lock = threading.Lock()
         
-        try:
-            from picamera2 import Picamera2
-            self.camera = Picamera2()
-            config = self.camera.create_preview_configuration(
-                main={"size": resolution, "format": "RGB888"}
-            )
-            self.camera.configure(config)
-            self.camera.start()
+        # Check if rpicam-vid is available
+        import shutil
+        if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"Pi Camera initialized at {resolution}")
+            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps (Stable Low Latency)")
             
-            # Start background capture thread
-            self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+            # Start video streaming thread
+            self.thread = threading.Thread(target=self._stream_loop, daemon=True)
             self.thread.start()
-            
-        except ImportError:
-            print("picamera2 not available - Pi Camera disabled")
-        except Exception as e:
-            print(f"Pi Camera init error: {e}")
+        else:
+            print("rpicam-vid not found - Pi Camera disabled")
     
-    def _capture_loop(self):
-        """Background thread to continuously capture frames."""
+    def _stream_loop(self):
+        """Background thread to continuously stream video using rpicam-vid."""
+        import subprocess
+        
         while self.running and self.available:
             try:
-                # Capture frame as numpy array
-                frame = self.camera.capture_array()
+                # Start rpicam-vid outputting MJPEG to stdout
+                # Stable low latency tuning:
+                # - 640x480 @ 30fps (Prevent CPU overload)
+                # - exposure sport: faster shutter speed for motion
+                # - quality 60: clearer image
+                cmd = [
+                    "rpicam-vid",
+                    "-t", "0",
+                    "--width", str(self.resolution[0]),
+                    "--height", str(self.resolution[1]),
+                    "--framerate", str(self.framerate),
+                    "--codec", "mjpeg",
+                    "--quality", "60",
+                    "--exposure", "sport",
+                    "--inline",            
+                    "--nopreview",
+                    "--flush",
+                    "-o", "-"
+                ]
                 
-                # Convert RGB to BGR for OpenCV
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                # bufsize=0 for unbuffered output
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=0
+                )
                 
-                # Encode as JPEG
-                success, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                if success:
-                    self.frame = buffer.tobytes()
+                print("rpicam-vid stream started (60fps)")
+                
+                # Read MJPEG frames from stdout
+                buffer = b''
+                while self.running and self.process.poll() is None:
+                    # Read a large chunk to drain pipe
+                    chunk = self.process.stdout.read(32768)
+                    if not chunk:
+                        break
                     
-                time.sleep(1.0 / self.framerate)
+                    buffer += chunk
+                    
+                    # GREEDY FRAME PARSING:
+                    # Find the LAST complete frame in the buffer and discard everything before it.
+                    # This ensures we always show the freshest frame and never lag behind.
+                    
+                    last_frame_end = buffer.rfind(b'\xff\xd9')
+                    
+                    if last_frame_end != -1:
+                        # Found at least one frame end.
+                        # Now find the start of THIS frame
+                        packet_end = last_frame_end + 2
+                        
+                        # Search backwards for start of this frame
+                        frame_start = buffer.rfind(b'\xff\xd8', 0, last_frame_end)
+                        
+                        if frame_start != -1:
+                            # Extract the latest complete frame
+                            new_frame = buffer[frame_start:packet_end]
+                            
+                            with self.lock:
+                                self.frame = new_frame
+                            
+                            # DISCARD processed data and OLD frames
+                            # Keep only what's after the last frame end (start of next frame)
+                            buffer = buffer[packet_end:]
+                        else:
+                            # We have an end but no start? (partial buffer)
+                            # Keep buffer as is, wait for more data?
+                            # Or discard if buffer is too big to be a fragment?
+                            if len(buffer) > 500000:
+                                buffer = b''
+                    
+                    # Safety valve
+                    if len(buffer) > 1000000:
+                        buffer = b''
                 
             except Exception as e:
-                print(f"Pi Camera capture error: {e}")
-                time.sleep(0.5)
+                print(f"RpicamCamera stream error: {e}")
+                time.sleep(1)
+            finally:
+                if self.process:
+                    try:
+                        self.process.terminate()
+                        self.process.wait(timeout=1)
+                    except:
+                        pass
+                    self.process = None
+                time.sleep(2)
+
     
     async def get_frame(self):
-        return self.frame
+        with self.lock:
+            return self.frame
     
     def is_available(self):
         return self.available
     
     def __del__(self):
         self.running = False
-        if self.camera:
+        if self.process:
             try:
-                self.camera.stop()
+                self.process.terminate()
             except:
                 pass
 
@@ -193,15 +262,15 @@ class PiCamera(BaseCamera):
 rgb_camera_instance = None
 
 def get_rgb_camera():
-    """Get RGB camera instance (Pi Camera)."""
+    """Get RGB camera instance (Pi Camera via rpicam-vid)."""
     global rgb_camera_instance
     if rgb_camera_instance is None:
-        rgb_camera_instance = PiCamera()
+        rgb_camera_instance = RpicamCamera()
     return rgb_camera_instance
 
 
 async def generate_rgb_stream():
-    """Generator for MJPEG stream from Pi Camera."""
+    """Async generator for MJPEG stream from Pi Camera."""
     camera = get_rgb_camera()
     
     while True:
@@ -213,11 +282,10 @@ async def generate_rgb_stream():
                 b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
             )
         else:
-            # Send placeholder if no frame available
             yield (
                 b'--frame\r\n'
                 b'Content-Type: text/plain\r\n\r\n'
                 b'Waiting for camera...\r\n'
             )
         
-        await asyncio.sleep(0.033)  # ~30 FPS
+        await asyncio.sleep(0.016) # ~60 FPS polling rate (limited by camera framerate)
