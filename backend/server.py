@@ -23,7 +23,7 @@ from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer
-import thermal_engine
+import thermal_detection
 from datetime import datetime
 import json
 
@@ -615,96 +615,86 @@ async def startup():
     except Exception as e:
         print(f"Warning: Could not log startup alert: {e}")
             
-    # 3. Start Thermal Detection Engine (ALWAYS runs, independent of above)
+    # 3. Start Thermal Detection (Clean Implementation)
     dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
-    
-    async def on_thermal_detection(detections, metadata):
-        """Callback for detected thermal hotspots"""
-        # Capture current GPS if available
-        lat, lon = 0.0, 0.0
-        if gps_reader:
-            gps_data = gps_reader.get_data()
-            lat, lon = gps_data.get('latitude', 0.0), gps_data.get('longitude', 0.0)
-        
-        # Fallback to demo location if no GPS (Bangalore area + random offset)
-        if lat == 0.0 and lon == 0.0:
-            import random
-            lat = 12.9716 + random.uniform(-0.01, 0.01)
-            lon = 77.5946 + random.uniform(-0.01, 0.01)
-        
-        # Filter to only high-confidence detections
-        high_conf_detections = [d for d in detections if d['confidence'] >= 0.6]
-        
-        if not high_conf_detections:
-            return  # Skip if no high-confidence detections
-        
-        # Debug: Print how many passed confidence filter
-        print(f"[THERMAL] High-conf detections: {len(high_conf_detections)}/{len(detections)}")
-        
-        try:
-            async with AsyncSessionLocal() as db:
-                alerts_created = 0
-                for det in high_conf_detections[:3]:  # Limit to top 3 per frame
-                    # Create New Alert (temporarily skip deduplication for debugging)
-                    conf_pct = int(det['confidence'] * 100)
-                    msg = f"Thermal Signature Detected (Confidence: {conf_pct}%, Intensity: {int(det['max_intensity'])})"
-                    if metadata['count'] > 1:
-                        msg += f" - Target Count: {metadata['count']}"
-                    
-                    new_alert = AlertDB(
-                        id=str(uuid.uuid4()),
-                        type=det['type'].lower(),
-                        title=f"{det['type']} DETECTED",
-                        message=msg,
-                        timestamp=datetime.utcnow(),
-                        acknowledged=False,
-                        lat=lat,
-                        lon=lon,
-                        confidence=det['confidence'],
-                        max_temp=det['max_intensity']
-                    )
-                    db.add(new_alert)
-                    alerts_created += 1
-                    print(f"[THERMAL] Created Alert: {det['type']} conf={conf_pct}%")
-                    
-                    # Only create ONE alert per callback to avoid flooding
-                    break
-                
-                await db.commit()
-                print(f"[THERMAL] Committed {alerts_created} alerts to DB")
-        except Exception as e:
-            print(f"[THERMAL] DB Error in callback: {e}")
-            import traceback
-            traceback.print_exc()
-
-    # Create wrapper for async callback with error handling
-    def sync_callback(detections, metadata):
-        try:
-            print(f"[THERMAL] Callback triggered: {len(detections)} detections")
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(on_thermal_detection(detections, metadata))
-            loop.close()
-        except Exception as e:
-            print(f"[THERMAL] Callback ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-
-    # Start Thermal Detection Service
     print(f"[THERMAL] Looking for dataset at: {dataset_video}")
     print(f"[THERMAL] Dataset exists: {dataset_video.exists()}")
     
-    try:
-        detection_service = thermal_engine.ThermalDetectionService(
-            callback=sync_callback, 
-            dataset_path=dataset_video if dataset_video.exists() else None
-        )
-        detection_service.start()
-        print(f"[THERMAL] Detection service started successfully")
-    except Exception as e:
-        print(f"[THERMAL] Failed to start detection service: {e}")
-        import traceback
-        traceback.print_exc()
+    if dataset_video.exists():
+        import threading
+        
+        def detection_thread():
+            """Background thread for thermal detection."""
+            source = thermal_detection.VideoSource(str(dataset_video))
+            detector = thermal_detection.ThermalDetector(adaptive=True, min_area=40)
+            
+            print("[THERMAL] Detection thread started")
+            
+            import time
+            last_alert_time = 0
+            
+            while True:
+                frame = source.get_frame()
+                if frame is None:
+                    time.sleep(0.5)
+                    continue
+                
+                hotspots = detector.process_frame(frame)
+                
+                # Only create alert if we have high-confidence detections
+                # AND at least 5 seconds since last alert (to avoid flooding)
+                valid = [h for h in hotspots if h.confidence >= 0.6]
+                
+                if valid and (time.time() - last_alert_time) > 5:
+                    # Create alert for top detection
+                    top = valid[0]
+                    
+                    # Get GPS (fallback to demo coordinates)
+                    lat, lon = 12.9716 + random.uniform(-0.01, 0.01), 77.5946 + random.uniform(-0.01, 0.01)
+                    if gps_reader:
+                        gps_data = gps_reader.get_data()
+                        if gps_data.get('latitude'):
+                            lat, lon = gps_data['latitude'], gps_data['longitude']
+                    
+                    # Create alert synchronously using a new event loop
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        
+                        async def create_alert():
+                            async with AsyncSessionLocal() as db:
+                                alert = AlertDB(
+                                    id=str(uuid.uuid4()),
+                                    type='life',
+                                    title='LIFE DETECTED',
+                                    message=f"Thermal signature detected (Confidence: {int(top.confidence*100)}%, Intensity: {int(top.max_intensity)})",
+                                    timestamp=datetime.utcnow(),
+                                    acknowledged=False,
+                                    lat=lat,
+                                    lon=lon,
+                                    confidence=top.confidence,
+                                    max_temp=top.max_intensity
+                                )
+                                db.add(alert)
+                                await db.commit()
+                                print(f"[THERMAL] ✓ Alert created: conf={top.confidence:.2f}")
+                        
+                        loop.run_until_complete(create_alert())
+                        loop.close()
+                        last_alert_time = time.time()
+                        
+                    except Exception as e:
+                        print(f"[THERMAL] Error creating alert: {e}")
+                
+                # Process at ~5 FPS
+                time.sleep(0.2)
+        
+        # Start detection in background thread
+        thread = threading.Thread(target=detection_thread, daemon=True)
+        thread.start()
+        print("[THERMAL] Detection service started")
+    else:
+        print("[THERMAL] No dataset found, detection disabled")
 
 async def background_monitor():
     """Periodically checks system health and logs alerts."""
