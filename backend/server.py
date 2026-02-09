@@ -623,19 +623,34 @@ async def startup():
                 
                 await db.commit()
 
-        # Create wrapper for async callback
+        # Create wrapper for async callback with error handling
         def sync_callback(detections, metadata):
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(on_thermal_detection(detections, metadata))
-            loop.close()
+            try:
+                print(f"[THERMAL] Callback triggered: {len(detections)} detections")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                loop.run_until_complete(on_thermal_detection(detections, metadata))
+                loop.close()
+            except Exception as e:
+                print(f"[THERMAL] Callback ERROR: {e}")
+                import traceback
+                traceback.print_exc()
 
-        # In a real async environment, we'd use a queue, but for Pi/FastAPI sync_callback to bridge is fine
-        detection_service = thermal_engine.ThermalDetectionService(
-            callback=sync_callback, 
-            dataset_path=dataset_video if dataset_video.exists() else None
-        )
-        detection_service.start()
+        # Start Thermal Detection Service
+        print(f"[THERMAL] Looking for dataset at: {dataset_video}")
+        print(f"[THERMAL] Dataset exists: {dataset_video.exists()}")
+        
+        try:
+            detection_service = thermal_engine.ThermalDetectionService(
+                callback=sync_callback, 
+                dataset_path=dataset_video if dataset_video.exists() else None
+            )
+            detection_service.start()
+            print(f"[THERMAL] Detection service started successfully")
+        except Exception as e:
+            print(f"[THERMAL] Failed to start detection service: {e}")
+            import traceback
+            traceback.print_exc()
             
     except Exception as e:
         print(f"CRITICAL STARTUP ERROR: Could not create/update admin user. {e}")

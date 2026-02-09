@@ -192,6 +192,8 @@ class ThermalDetectionService:
         frame_count = 0
         detection_count = 0
         
+        print(f"[THERMAL WORKER] Starting worker loop, source={self.source_type}")
+        
         while self.running:
             # Throttle detection to ~5 FPS to save CPU on Pi
             now = time.time()
@@ -199,21 +201,34 @@ class ThermalDetectionService:
                 time.sleep(0.01)
                 continue
             
-            frame = self.source.get_frame()
-            if frame is not None:
-                frame_count += 1
-                detections, metadata = self.engine.process(frame)
-                
-                if detections:
-                    detection_count += 1
-                    logger.info(f"Thermal Detection: {len(detections)} hotspot(s) found (frame {frame_count})")
-                    self.callback(detections, metadata)
+            try:
+                frame = self.source.get_frame()
+                if frame is not None:
+                    frame_count += 1
                     
-                # Log progress every 50 frames
-                if frame_count % 50 == 0:
-                    logger.debug(f"Thermal: Processed {frame_count} frames, {detection_count} had detections")
+                    # Log first frame info
+                    if frame_count == 1:
+                        print(f"[THERMAL WORKER] First frame: shape={frame.shape}, dtype={frame.dtype}")
                     
-                last_process_time = now
-            else:
-                time.sleep(1.0) # Wait for source if no frame
+                    detections, metadata = self.engine.process(frame)
+                    
+                    if detections:
+                        detection_count += 1
+                        print(f"[THERMAL WORKER] Frame {frame_count}: {len(detections)} detections, calling callback")
+                        self.callback(detections, metadata)
+                        
+                    # Log progress every 50 frames
+                    if frame_count % 50 == 0:
+                        print(f"[THERMAL WORKER] Processed {frame_count} frames, {detection_count} had detections")
+                        
+                    last_process_time = now
+                else:
+                    if frame_count == 0:
+                        print("[THERMAL WORKER] Waiting for first frame...")
+                    time.sleep(1.0)
+            except Exception as e:
+                print(f"[THERMAL WORKER] Error: {e}")
+                import traceback
+                traceback.print_exc()
+                time.sleep(1.0)
 
