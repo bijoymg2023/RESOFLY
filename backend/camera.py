@@ -181,34 +181,40 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print("rpicam-vid stream started")
+                print("rpicam-vid stream started (real-time mode)")
                 
                 # Read MJPEG frames from stdout
                 buffer = b''
                 while self.running and self.process.poll() is None:
-                    chunk = self.process.stdout.read(8192)
+                    chunk = self.process.stdout.read(16384)
                     if not chunk:
                         break
                     
                     buffer += chunk
                     
-                    # Find JPEG frame boundaries (sequential processing)
-                    start = buffer.find(b'\xff\xd8')
-                    end = buffer.find(b'\xff\xd9')
+                    # GREEDY REAL-TIME LOGIC:
+                    # Find the LAST complete frame and skip everything older
+                    # This ensures we always display the most recent frame (no lag)
+                    last_end = buffer.rfind(b'\xff\xd9')
                     
-                    if start != -1 and end != -1 and end > start:
-                        # Extract complete frame
-                        new_frame = buffer[start:end+2]
+                    if last_end != -1:
+                        frame_end = last_end + 2
+                        # Find the start marker for this frame (search backwards)
+                        frame_start = buffer.rfind(b'\xff\xd8', 0, last_end)
                         
-                        with self.lock:
-                            self.frame = new_frame
+                        if frame_start != -1:
+                            # Extract the latest complete frame
+                            new_frame = buffer[frame_start:frame_end]
                             
-                        # Move buffer forward
-                        buffer = buffer[end+2:]
-                        
-                        # Prevent buffer overflow if parsing fails
-                        if len(buffer) > 512000:  # 500KB safety limit
-                            buffer = b''
+                            with self.lock:
+                                self.frame = new_frame
+                            
+                            # Discard everything up to and including this frame
+                            buffer = buffer[frame_end:]
+                    
+                    # Safety: prevent buffer overflow
+                    if len(buffer) > 500000:
+                        buffer = b''
                 
             except Exception as e:
                 print(f"RpicamCamera stream error: {e}")
