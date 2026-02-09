@@ -736,43 +736,49 @@ async def startup():
                 asyncio.set_event_loop(loop)
                 
                 async def save_and_broadcast():
-                    top = event.hotspots[0]
-                    alert_id = str(uuid.uuid4())
-                    
-                    # Save to database
+                    # Process ALL hotspots (each person gets their own alert)
                     async with AsyncSessionLocal() as db:
-                        alert = AlertDB(
-                            id=alert_id,
-                            type='life',
-                            title='LIFE DETECTED',
-                            message=f"Thermal signature detected ({top.estimated_temp:.0f}°C, Confidence: {int(top.confidence*100)}%)",
-                            timestamp=event.timestamp,
-                            acknowledged=False,
-                            lat=lat,
-                            lon=lon,
-                            confidence=top.confidence,
-                            max_temp=top.max_intensity
-                        )
-                        db.add(alert)
+                        for idx, hotspot in enumerate(event.hotspots):
+                            # Unique GPS offset for each person (spread them on map)
+                            person_lat = lat + (idx * 0.0005)  # ~50m offset per person
+                            person_lon = lon + (idx * 0.0003)
+                            
+                            alert_id = str(uuid.uuid4())
+                            
+                            alert = AlertDB(
+                                id=alert_id,
+                                type='life',
+                                title='LIFE DETECTED',
+                                message=f"Person #{idx+1} detected ({hotspot.estimated_temp:.0f}°C, Confidence: {int(hotspot.confidence*100)}%)",
+                                timestamp=event.timestamp,
+                                acknowledged=False,
+                                lat=person_lat,
+                                lon=person_lon,
+                                confidence=hotspot.confidence,
+                                max_temp=hotspot.max_intensity
+                            )
+                            db.add(alert)
+                            
+                            # Broadcast each alert via WebSocket
+                            alert_data = {
+                                "id": alert_id,
+                                "type": "LIFE",
+                                "title": "LIFE DETECTED",
+                                "confidence": hotspot.confidence,
+                                "max_temp": hotspot.max_intensity,
+                                "estimated_temp": hotspot.estimated_temp,
+                                "lat": person_lat,
+                                "lon": person_lon,
+                                "timestamp": event.timestamp.isoformat(),
+                                "frame": event.frame_number,
+                                "person_index": idx + 1,
+                                "total_count": event.total_count
+                            }
+                            await ws_manager.broadcast(alert_data)
+                        
                         await db.commit()
                     
-                    # Broadcast to WebSocket clients
-                    alert_data = {
-                        "id": alert_id,
-                        "type": "LIFE",
-                        "title": "LIFE DETECTED",
-                        "confidence": top.confidence,
-                        "max_temp": top.max_intensity,
-                        "estimated_temp": top.estimated_temp,
-                        "lat": lat,
-                        "lon": lon,
-                        "timestamp": event.timestamp.isoformat(),
-                        "frame": event.frame_number,
-                        "total_count": event.total_count
-                    }
-                    await ws_manager.broadcast(alert_data)
-                    
-                    print(f"[THERMAL] ✓ Alert: {top.estimated_temp:.0f}°C, conf={top.confidence:.0%}, frame={event.frame_number}")
+                    print(f"[THERMAL] ✓ {len(event.hotspots)} alerts sent for frame {event.frame_number}")
                 
                 loop.run_until_complete(save_and_broadcast())
                 loop.close()
