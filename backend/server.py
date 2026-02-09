@@ -638,21 +638,14 @@ async def startup():
         if not high_conf_detections:
             return  # Skip if no high-confidence detections
         
+        # Debug: Print how many passed confidence filter
+        print(f"[THERMAL] High-conf detections: {len(high_conf_detections)}/{len(detections)}")
+        
         try:
             async with AsyncSessionLocal() as db:
+                alerts_created = 0
                 for det in high_conf_detections[:3]:  # Limit to top 3 per frame
-                    # Simple Deduplication: Don't add if a similar 'active' alert exists within 30s
-                    thirty_seconds_ago = datetime.utcnow() - timedelta(seconds=30)
-                    stmt = select(AlertDB).where(
-                        (AlertDB.type == det['type'].lower()) & 
-                        (AlertDB.timestamp > thirty_seconds_ago) & 
-                        (AlertDB.acknowledged == False)
-                    )
-                    recent = await db.execute(stmt)
-                    if recent.scalar_one_or_none():
-                        continue
-
-                    # Create New Alert
+                    # Create New Alert (temporarily skip deduplication for debugging)
                     conf_pct = int(det['confidence'] * 100)
                     msg = f"Thermal Signature Detected (Confidence: {conf_pct}%, Intensity: {int(det['max_intensity'])})"
                     if metadata['count'] > 1:
@@ -671,11 +664,18 @@ async def startup():
                         max_temp=det['max_intensity']
                     )
                     db.add(new_alert)
-                    print(f"[THERMAL] Generated Alert: {det['type']} at {lat:.4f}, {lon:.4f}")
+                    alerts_created += 1
+                    print(f"[THERMAL] Created Alert: {det['type']} conf={conf_pct}%")
+                    
+                    # Only create ONE alert per callback to avoid flooding
+                    break
                 
                 await db.commit()
+                print(f"[THERMAL] Committed {alerts_created} alerts to DB")
         except Exception as e:
             print(f"[THERMAL] DB Error in callback: {e}")
+            import traceback
+            traceback.print_exc()
 
     # Create wrapper for async callback with error handling
     def sync_callback(detections, metadata):
