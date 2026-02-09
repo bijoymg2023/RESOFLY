@@ -35,6 +35,7 @@ class Hotspot:
     max_intensity: float
     estimated_temp: float  # Estimated temperature in °C
     confidence: float
+    track_id: Optional[int] = None  # Persistent object ID from tracker
 
 
 @dataclass 
@@ -198,28 +199,30 @@ class ThermalDetector:
 
 # ============ UNIFIED FRAME PIPELINE ============
 
+from centroid_tracker import CentroidTracker
+
 class ThermalFramePipeline:
     """
     Single source of truth for thermal frames.
     
     Provides synchronized:
     - Frame display (MJPEG)
-    - Hotspot detection
-    - Alert generation
+    - Hotspot detection (with tracking)
+    - Alert generation (per unique ID)
     """
     
     def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
         self.source = source
-        self.detector = ThermalDetector(adaptive=True, min_area=30)  # Lower min_area
+        self.detector = ThermalDetector(adaptive=True, min_area=30)
+        self.tracker = CentroidTracker(max_disappeared=10, max_distance=50)
         self.on_detection = on_detection
         
         self.frame_number = 0
         self.current_frame = None
         self.current_hotspots: List[Hotspot] = []
         
-        # Alert throttling (prevent flooding)
-        self.alert_cooldown = 1.0  # seconds (Reduced from 3.0s)
-        self.last_alert_time = 0
+        # Track which IDs we've already alerted on
+        self.alerted_ids: Set[int] = set()
         
         # Stats
         self.detection_count = 0
@@ -227,10 +230,7 @@ class ThermalFramePipeline:
     
     def process_next(self) -> Optional[np.ndarray]:
         """
-        Get next frame, detect hotspots, trigger alerts if needed.
-        
-        Returns:
-            Annotated frame ready for display, or None if no frame
+        Get next frame, detect hotspots, track objects, trigger alerts for NEW IDs.
         """
         frame = self.source.get_frame()
         if frame is None:
@@ -240,59 +240,89 @@ class ThermalFramePipeline:
         self.current_frame = frame.copy()
         timestamp = datetime.utcnow()
         
-        # Detect on THIS frame
-        self.current_hotspots, binary = self.detector.process(frame)
+        # 1. Detect hotspots on THIS frame
+        raw_hotspots, binary = self.detector.process(frame)
         
-        # Filter high-confidence detections
-        valid = [h for h in self.current_hotspots if h.confidence >= 0.5]  # Lower conf threshold
+        # 2. Prepare bounding boxes for tracker
+        rects = []
+        for h in raw_hotspots:
+            if h.confidence >= 0.5:
+                rects.append((h.x, h.y, h.width, h.height))
         
-        if valid:
+        # 3. Update Tracker
+        objects = self.tracker.update(rects)
+        
+        # 4. Match tracked objects back to hotspots
+        tracked_hotspots = []
+        new_alerts = []
+        
+        for (object_id, centroid) in objects.items():
+            # Find the hotspot that matches this centroid (closest)
+            best_match = None
+            min_dist = float('inf')
+            
+            for h in raw_hotspots:
+                cx = h.x + h.width // 2
+                cy = h.y + h.height // 2
+                dist = np.sqrt((cx - centroid[0])**2 + (cy - centroid[1])**2)
+                
+                if dist < 50:  # Threshold to associate
+                    if dist < min_dist:
+                        min_dist = dist
+                        best_match = h
+            
+            if best_match:
+                # Assign ID to hotspot
+                h = best_match
+                h.track_id = object_id  # We'll need to add this field to Hotspot dataclass
+                tracked_hotspots.append(h)
+                
+                # Check if this is a NEW object we haven't alerted on yet
+                if object_id not in self.alerted_ids:
+                    self.alerted_ids.add(object_id)
+                    new_alerts.append(h)
+                    self.alert_count += 1
+        
+        self.current_hotspots = tracked_hotspots
+        
+        # 5. Trigger Alerts (only for NEW objects)
+        if new_alerts:
             self.detection_count += 1
             
-            # Check cooldown
-            now = time.time()
-            if (now - self.last_alert_time) >= self.alert_cooldown:
-                self.last_alert_time = now
-                self.alert_count += 1
-                
-                # Create detection event
-                event = DetectionEvent(
-                    hotspots=valid[:5],  # Top 5 (was 3)
-                    timestamp=timestamp,
-                    frame_number=self.frame_number,
-                    total_count=len(valid)
-                )
-                
-                # Trigger callback (async-safe)
-                if self.on_detection:
-                    self.on_detection(event)
+            event = DetectionEvent(
+                hotspots=new_alerts,
+                timestamp=timestamp,
+                frame_number=self.frame_number,
+                total_count=len(tracked_hotspots)
+            )
+            
+            if self.on_detection:
+                self.on_detection(event)
         
-        # Annotate frame with bounding boxes
+        # Annotate frame
         return self._annotate(frame, self.current_hotspots)
     
     def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
-        """Draw bounding boxes on frame."""
+        """Draw bounding boxes and IDs on frame."""
         annotated = frame.copy()
         
         for h in hotspots:
-            # Color based on confidence (green=high, yellow=medium, red=low)
-            if h.confidence >= 0.7:
-                color = (0, 255, 0)  # Green
-            elif h.confidence >= 0.5:
-                color = (0, 255, 255)  # Yellow
-            else:
-                color = (0, 165, 255)  # Orange
+            if not hasattr(h, 'track_id'):
+                continue
+                
+            # Color based on confidence
+            color = (0, 255, 0) if h.confidence >= 0.7 else (0, 255, 255)
             
             # Draw rectangle
             cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, 2)
             
-            # Draw label
-            label = f"{h.estimated_temp:.0f}C ({h.confidence:.0%})"
+            # Draw label with ID
+            label = f"ID:{h.track_id} {h.estimated_temp:.0f}C"
             cv2.putText(annotated, label, (h.x, h.y - 5), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
         
         # Frame info overlay
-        info = f"Frame: {self.frame_number} | Detections: {len(hotspots)} | Alerts: {self.alert_count}"
+        info = f"Frame: {self.frame_number} | Objects: {len(hotspots)} | Alerts: {self.alert_count}"
         cv2.putText(annotated, info, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         return annotated

@@ -736,20 +736,23 @@ async def startup():
                 asyncio.set_event_loop(loop)
                 
                 async def save_and_broadcast():
-                    # Process ALL hotspots (each person gets their own alert)
+                    # Process NEW hotspots (each new person gets their own alert)
                     async with AsyncSessionLocal() as db:
-                        for idx, hotspot in enumerate(event.hotspots):
-                            # Unique GPS offset for each person (spread them on map)
-                            person_lat = lat + (idx * 0.0005)  # ~50m offset per person
-                            person_lon = lon + (idx * 0.0003)
+                        for hotspot in event.hotspots:
+                            # Use track_id if available, else standard index
+                            obj_id = hotspot.track_id if hotspot.track_id is not None else 0
+                            
+                            # Unique GPS offset based on ID (consistent position for same ID)
+                            person_lat = lat + ((obj_id % 10) * 0.0005)
+                            person_lon = lon + ((obj_id % 10) * 0.0003)
                             
                             alert_id = str(uuid.uuid4())
                             
                             alert = AlertDB(
                                 id=alert_id,
                                 type='life',
-                                title='LIFE DETECTED',
-                                message=f"Person #{idx+1} detected ({hotspot.estimated_temp:.0f}°C, Confidence: {int(hotspot.confidence*100)}%)",
+                                title=f'PERSON #{obj_id} DETECTED',
+                                message=f"New target tracked (ID: {obj_id}, {hotspot.estimated_temp:.0f}°C, {int(hotspot.confidence*100)}%)",
                                 timestamp=event.timestamp,
                                 acknowledged=False,
                                 lat=person_lat,
@@ -763,7 +766,7 @@ async def startup():
                             alert_data = {
                                 "id": alert_id,
                                 "type": "LIFE",
-                                "title": "LIFE DETECTED",
+                                "title": f"PERSON #{obj_id}",
                                 "confidence": hotspot.confidence,
                                 "max_temp": hotspot.max_intensity,
                                 "estimated_temp": hotspot.estimated_temp,
@@ -771,10 +774,12 @@ async def startup():
                                 "lon": person_lon,
                                 "timestamp": event.timestamp.isoformat(),
                                 "frame": event.frame_number,
-                                "person_index": idx + 1,
+                                "track_id": obj_id,
                                 "total_count": event.total_count
                             }
                             await ws_manager.broadcast(alert_data)
+                        
+                        await db.commit()
                         
                         await db.commit()
                     
