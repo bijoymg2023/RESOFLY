@@ -36,6 +36,11 @@ export const VideoStreamBox = () => {
   const { token } = useAuth();
   const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+
+  // Demo video files from dataset folder
+  const demoVideos = ['/dataset/test1.mp4', '/dataset/test2.mp4'];
 
   // Stream URL - uses the proxied endpoint through main backend (works with Cloudflare)
   const THERMAL_STREAM_URL = `/api/stream/thermal`;
@@ -52,6 +57,11 @@ export const VideoStreamBox = () => {
 
   const handleStreamLoad = () => {
     setStreamError(false);
+  };
+
+  // Handle video ended - switch to next video
+  const handleVideoEnded = () => {
+    setCurrentVideoIndex((prev) => (prev + 1) % demoVideos.length);
   };
 
   const fetchGallery = async () => {
@@ -204,7 +214,7 @@ export const VideoStreamBox = () => {
                     <div className="text-white/30 font-mono flex flex-col items-center z-10">
                       <AlertCircle className="w-16 h-16 mb-4 text-red-500/50" />
                       <p className="tracking-widest text-xs text-red-400">STREAM OFFLINE</p>
-                      <p className="text-[10px] mt-2 text-white/30">Check forwarder on port 8081</p>
+                      <p className="text-[10px] mt-2 text-white/30">Check video source</p>
                       <button
                         onClick={() => setStreamError(false)}
                         className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
@@ -213,13 +223,17 @@ export const VideoStreamBox = () => {
                       </button>
                     </div>
                   ) : (
-                    <img
-                      ref={imgRef}
-                      src={THERMAL_STREAM_URL}
-                      alt="Live Thermal Feed"
-                      className="w-full h-full object-contain"
+                    <video
+                      ref={videoRef}
+                      key={currentVideoIndex}
+                      src={demoVideos[currentVideoIndex]}
+                      autoPlay
+                      muted
+                      playsInline
+                      onEnded={handleVideoEnded}
                       onError={handleStreamError}
-                      onLoad={handleStreamLoad}
+                      onLoadedData={handleStreamLoad}
+                      className="w-full h-full object-contain"
                     />
                   )}
 
@@ -227,7 +241,7 @@ export const VideoStreamBox = () => {
                   {!streamError && (
                     <div className="absolute top-20 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
                       <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                      <span className="font-mono text-[9px] text-red-400">LIVE</span>
+                      <span className="font-mono text-[9px] text-red-400">DEMO {currentVideoIndex + 1}/{demoVideos.length}</span>
                     </div>
                   )}
                 </>

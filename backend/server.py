@@ -533,6 +533,10 @@ app.include_router(api_router)
 if os.path.exists("../dist"):
     app.mount("/assets", StaticFiles(directory="../dist/assets"), name="assets")
     
+    # Mount Dataset Videos
+    if os.path.exists("../dataset"):
+        app.mount("/dataset", StaticFiles(directory="../dataset"), name="dataset")
+    
     # Mount Static Captures
     app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
     
