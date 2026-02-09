@@ -372,7 +372,9 @@ async def video_feed_rgb(token: Optional[str] = None):
             "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
             "Pragma": "no-cache",
             "Expires": "0",
-            "Connection": "keep-alive"
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Prevent Cloudflare/nginx buffering
+            "Transfer-Encoding": "chunked"
         }
     )
 

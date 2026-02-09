@@ -126,7 +126,7 @@ class RpicamCamera(BaseCamera):
     Pi Camera using rpicam-vid subprocess for continuous video streaming.
     Outputs MJPEG directly to stdout for high performance (30fps+).
     """
-    def __init__(self, resolution=(800, 600), framerate=30):
+    def __init__(self, resolution=(640, 480), framerate=30):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -154,10 +154,10 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # Optimized for drone FPV:
-                # - 800x600 @ 30fps (high clarity)
+                # Low-latency drone FPV (optimized for Cloudflare):
+                # - 640x480 @ 30fps (low bandwidth)
                 # - exposure sport: fast shutter
-                # - quality 80: crystal clear
+                # - quality 50: balance clarity/speed
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -165,7 +165,7 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "80",
+                    "--quality", "50",
                     "--exposure", "sport",
                     "--inline",            
                     "--nopreview",
