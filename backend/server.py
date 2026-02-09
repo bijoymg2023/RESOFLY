@@ -310,19 +310,57 @@ async def thermal_camera_status():
                 "available": True,
                 "source": "dataset",
                 "file": str(dataset_path.name),
+                "path": str(dataset_path),
                 "mode": "offline"
             }
         
         return {
             "available": False,
             "source": None,
-            "mode": None
+            "mode": None,
+            "dataset_path_checked": str(dataset_path)
         }
     except Exception as e:
         return {
             "available": False,
             "error": str(e)
         }
+
+@api_router.post("/thermal/test-alert")
+async def create_test_alert(db: AsyncSession = Depends(get_db)):
+    """
+    Debug endpoint: Creates a test LIFE detection alert.
+    Use this to verify the alert system works independently of detection.
+    """
+    import random
+    
+    try:
+        test_alert = AlertDB(
+            id=str(uuid.uuid4()),
+            type='life',
+            title='TEST LIFE DETECTED',
+            message='Test thermal signature (Debug endpoint)',
+            timestamp=datetime.utcnow(),
+            acknowledged=False,
+            lat=12.9716 + random.uniform(-0.01, 0.01),
+            lon=77.5946 + random.uniform(-0.01, 0.01),
+            confidence=0.85,
+            max_temp=180.0
+        )
+        db.add(test_alert)
+        await db.commit()
+        
+        return {
+            "success": True,
+            "alert_id": test_alert.id,
+            "message": "Test alert created successfully"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
 
 
 import gps_real
