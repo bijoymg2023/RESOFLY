@@ -184,32 +184,18 @@ const ThermalDashboard = () => {
       {/* --- Main Dashboard Content --- */}
       <div className="relative z-10 p-2 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1920px] mx-auto">
 
-        {/* Layout Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 lg:gap-6">
+        {/* Main Layout - Responsive Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
 
-          {/* LEFT: Video & Heatmap */}
-          <div className="xl:col-span-8 space-y-4 lg:space-y-6">
-
-            {/* Primary content constraint */}
-            <div className="min-h-[400px] sm:min-h-[500px] md:min-h-[600px] lg:min-h-[700px]">
+          {/* LEFT: Video Stream - Takes more space on larger screens */}
+          <div className="lg:col-span-8 xl:col-span-9">
+            <div className="aspect-video min-h-[300px] sm:min-h-[400px] lg:min-h-[500px]">
               <VideoStreamBox />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 lg:gap-6 auto-rows-fr">
-              <div className="min-h-[280px] lg:min-h-[320px] xl:min-h-[360px]">
-                <ThermalHeatMap />
-              </div>
-              <div className="min-h-[280px] lg:min-h-[320px] xl:min-h-[360px]">
-                <AlertBox />
-              </div>
-              <div className="min-h-[280px] lg:min-h-[320px] xl:min-h-[360px] md:col-span-2 xl:col-span-1">
-                <AlertsDetectionBox />
-              </div>
             </div>
           </div>
 
-          {/* RIGHT: Telemetry Sidepanel */}
-          <div className="xl:col-span-4 space-y-4 lg:space-y-6 order-3">
+          {/* RIGHT: GPS & System Status - Stacks on mobile, sidebar on desktop */}
+          <div className="lg:col-span-4 xl:col-span-3 space-y-4 lg:space-y-6">
 
             {/* GPS Unit */}
             <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-sm">
@@ -218,20 +204,20 @@ const ThermalDashboard = () => {
 
             {/* System Status Panel */}
             <Card className="bg-[#0A0A0A]/80 border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-2xl">
-              <div className="p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+              <div className="p-3 lg:p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
                 <div className="flex items-center space-x-2 text-cyan-400">
                   <Monitor className="w-4 h-4" />
                   <span className="text-xs font-bold uppercase tracking-widest">System Diagnostics</span>
                 </div>
                 <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               </div>
-              <CardContent className="p-4 sm:p-6">
+              <CardContent className="p-3 sm:p-4 lg:p-6">
                 <SystemStatusContent />
               </CardContent>
             </Card>
 
-            {/* Mobile Actions */}
-            <div className="xl:hidden grid grid-cols-2 gap-2">
+            {/* Mobile Actions - Only shows below lg */}
+            <div className="lg:hidden grid grid-cols-2 gap-2">
               <Button className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 h-10 flex items-center justify-center space-x-2">
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-xs font-mono uppercase">Quick Alert</span>
@@ -241,7 +227,19 @@ const ThermalDashboard = () => {
                 <span className="text-xs font-mono uppercase">Locate</span>
               </Button>
             </div>
+          </div>
+        </div>
 
+        {/* Bottom Section: 3 Boxes - Fully responsive */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+          <div className="h-[280px] sm:h-[320px] lg:h-[360px]">
+            <ThermalHeatMap />
+          </div>
+          <div className="h-[280px] sm:h-[320px] lg:h-[360px]">
+            <AlertBox />
+          </div>
+          <div className="h-[280px] sm:h-[320px] lg:h-[360px] sm:col-span-2 lg:col-span-1">
+            <AlertsDetectionBox />
           </div>
         </div>
       </div>
