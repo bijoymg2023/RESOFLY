@@ -574,8 +574,20 @@ async def startup():
                 gps_data = gps_reader.get_data()
                 lat, lon = gps_data.get('latitude', 0.0), gps_data.get('longitude', 0.0)
             
+            # Fallback to demo location if no GPS (Bangalore area + random offset)
+            if lat == 0.0 and lon == 0.0:
+                import random
+                lat = 12.9716 + random.uniform(-0.01, 0.01)
+                lon = 77.5946 + random.uniform(-0.01, 0.01)
+            
+            # Filter to only high-confidence detections
+            high_conf_detections = [d for d in detections if d['confidence'] >= 0.6]
+            
+            if not high_conf_detections:
+                return  # Skip if no high-confidence detections
+            
             async with AsyncSessionLocal() as db:
-                for det in detections:
+                for det in high_conf_detections[:3]:  # Limit to top 3 per frame
                     # Simple Deduplication: Don't add if a similar 'active' alert exists within 30s
                     # We check for the same type (LIFE/FIRE)
                     thirty_seconds_ago = datetime.utcnow() - timedelta(seconds=30)
@@ -607,7 +619,7 @@ async def startup():
                         max_temp=det['max_intensity'] # Using intensity as proxy for temp in normalized view
                     )
                     db.add(new_alert)
-                    logger.info(f"Generated REAL Thermal Alert: {det['type']} at {lat}, {lon}")
+                    logger.info(f"Generated REAL Thermal Alert: {det['type']} at {lat:.4f}, {lon:.4f}")
                 
                 await db.commit()
 
