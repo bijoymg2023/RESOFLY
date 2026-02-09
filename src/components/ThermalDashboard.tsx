@@ -230,15 +230,15 @@ const ThermalDashboard = () => {
           </div>
         </div>
 
-        {/* Bottom Section: 3 Boxes - Fully responsive */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
-          <div className="h-[280px] sm:h-[320px] lg:h-[360px]">
+        {/* Bottom Section: 3 Boxes - Fully responsive with flexible heights */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+          <div className="min-h-[250px] h-[35vh] max-h-[400px]">
             <ThermalHeatMap />
           </div>
-          <div className="h-[280px] sm:h-[320px] lg:h-[360px]">
+          <div className="min-h-[250px] h-[35vh] max-h-[400px]">
             <AlertBox />
           </div>
-          <div className="h-[280px] sm:h-[320px] lg:h-[360px] sm:col-span-2 lg:col-span-1">
+          <div className="min-h-[250px] h-[35vh] max-h-[400px] sm:col-span-2 lg:col-span-1">
             <AlertsDetectionBox />
           </div>
         </div>
