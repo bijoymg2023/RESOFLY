@@ -114,3 +114,110 @@ def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
     except Exception as e:
         print(f"Capture Exception: {e}")
         return None
+
+
+# ========================================
+# Pi Camera (RGB) Support
+# ========================================
+
+class PiCamera(BaseCamera):
+    """
+    Native Pi Camera using picamera2 library.
+    Falls back gracefully if not available.
+    """
+    def __init__(self, resolution=(1280, 720), framerate=30):
+        self.resolution = resolution
+        self.framerate = framerate
+        self.camera = None
+        self.available = False
+        self.frame = None
+        self.running = True
+        
+        try:
+            from picamera2 import Picamera2
+            self.camera = Picamera2()
+            config = self.camera.create_preview_configuration(
+                main={"size": resolution, "format": "RGB888"}
+            )
+            self.camera.configure(config)
+            self.camera.start()
+            self.available = True
+            print(f"Pi Camera initialized at {resolution}")
+            
+            # Start background capture thread
+            self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+            self.thread.start()
+            
+        except ImportError:
+            print("picamera2 not available - Pi Camera disabled")
+        except Exception as e:
+            print(f"Pi Camera init error: {e}")
+    
+    def _capture_loop(self):
+        """Background thread to continuously capture frames."""
+        while self.running and self.available:
+            try:
+                # Capture frame as numpy array
+                frame = self.camera.capture_array()
+                
+                # Convert RGB to BGR for OpenCV
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
+                # Encode as JPEG
+                success, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                if success:
+                    self.frame = buffer.tobytes()
+                    
+                time.sleep(1.0 / self.framerate)
+                
+            except Exception as e:
+                print(f"Pi Camera capture error: {e}")
+                time.sleep(0.5)
+    
+    async def get_frame(self):
+        return self.frame
+    
+    def is_available(self):
+        return self.available
+    
+    def __del__(self):
+        self.running = False
+        if self.camera:
+            try:
+                self.camera.stop()
+            except:
+                pass
+
+
+# RGB Camera Singleton
+rgb_camera_instance = None
+
+def get_rgb_camera():
+    """Get RGB camera instance (Pi Camera)."""
+    global rgb_camera_instance
+    if rgb_camera_instance is None:
+        rgb_camera_instance = PiCamera()
+    return rgb_camera_instance
+
+
+async def generate_rgb_stream():
+    """Generator for MJPEG stream from Pi Camera."""
+    camera = get_rgb_camera()
+    
+    while True:
+        frame = await camera.get_frame()
+        
+        if frame:
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+            )
+        else:
+            # Send placeholder if no frame available
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: text/plain\r\n\r\n'
+                b'Waiting for camera...\r\n'
+            )
+        
+        await asyncio.sleep(0.033)  # ~30 FPS
