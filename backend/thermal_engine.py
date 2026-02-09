@@ -150,17 +150,28 @@ class DetectionEngine:
 class ThermalDetectionService:
     def __init__(self, callback, dataset_path=None):
         self.source = None
-        self.engine = DetectionEngine(low_res_mode=True)  # Default to low-res for Waveshare
+        self.engine = None  # Will be created after we know the resolution
         self.callback = callback
         self.running = False
         self.thread = None
+        self.source_type = None
         
         # Select source
         hw = WaveshareThermalSource()
         if hw.available:
             self.source = hw
+            self.source_type = "waveshare"
+            # Waveshare is 80x62, use low-res mode
+            self.engine = DetectionEngine(low_res_mode=True)
+            logger.info("ThermalDetectionService: Using Waveshare 80x62 (low-res mode)")
         elif dataset_path:
             self.source = VideoDatasetSource(dataset_path)
+            self.source_type = "dataset"
+            # Dataset videos are typically higher resolution
+            self.engine = DetectionEngine(low_res_mode=False, min_area=50, threshold_offset=30)
+            logger.info(f"ThermalDetectionService: Using dataset {dataset_path} (high-res mode)")
+        else:
+            logger.warning("ThermalDetectionService: No source available")
             
     def start(self):
         if not self.running and self.source:
@@ -168,6 +179,8 @@ class ThermalDetectionService:
             self.thread = threading.Thread(target=self._worker, daemon=True)
             self.thread.start()
             logger.info("Thermal Detection Service Started")
+        else:
+            logger.warning("Thermal Detection Service could not start - no source available")
 
     def stop(self):
         self.running = False
@@ -176,6 +189,9 @@ class ThermalDetectionService:
 
     def _worker(self):
         last_process_time = 0
+        frame_count = 0
+        detection_count = 0
+        
         while self.running:
             # Throttle detection to ~5 FPS to save CPU on Pi
             now = time.time()
@@ -185,9 +201,19 @@ class ThermalDetectionService:
             
             frame = self.source.get_frame()
             if frame is not None:
+                frame_count += 1
                 detections, metadata = self.engine.process(frame)
+                
                 if detections:
+                    detection_count += 1
+                    logger.info(f"Thermal Detection: {len(detections)} hotspot(s) found (frame {frame_count})")
                     self.callback(detections, metadata)
+                    
+                # Log progress every 50 frames
+                if frame_count % 50 == 0:
+                    logger.debug(f"Thermal: Processed {frame_count} frames, {detection_count} had detections")
+                    
                 last_process_time = now
             else:
                 time.sleep(1.0) # Wait for source if no frame
+
