@@ -195,14 +195,14 @@ const ThermalDashboard = () => {
               <VideoStreamBox />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="min-h-[300px] order-1">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="h-[400px]">
                 <ThermalHeatMap />
               </div>
-              <div className="min-h-[300px] order-2">
+              <div className="h-[400px]">
                 <AlertBox />
               </div>
-              <div className="min-h-[300px] order-3">
+              <div className="h-[400px]">
                 <AlertsDetectionBox />
               </div>
             </div>

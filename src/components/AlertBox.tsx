@@ -106,7 +106,7 @@ export const AlertBox = () => {
   };
 
   return (
-    <Card className="bg-[#0A0A0A]/90 border border-white/10 backdrop-blur-sm flex flex-col overflow-hidden shadow-xl max-h-[300px]">
+    <Card className="bg-[#0A0A0A]/90 border border-white/10 backdrop-blur-sm flex flex-col overflow-hidden shadow-xl h-[400px]">
       <CardHeader className="py-3 px-4 border-b border-white/5 bg-black/40 flex flex-row items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
@@ -121,7 +121,7 @@ export const AlertBox = () => {
         {/* CRT Scanline Effect */}
         <div className="absolute inset-0 pointer-events-none z-10 opacity-5 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))]" style={{ backgroundSize: "100% 2px, 3px 100%" }} />
 
-        <ScrollArea className="h-[220px] w-full">
+        <ScrollArea className="h-[340px] w-full">
           <div className="space-y-1">
             {alerts.length === 0 ? (
               <div className="text-white/20 italic p-2 text-center text-xs">

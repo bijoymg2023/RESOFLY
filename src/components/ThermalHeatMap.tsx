@@ -60,7 +60,7 @@ export const ThermalHeatMap = () => {
   const gridSize = isMobile ? 12 : 16;
 
   return (
-    <Card className="bg-black/80 border border-white/10 overflow-hidden relative shadow-lg flex flex-col max-h-[300px]">
+    <Card className="bg-black/80 border border-white/10 overflow-hidden relative shadow-lg flex flex-col h-[400px]">
       {/* Background Grid */}
       <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(0,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[size:10px_10px] pointer-events-none" />
 
