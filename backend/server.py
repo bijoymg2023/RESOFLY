@@ -22,7 +22,10 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select
+from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer
+import thermal_engine
+from datetime import datetime
+import json
 
 # Setup
 ROOT_DIR = Path(__file__).parent
@@ -68,6 +71,11 @@ class AlertDB(Base):
     message = Column(String)
     timestamp = Column(DateTime, default=datetime.utcnow)
     acknowledged = Column(Boolean, default=False)
+    # New Detection Fields
+    lat = Column(Float, default=0.0)
+    lon = Column(Float, default=0.0)
+    confidence = Column(Float, default=0.0)
+    max_temp = Column(Float, default=0.0)
 
 class StatusCheckDB(Base):
     __tablename__ = "status_checks"
@@ -102,6 +110,10 @@ class Alert(AlertBase):
     id: str
     timestamp: datetime
     acknowledged: bool
+    lat: float
+    lon: float
+    confidence: float
+    max_temp: float
     class Config:
         from_attributes = True
 
@@ -511,8 +523,67 @@ async def startup():
                 
             await db.commit()
             
-        # 2. Start Background Alert Monitor
-        asyncio.create_task(background_monitor())
+        # 3. Start Thermal Detection Engine
+        dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
+        
+        async def on_thermal_detection(detections, metadata):
+            """Callback for detected thermal hotspots"""
+            # Capture current GPS if available
+            lat, lon = 0.0, 0.0
+            if gps_reader:
+                gps_data = gps_reader.get_data()
+                lat, lon = gps_data.get('latitude', 0.0), gps_data.get('longitude', 0.0)
+            
+            async with AsyncSessionLocal() as db:
+                for det in detections:
+                    # Simple Deduplication: Don't add if a similar 'active' alert exists within 30s
+                    # We check for the same type (LIFE/FIRE)
+                    thirty_seconds_ago = datetime.utcnow() - timedelta(seconds=30)
+                    stmt = select(AlertDB).where(
+                        (AlertDB.type == det['type'].lower()) & 
+                        (AlertDB.timestamp > thirty_seconds_ago) & 
+                        (AlertDB.acknowledged == False)
+                    )
+                    recent = await db.execute(stmt)
+                    if recent.scalar_one_or_none():
+                        continue
+
+                    # Create New Alert
+                    conf_pct = int(det['confidence'] * 100)
+                    msg = f"Thermal Signature Detected (Confidence: {conf_pct}%, Intensity: {int(det['max_intensity'])})"
+                    if metadata['count'] > 1:
+                        msg += f" - Target Count: {metadata['count']}"
+                    
+                    new_alert = AlertDB(
+                        id=str(uuid.uuid4()),
+                        type=det['type'].lower(), # 'life' or 'fire'
+                        title=f"{det['type']} DETECTED",
+                        message=msg,
+                        timestamp=datetime.utcnow(),
+                        acknowledged=False,
+                        lat=lat,
+                        lon=lon,
+                        confidence=det['confidence'],
+                        max_temp=det['max_intensity'] # Using intensity as proxy for temp in normalized view
+                    )
+                    db.add(new_alert)
+                    logger.info(f"Generated REAL Thermal Alert: {det['type']} at {lat}, {lon}")
+                
+                await db.commit()
+
+        # Create wrapper for async callback
+        def sync_callback(detections, metadata):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(on_thermal_detection(detections, metadata))
+            loop.close()
+
+        # In a real async environment, we'd use a queue, but for Pi/FastAPI sync_callback to bridge is fine
+        detection_service = thermal_engine.ThermalDetectionService(
+            callback=sync_callback, 
+            dataset_path=dataset_video if dataset_video.exists() else None
+        )
+        detection_service.start()
             
     except Exception as e:
         print(f"CRITICAL STARTUP ERROR: Could not create/update admin user. {e}")

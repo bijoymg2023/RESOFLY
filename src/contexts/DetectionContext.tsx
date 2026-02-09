@@ -63,59 +63,54 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setSelectedAlert(null);
     }, []);
 
-    // --- Simulation Logic (Mock Backend) ---
+    // --- Backend Integration ---
 
-    useEffect(() => {
-        // Simulate incoming detection events
-        const interval = setInterval(() => {
-            // 30% chance to trigger a detection every 3 seconds
-            if (Math.random() > 0.7) {
-                const now = new Date();
-                const isLife = Math.random() > 0.3; // 70% chance of LIFE detection
-                const type: 'LIFE' | 'FIRE' = isLife ? 'LIFE' : 'FIRE';
+    // Function to fetch alerts from backend
+    const refreshAlerts = useCallback(async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
 
-                // Base coords sim: 12.9716° N, 77.5946° E (Bangalore approx)
-                // Add some jitter
-                const lat = 12.9716 + (Math.random() - 0.5) * 0.01;
-                const lon = 77.5946 + (Math.random() - 0.5) * 0.01;
+            const res = await fetch('/api/alerts', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
 
-                const newEvent: DetectionEvent = {
-                    id: Math.random().toString(36).substr(2, 9),
-                    type,
-                    confidence: 0.6 + Math.random() * 0.35, // 0.6 - 0.95
-                    max_temp: isLife ? 36 + Math.random() * 4 : 80 + Math.random() * 50,
-                    lat,
-                    lon,
-                    timestamp: now.toLocaleTimeString([], { hour12: false }),
-                    fullTimestamp: now,
-                    isActive: true
-                };
+            if (res.ok) {
+                const data = await res.json();
 
+                // Map backend alerts to frontend DetectionEvent interface
+                const mappedAlerts: DetectionEvent[] = data.map((a: any) => ({
+                    id: a.id,
+                    type: a.type.toUpperCase() as any, // 'life' -> 'LIFE'
+                    confidence: a.confidence || 0.8,
+                    max_temp: a.max_temp || 0,
+                    lat: a.lat || 0,
+                    lon: a.lon || 0,
+                    timestamp: new Date(a.timestamp).toLocaleTimeString([], { hour12: false }),
+                    fullTimestamp: new Date(a.timestamp),
+                    isActive: !a.acknowledged
+                }));
+
+                // Update state only if changed (simple comparison)
                 setAlerts(prev => {
-                    const recentDuplicate = prev.find(a =>
-                        a.isActive &&
-                        a.type === newEvent.type &&
-                        Math.abs(a.lat - newEvent.lat) < 0.0005 &&
-                        Math.abs(a.lon - newEvent.lon) < 0.0005 &&
-                        (now.getTime() - a.fullTimestamp.getTime()) < 30000
-                    );
-
-                    if (recentDuplicate) {
-                        console.log("Duplicate detection suppressed");
-                        return prev;
-                    }
-
-                    if (newEvent.type === 'LIFE') {
-                        // console.log("Life detected!"); 
-                    }
-
-                    return [newEvent, ...prev].slice(0, 100); // Keep last 100
+                    const hasNew = mappedAlerts.some(ma => !prev.find(p => p.id === ma.id));
+                    const stateChanged = mappedAlerts.length !== prev.length || hasNew;
+                    return stateChanged ? mappedAlerts : prev;
                 });
             }
-        }, 3000);
+        } catch (e) {
+            console.error("Failed to sync alerts with backend:", e);
+        }
+    }, []);
 
+    useEffect(() => {
+        // Initial fetch
+        refreshAlerts();
+
+        // Polling loop
+        const interval = setInterval(refreshAlerts, 2000);
         return () => clearInterval(interval);
-    }, [focusAlert]);
+    }, [refreshAlerts]);
 
     return (
         <DetectionContext.Provider value={{ alerts, activeAlerts, selectedAlert, ackAlert, focusAlert, clearSelection }}>
