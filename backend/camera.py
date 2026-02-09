@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import os
 import time
 import asyncio
 import threading
@@ -117,61 +118,67 @@ def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
 
 
 # ========================================
-# Pi Camera (RGB) Support
+# Pi Camera (RGB) Support using rpicam-still
 # ========================================
 
-class PiCamera(BaseCamera):
+class RpicamCamera(BaseCamera):
     """
-    Native Pi Camera using picamera2 library.
-    Falls back gracefully if not available.
+    Pi Camera using rpicam-still subprocess.
+    More reliable than picamera2 on newer Pi OS.
     """
-    def __init__(self, resolution=(1280, 720), framerate=30):
+    def __init__(self, resolution=(640, 480), framerate=10):
         self.resolution = resolution
         self.framerate = framerate
-        self.camera = None
-        self.available = False
         self.frame = None
         self.running = True
+        self.available = False
+        self.temp_file = "/tmp/resofly_stream.jpg"
         
-        try:
-            from picamera2 import Picamera2
-            self.camera = Picamera2()
-            config = self.camera.create_preview_configuration(
-                main={"size": resolution, "format": "RGB888"}
-            )
-            self.camera.configure(config)
-            self.camera.start()
+        # Check if rpicam-still is available
+        import shutil
+        if shutil.which("rpicam-still"):
             self.available = True
-            print(f"Pi Camera initialized at {resolution}")
+            print(f"RpicamCamera initialized at {resolution}")
             
             # Start background capture thread
             self.thread = threading.Thread(target=self._capture_loop, daemon=True)
             self.thread.start()
-            
-        except ImportError:
-            print("picamera2 not available - Pi Camera disabled")
-        except Exception as e:
-            print(f"Pi Camera init error: {e}")
+        else:
+            print("rpicam-still not found - Pi Camera disabled")
     
     def _capture_loop(self):
-        """Background thread to continuously capture frames."""
+        """Background thread to continuously capture frames using rpicam-still."""
+        import subprocess
+        
         while self.running and self.available:
             try:
-                # Capture frame as numpy array
-                frame = self.camera.capture_array()
+                # Capture frame using rpicam-still
+                # -t 1: timeout 1ms (instant)
+                # -n: no preview
+                # --width/--height: resolution
+                cmd = [
+                    "rpicam-still",
+                    "-o", self.temp_file,
+                    "-t", "1",
+                    "--width", str(self.resolution[0]),
+                    "--height", str(self.resolution[1]),
+                    "-n"
+                ]
+                subprocess.run(cmd, capture_output=True, timeout=5)
                 
-                # Convert RGB to BGR for OpenCV
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                # Read the captured image
+                if os.path.exists(self.temp_file):
+                    with open(self.temp_file, "rb") as f:
+                        self.frame = f.read()
                 
-                # Encode as JPEG
-                success, buffer = cv2.imencode('.jpg', frame_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                if success:
-                    self.frame = buffer.tobytes()
-                    
+                # Control frame rate
                 time.sleep(1.0 / self.framerate)
                 
+            except subprocess.TimeoutExpired:
+                print("rpicam-still timeout")
+                time.sleep(1)
             except Exception as e:
-                print(f"Pi Camera capture error: {e}")
+                print(f"RpicamCamera capture error: {e}")
                 time.sleep(0.5)
     
     async def get_frame(self):
@@ -182,9 +189,11 @@ class PiCamera(BaseCamera):
     
     def __del__(self):
         self.running = False
-        if self.camera:
+        # Clean up temp file
+        import os
+        if os.path.exists(self.temp_file):
             try:
-                self.camera.stop()
+                os.remove(self.temp_file)
             except:
                 pass
 
@@ -193,10 +202,10 @@ class PiCamera(BaseCamera):
 rgb_camera_instance = None
 
 def get_rgb_camera():
-    """Get RGB camera instance (Pi Camera)."""
+    """Get RGB camera instance (Pi Camera via rpicam-still)."""
     global rgb_camera_instance
     if rgb_camera_instance is None:
-        rgb_camera_instance = PiCamera()
+        rgb_camera_instance = RpicamCamera()
     return rgb_camera_instance
 
 
