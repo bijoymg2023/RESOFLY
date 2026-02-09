@@ -154,10 +154,10 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # Stable low latency tuning:
-                # - 640x480 @ 30fps (Prevent CPU overload)
-                # - exposure sport: faster shutter speed for motion
-                # - quality 40: balance clarity vs bandwidth
+                # Optimized for drone use:
+                # - 640x480 @ 30fps (smooth motion)
+                # - exposure sport: faster shutter
+                # - quality 50: clear image
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -165,7 +165,7 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "40",
+                    "--quality", "50",
                     "--exposure", "sport",
                     "--inline",            
                     "--nopreview",
@@ -181,52 +181,34 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print("rpicam-vid stream started (60fps)")
+                print("rpicam-vid stream started")
                 
                 # Read MJPEG frames from stdout
                 buffer = b''
                 while self.running and self.process.poll() is None:
-                    # Read a large chunk to drain pipe
-                    chunk = self.process.stdout.read(32768)
+                    chunk = self.process.stdout.read(8192)
                     if not chunk:
                         break
                     
                     buffer += chunk
                     
-                    # GREEDY FRAME PARSING:
-                    # Find the LAST complete frame in the buffer and discard everything before it.
-                    # This ensures we always show the freshest frame and never lag behind.
+                    # Find JPEG frame boundaries (sequential processing)
+                    start = buffer.find(b'\xff\xd8')
+                    end = buffer.find(b'\xff\xd9')
                     
-                    last_frame_end = buffer.rfind(b'\xff\xd9')
-                    
-                    if last_frame_end != -1:
-                        # Found at least one frame end.
-                        # Now find the start of THIS frame
-                        packet_end = last_frame_end + 2
+                    if start != -1 and end != -1 and end > start:
+                        # Extract complete frame
+                        new_frame = buffer[start:end+2]
                         
-                        # Search backwards for start of this frame
-                        frame_start = buffer.rfind(b'\xff\xd8', 0, last_frame_end)
+                        with self.lock:
+                            self.frame = new_frame
+                            
+                        # Move buffer forward
+                        buffer = buffer[end+2:]
                         
-                        if frame_start != -1:
-                            # Extract the latest complete frame
-                            new_frame = buffer[frame_start:packet_end]
-                            
-                            with self.lock:
-                                self.frame = new_frame
-                            
-                            # DISCARD processed data and OLD frames
-                            # Keep only what's after the last frame end (start of next frame)
-                            buffer = buffer[packet_end:]
-                        else:
-                            # We have an end but no start? (partial buffer)
-                            # Keep buffer as is, wait for more data?
-                            # Or discard if buffer is too big to be a fragment?
-                            if len(buffer) > 500000:
-                                buffer = b''
-                    
-                    # Safety valve
-                    if len(buffer) > 1000000:
-                        buffer = b''
+                        # Prevent buffer overflow if parsing fails
+                        if len(buffer) > 512000:  # 500KB safety limit
+                            buffer = b''
                 
             except Exception as e:
                 print(f"RpicamCamera stream error: {e}")
