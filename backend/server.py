@@ -284,6 +284,46 @@ async def delete_alert(alert_id: str, db: AsyncSession = Depends(get_db), curren
     await db.commit()
     return {"message": "Alert deleted"}
 
+@api_router.get("/thermal/status")
+async def thermal_camera_status():
+    """
+    Get thermal camera status.
+    Returns camera availability and source type.
+    """
+    try:
+        from thermal_engine import WaveshareThermalSource, VideoDatasetSource
+        
+        # Check Waveshare hardware
+        waveshare = WaveshareThermalSource()
+        if waveshare.available:
+            return {
+                "available": True,
+                "source": "waveshare_80x62",
+                "resolution": "80x62",
+                "mode": "live"
+            }
+        
+        # Check dataset fallback
+        dataset_path = Path(__file__).parent.parent / "dataset" / "test2.mp4"
+        if dataset_path.exists():
+            return {
+                "available": True,
+                "source": "dataset",
+                "file": str(dataset_path.name),
+                "mode": "offline"
+            }
+        
+        return {
+            "available": False,
+            "source": None,
+            "mode": None
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "error": str(e)
+        }
+
 
 import gps_real
 

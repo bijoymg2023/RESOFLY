@@ -37,31 +37,45 @@ class VideoDatasetSource(ThermalSource):
 class WaveshareThermalSource(ThermalSource):
     """
     Hardware driver for Waveshare 80x62 Thermal Camera HAT.
-    Note: Requires spidev and potentially vendor library.
-    This is a design-ready implementation.
+    Wraps the dedicated waveshare_thermal module.
     """
     def __init__(self):
         self.available = False
+        self.camera = None
+        
         try:
-            # Placeholder for actual hardware init
-            # import smbus or spidev
-            # self.bus = ...
-            logger.info("Waveshare 80x62 Thermal HAT initialized (Driver Placeholder)")
-            self.available = True
+            from waveshare_thermal import get_thermal_camera
+            self.camera = get_thermal_camera()
+            self.available = self.camera.is_available()
+            
+            if self.available:
+                logger.info("Waveshare 80x62 Thermal HAT connected")
+            else:
+                logger.info("Waveshare Thermal HAT not available")
+        except ImportError:
+            logger.info("Waveshare driver not found, using dataset mode")
         except Exception as e:
-            logger.warning(f"Waveshare Thermal HAT not found: {e}")
+            logger.warning(f"Waveshare Thermal HAT error: {e}")
 
     def get_frame(self):
-        if not self.available:
+        if not self.available or self.camera is None:
             return None
-        # In a real scenario, this would read 80x62 raw pixels
-        # return raw_pixels.reshape(62, 80)
-        return None
+        return self.camera.get_frame()
 
 class DetectionEngine:
-    def __init__(self, min_area=10, threshold_offset=40):
-        self.min_area = min_area
-        self.threshold_offset = threshold_offset # Values above background mean
+    """
+    Thermal hotspot detection engine optimized for low-resolution LWIR cameras.
+    Tuned for 80x62 resolution but works with any grayscale frame.
+    """
+    def __init__(self, min_area=5, threshold_offset=35, low_res_mode=True):
+        self.min_area = min_area  # Reduced for 80x62 (5 pixels = ~1% of frame)
+        self.threshold_offset = threshold_offset
+        self.low_res_mode = low_res_mode
+        
+        # Size thresholds for 80x62 resolution
+        # Human at 10m distance ≈ 10-50 pixels
+        # Fire/large heat source > 100 pixels
+        self.life_max_area = 100 if low_res_mode else 500
         
     def process(self, frame):
         """
@@ -72,18 +86,22 @@ class DetectionEngine:
             return [], {}
 
         # 1. Enhance and Normalize
-        # Apply CLAHE for better local contrast in low-res thermal
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        # Adaptive CLAHE tile size based on resolution
+        tile_size = (4, 4) if self.low_res_mode else (8, 8)
+        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=tile_size)
         enhanced = clahe.apply(frame)
         
         # 2. Dynamic Thresholding
-        # Instead of fixed 200, use background mean + offset
         avg = np.mean(enhanced)
+        std = np.std(enhanced)
+        
+        # Use mean + std deviation for more adaptive threshold
         thresh_val = min(240, avg + self.threshold_offset)
         _, binary = cv2.threshold(enhanced, thresh_val, 255, cv2.THRESH_BINARY)
         
-        # 3. Noise Removal (Morphology)
-        kernel = np.ones((3,3), np.uint8)
+        # 3. Noise Removal (smaller kernel for low-res)
+        kernel_size = 2 if self.low_res_mode else 3
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
         
         # 4. Blob Detection
@@ -100,9 +118,22 @@ class DetectionEngine:
                 cv2.drawContours(mask, [cnt], -1, 255, -1)
                 min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(enhanced, mask=mask)
                 
+                # Calculate confidence based on intensity differential
+                intensity_diff = max_val - avg
+                intensity_confidence = min(1.0, intensity_diff / 100.0)
+                
+                # Area-based confidence (larger = easier to detect reliably)
+                area_confidence = min(0.3, area / 50.0) if self.low_res_mode else min(0.3, area / 500.0)
+                
+                # Combined confidence
+                confidence = min(0.95, 0.4 + intensity_confidence * 0.4 + area_confidence)
+                
+                # Classification: LIFE (human/animal) vs FIRE (large heat source)
+                detection_type = "LIFE" if area < self.life_max_area else "FIRE"
+                
                 detections.append({
-                    "type": "LIFE" if area < 500 else "FIRE", # Simple size categorization
-                    "confidence": float(min(0.95, 0.5 + (area / 1000.0))),
+                    "type": detection_type,
+                    "confidence": float(confidence),
                     "center": (x + w//2, y + h//2),
                     "area": float(area),
                     "max_intensity": float(max_val),
@@ -112,13 +143,14 @@ class DetectionEngine:
         return detections, {
             "count": len(detections),
             "avg_intensity": float(avg),
+            "std_intensity": float(std),
             "timestamp": datetime.now().isoformat()
         }
 
 class ThermalDetectionService:
     def __init__(self, callback, dataset_path=None):
         self.source = None
-        self.engine = DetectionEngine()
+        self.engine = DetectionEngine(low_res_mode=True)  # Default to low-res for Waveshare
         self.callback = callback
         self.running = False
         self.thread = None
