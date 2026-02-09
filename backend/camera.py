@@ -126,8 +126,7 @@ class RpicamCamera(BaseCamera):
     Pi Camera using rpicam-vid subprocess for continuous video streaming.
     Outputs MJPEG directly to stdout for high performance (30fps+).
     """
-    """
-    def __init__(self, resolution=(640, 480), framerate=60):
+    def __init__(self, resolution=(640, 480), framerate=30):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -140,7 +139,7 @@ class RpicamCamera(BaseCamera):
         import shutil
         if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps (Ultra Low Latency Mode)")
+            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps (Stable Low Latency)")
             
             # Start video streaming thread
             self.thread = threading.Thread(target=self._stream_loop, daemon=True)
@@ -155,12 +154,10 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # Ultra low latency tuning:
-                # - 640x480 @ 60fps
+                # Stable low latency tuning:
+                # - 640x480 @ 30fps (Prevent CPU overload)
                 # - exposure sport: faster shutter speed for motion
-                # - quality 25: reduced bandwidth for real-time transmission
-                # - flush: force flush output
-                # - listen: minimal buffering
+                # - quality 30: balance
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -168,8 +165,8 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "25",     # Low quality for max speed
-                    "--exposure", "sport", # Fastest shutter
+                    "--quality", "30",
+                    "--exposure", "sport",
                     "--inline",            
                     "--nopreview",
                     "--flush",
