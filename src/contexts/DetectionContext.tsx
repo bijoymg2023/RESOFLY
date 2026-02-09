@@ -107,9 +107,80 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Initial fetch
         refreshAlerts();
 
-        // Polling loop
-        const interval = setInterval(refreshAlerts, 2000);
-        return () => clearInterval(interval);
+        // Polling loop (fallback for REST sync)
+        const interval = setInterval(refreshAlerts, 5000); // Reduced frequency since we have WebSocket
+
+        // WebSocket connection for instant alerts
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/alerts`;
+        let ws: WebSocket | null = null;
+        let reconnectTimer: NodeJS.Timeout | null = null;
+
+        const connectWebSocket = () => {
+            try {
+                ws = new WebSocket(wsUrl);
+
+                ws.onopen = () => {
+                    console.log('[WS] Connected to alert stream');
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const alert = JSON.parse(event.data);
+                        console.log('[WS] Received alert:', alert);
+
+                        // Add new alert immediately
+                        const newAlert: DetectionEvent = {
+                            id: alert.id,
+                            type: (alert.type || 'LIFE').toUpperCase() as any,
+                            confidence: alert.confidence || 0.8,
+                            max_temp: alert.max_temp || alert.estimated_temp || 0,
+                            lat: alert.lat || 0,
+                            lon: alert.lon || 0,
+                            timestamp: new Date(alert.timestamp).toLocaleTimeString([], { hour12: false }),
+                            fullTimestamp: new Date(alert.timestamp),
+                            isActive: true
+                        };
+
+                        setAlerts(prev => {
+                            // Avoid duplicates
+                            if (prev.find(a => a.id === newAlert.id)) {
+                                return prev;
+                            }
+                            return [newAlert, ...prev];
+                        });
+
+                        // Show toast notification
+                        toast.success(`🔥 ${alert.type} Detected!`, {
+                            description: `${Math.round(alert.estimated_temp || 0)}°C | ${Math.round((alert.confidence || 0) * 100)}% confidence`
+                        });
+                    } catch (e) {
+                        console.error('[WS] Parse error:', e);
+                    }
+                };
+
+                ws.onclose = () => {
+                    console.log('[WS] Disconnected, reconnecting in 3s...');
+                    reconnectTimer = setTimeout(connectWebSocket, 3000);
+                };
+
+                ws.onerror = (err) => {
+                    console.error('[WS] Error:', err);
+                    ws?.close();
+                };
+            } catch (e) {
+                console.error('[WS] Connection failed:', e);
+                reconnectTimer = setTimeout(connectWebSocket, 3000);
+            }
+        };
+
+        connectWebSocket();
+
+        return () => {
+            clearInterval(interval);
+            if (reconnectTimer) clearTimeout(reconnectTimer);
+            ws?.close();
+        };
     }, [refreshAlerts]);
 
     return (

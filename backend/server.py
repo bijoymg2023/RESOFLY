@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -11,7 +11,7 @@ import glob
 import cv2
 from pathlib import Path
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Set
 import uuid
 from datetime import datetime, timedelta
 from enum import Enum
@@ -23,7 +23,7 @@ from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer
-import thermal_detection
+import thermal_pipeline
 from datetime import datetime
 import json
 
@@ -568,6 +568,101 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --------------------------
+# WebSocket Connection Manager
+# --------------------------
+class WebSocketConnectionManager:
+    """Manages WebSocket connections for real-time alert broadcasting."""
+    
+    def __init__(self):
+        self.active_connections: Set[WebSocket] = set()
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.add(websocket)
+        print(f"[WS] Client connected. Total: {len(self.active_connections)}")
+    
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.discard(websocket)
+        print(f"[WS] Client disconnected. Total: {len(self.active_connections)}")
+    
+    async def broadcast(self, data: dict):
+        """Send message to all connected clients."""
+        if not self.active_connections:
+            return
+        
+        message = json.dumps(data)
+        disconnected = set()
+        
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception:
+                disconnected.add(connection)
+        
+        # Clean up disconnected
+        for conn in disconnected:
+            self.active_connections.discard(conn)
+
+ws_manager = WebSocketConnectionManager()
+
+# Global thermal pipeline (initialized in startup)
+thermal_frame_pipeline = None
+
+# --------------------------
+# WebSocket Endpoint
+# --------------------------
+@app.websocket("/ws/alerts")
+async def websocket_alerts(websocket: WebSocket):
+    """Real-time alert stream via WebSocket."""
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive, wait for client messages
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+    except Exception:
+        ws_manager.disconnect(websocket)
+
+# --------------------------
+# Synchronized Thermal Stream
+# --------------------------
+@app.get("/thermal/")
+async def thermal_stream():
+    """
+    MJPEG stream with synchronized detection.
+    Each frame is processed for detection before being streamed.
+    Alerts are generated at the exact moment signatures are visible.
+    """
+    if thermal_frame_pipeline is None:
+        # Return placeholder if no pipeline
+        async def placeholder():
+            yield b'--frame\r\nContent-Type: text/plain\r\n\r\nNo thermal source available\r\n'
+        return StreamingResponse(placeholder(), media_type="multipart/x-mixed-replace; boundary=frame")
+    
+    async def generate():
+        while True:
+            # Process frame: detect + annotate (synchronized)
+            frame = thermal_frame_pipeline.process_next()
+            
+            if frame is not None:
+                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' +
+                    jpeg.tobytes() +
+                    b'\r\n'
+                )
+            
+            # Target 15 FPS
+            await asyncio.sleep(1/15)
+    
+    return StreamingResponse(
+        generate(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
+
 # Startup
 @app.on_event("startup")
 async def startup():
@@ -615,86 +710,86 @@ async def startup():
     except Exception as e:
         print(f"Warning: Could not log startup alert: {e}")
             
-    # 3. Start Thermal Detection (Clean Implementation)
+    # 3. Initialize Synchronized Thermal Pipeline
     dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
     print(f"[THERMAL] Looking for dataset at: {dataset_video}")
     print(f"[THERMAL] Dataset exists: {dataset_video.exists()}")
     
     if dataset_video.exists():
-        import threading
+        # Create video source
+        source = thermal_pipeline.VideoSource(str(dataset_video))
         
-        def detection_thread():
-            """Background thread for thermal detection."""
-            source = thermal_detection.VideoSource(str(dataset_video))
-            detector = thermal_detection.ThermalDetector(adaptive=True, min_area=40)
+        # Detection callback - creates alerts and broadcasts via WebSocket
+        def on_detection_event(event: thermal_pipeline.DetectionEvent):
+            """Handle detection event - save to DB and broadcast."""
+            # Get GPS (fallback to demo coordinates)
+            lat = 12.9716 + random.uniform(-0.01, 0.01)
+            lon = 77.5946 + random.uniform(-0.01, 0.01)
+            if gps_reader:
+                gps_data = gps_reader.get_data()
+                if gps_data.get('latitude'):
+                    lat, lon = gps_data['latitude'], gps_data['longitude']
             
-            print("[THERMAL] Detection thread started")
-            
-            import time
-            last_alert_time = 0
-            
-            while True:
-                frame = source.get_frame()
-                if frame is None:
-                    time.sleep(0.5)
-                    continue
+            # Create alert in database
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 
-                hotspots = detector.process_frame(frame)
-                
-                # Only create alert if we have high-confidence detections
-                # AND at least 5 seconds since last alert (to avoid flooding)
-                valid = [h for h in hotspots if h.confidence >= 0.6]
-                
-                if valid and (time.time() - last_alert_time) > 5:
-                    # Create alert for top detection
-                    top = valid[0]
+                async def save_and_broadcast():
+                    top = event.hotspots[0]
+                    alert_id = str(uuid.uuid4())
                     
-                    # Get GPS (fallback to demo coordinates)
-                    lat, lon = 12.9716 + random.uniform(-0.01, 0.01), 77.5946 + random.uniform(-0.01, 0.01)
-                    if gps_reader:
-                        gps_data = gps_reader.get_data()
-                        if gps_data.get('latitude'):
-                            lat, lon = gps_data['latitude'], gps_data['longitude']
+                    # Save to database
+                    async with AsyncSessionLocal() as db:
+                        alert = AlertDB(
+                            id=alert_id,
+                            type='life',
+                            title='LIFE DETECTED',
+                            message=f"Thermal signature detected ({top.estimated_temp:.0f}°C, Confidence: {int(top.confidence*100)}%)",
+                            timestamp=event.timestamp,
+                            acknowledged=False,
+                            lat=lat,
+                            lon=lon,
+                            confidence=top.confidence,
+                            max_temp=top.max_intensity
+                        )
+                        db.add(alert)
+                        await db.commit()
                     
-                    # Create alert synchronously using a new event loop
-                    try:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        
-                        async def create_alert():
-                            async with AsyncSessionLocal() as db:
-                                alert = AlertDB(
-                                    id=str(uuid.uuid4()),
-                                    type='life',
-                                    title='LIFE DETECTED',
-                                    message=f"Thermal signature detected (Confidence: {int(top.confidence*100)}%, Intensity: {int(top.max_intensity)})",
-                                    timestamp=datetime.utcnow(),
-                                    acknowledged=False,
-                                    lat=lat,
-                                    lon=lon,
-                                    confidence=top.confidence,
-                                    max_temp=top.max_intensity
-                                )
-                                db.add(alert)
-                                await db.commit()
-                                print(f"[THERMAL] ✓ Alert created: conf={top.confidence:.2f}")
-                        
-                        loop.run_until_complete(create_alert())
-                        loop.close()
-                        last_alert_time = time.time()
-                        
-                    except Exception as e:
-                        print(f"[THERMAL] Error creating alert: {e}")
+                    # Broadcast to WebSocket clients
+                    alert_data = {
+                        "id": alert_id,
+                        "type": "LIFE",
+                        "title": "LIFE DETECTED",
+                        "confidence": top.confidence,
+                        "max_temp": top.max_intensity,
+                        "estimated_temp": top.estimated_temp,
+                        "lat": lat,
+                        "lon": lon,
+                        "timestamp": event.timestamp.isoformat(),
+                        "frame": event.frame_number,
+                        "total_count": event.total_count
+                    }
+                    await ws_manager.broadcast(alert_data)
+                    
+                    print(f"[THERMAL] ✓ Alert: {top.estimated_temp:.0f}°C, conf={top.confidence:.0%}, frame={event.frame_number}")
                 
-                # Process at ~5 FPS
-                time.sleep(0.2)
+                loop.run_until_complete(save_and_broadcast())
+                loop.close()
+                
+            except Exception as e:
+                print(f"[THERMAL] Error: {e}")
         
-        # Start detection in background thread
-        thread = threading.Thread(target=detection_thread, daemon=True)
-        thread.start()
-        print("[THERMAL] Detection service started")
+        # Create the unified pipeline
+        global thermal_frame_pipeline
+        thermal_frame_pipeline = thermal_pipeline.ThermalFramePipeline(
+            source=source,
+            on_detection=on_detection_event
+        )
+        print("[THERMAL] Synchronized pipeline initialized")
     else:
         print("[THERMAL] No dataset found, detection disabled")
+        thermal_frame_pipeline = None
 
 async def background_monitor():
     """Periodically checks system health and logs alerts."""
