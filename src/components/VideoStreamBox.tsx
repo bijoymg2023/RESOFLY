@@ -33,6 +33,7 @@ export const VideoStreamBox = () => {
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState(false);
+  const [rgbStreamError, setRgbStreamError] = useState(false);
   const { token } = useAuth();
   const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -304,23 +305,56 @@ export const VideoStreamBox = () => {
                 </div>
               )}
             </>
+          ) : activeType === 'RGB' ? (
+            /* RGB Camera Stream from Pi Camera */
+            <div className="relative w-full h-full">
+              {rgbStreamError ? (
+                <div className="flex flex-col items-center justify-center h-full w-full bg-black">
+                  <Video className="w-16 h-16 mb-4 text-red-500/50" />
+                  <p className="tracking-widest text-xs text-red-400">CAMERA OFFLINE</p>
+                  <p className="text-[10px] mt-2 text-white/30">Pi Camera not connected</p>
+                  <button
+                    onClick={() => setRgbStreamError(false)}
+                    className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
+                  >
+                    Retry Connection
+                  </button>
+                </div>
+              ) : (
+                <img
+                  src="/api/stream/rgb"
+                  alt="Live RGB Feed"
+                  className="w-full h-full object-contain"
+                  onError={() => setRgbStreamError(true)}
+                  onLoad={() => setRgbStreamError(false)}
+                />
+              )}
+
+              {/* Live Indicator */}
+              {!rgbStreamError && (
+                <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
+                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                  <span className="font-mono text-[9px] text-green-400">LIVE</span>
+                </div>
+              )}
+            </div>
           ) : (
-            /* Offline / Placeholder for RGB/Fusion */
+            /* Offline / Placeholder for Fusion */
             <div className="flex flex-col items-center justify-center h-full w-full bg-black relative overflow-hidden">
               <div className="absolute inset-0 opacity-5 bg-[url('https://upload.wikimedia.org/wikipedia/commons/7/76/Noise_tv.gif')] bg-repeat opacity-10 mix-blend-overlay pointer-events-none" />
 
               <div className="z-10 flex flex-col items-center">
                 <div className="relative mb-6">
-                  {activeType === 'RGB' ? <Video className="w-16 h-16 text-red-900/40" /> : <Layers className="w-16 h-16 text-yellow-900/40" />}
+                  <Layers className="w-16 h-16 text-yellow-900/40" />
                   <ScanLine className="absolute inset-0 w-16 h-16 text-white/5 animate-scan" />
                 </div>
 
                 <div className="flex items-center space-x-2 px-4 py-1 bg-white/5 rounded border border-white/10 backdrop-blur">
-                  <div className={`w-2 h-2 rounded-full animate-pulse ${activeType === 'RGB' ? 'bg-red-500' : 'bg-yellow-500'}`} />
+                  <div className="w-2 h-2 rounded-full animate-pulse bg-yellow-500" />
                   <span className="font-mono text-xl font-bold tracking-[0.2em] text-white/40">NO SIGNAL</span>
                 </div>
                 <p className="font-mono text-[9px] text-white/20 mt-3 tracking-widest uppercase">
-                  {activeType === 'RGB' ? 'Optical Feed Disconnected' : 'Fusion Sensor Unavailable'}
+                  Fusion Sensor Unavailable
                 </p>
               </div>
             </div>

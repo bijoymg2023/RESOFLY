@@ -352,8 +352,11 @@ async def gen_frames(camera_type='thermal'):
 
 @api_router.get("/stream/rgb")
 async def video_feed_rgb(token: Optional[str] = None):
-    # RGB Webcam Stream
-    return StreamingResponse(gen_frames('rgb'), media_type="multipart/x-mixed-replace; boundary=frame")
+    """RGB Camera Stream from Pi Camera."""
+    return StreamingResponse(
+        camera.generate_rgb_stream(), 
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 
 # --------------------------
