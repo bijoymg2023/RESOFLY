@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { VideoStreamBox } from './VideoStreamBox';
 import { ThermalHeatMap } from './ThermalHeatMap';
 import { AlertBox } from './AlertBox';
+import { AlertsDetectionBox } from './AlertsDetectionBox';
 import { GPSCoordinateBox } from './GPSCoordinateBox';
 import { ThemeToggle } from './ThemeToggle';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -194,12 +195,15 @@ const ThermalDashboard = () => {
               <VideoStreamBox />
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="min-h-[300px] order-1">
                 <ThermalHeatMap />
               </div>
               <div className="min-h-[300px] order-2">
                 <AlertBox />
+              </div>
+              <div className="min-h-[300px] order-3">
+                <AlertsDetectionBox />
               </div>
             </div>
           </div>
