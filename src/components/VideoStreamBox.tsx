@@ -310,7 +310,7 @@ export const VideoStreamBox = () => {
               <img
                 src="/api/stream/rgb"
                 alt="Live RGB Feed"
-                className="w-full h-full object-contain"
+                className="w-full h-full object-cover"
               />
 
               {/* Live Indicator */}
