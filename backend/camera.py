@@ -126,7 +126,8 @@ class RpicamCamera(BaseCamera):
     Pi Camera using rpicam-vid subprocess for continuous video streaming.
     Outputs MJPEG directly to stdout for high performance (30fps+).
     """
-    def __init__(self, resolution=(640, 480), framerate=48):
+    """
+    def __init__(self, resolution=(640, 480), framerate=60):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -139,7 +140,7 @@ class RpicamCamera(BaseCamera):
         import shutil
         if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps (Low Latency Mode)")
+            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps (Ultra Low Latency Mode)")
             
             # Start video streaming thread
             self.thread = threading.Thread(target=self._stream_loop, daemon=True)
@@ -154,11 +155,12 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # Low latency tuning:
-                # - 640x480 @ 48fps
+                # Ultra low latency tuning:
+                # - 640x480 @ 60fps
                 # - exposure sport: faster shutter speed for motion
-                # - quality 50: reduced bandwidth
+                # - quality 25: reduced bandwidth for real-time transmission
                 # - flush: force flush output
+                # - listen: minimal buffering
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -166,11 +168,11 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "50",     # Lower quality for lower bandwidth/latency
-                    "--exposure", "sport", # Faster shutter for drone motion
-                    "--inline",            # Inline headers
+                    "--quality", "25",     # Low quality for max speed
+                    "--exposure", "sport", # Fastest shutter
+                    "--inline",            
                     "--nopreview",
-                    "--flush",             # Force flush output buffers
+                    "--flush",
                     "-o", "-"
                 ]
                 
@@ -182,34 +184,52 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print("rpicam-vid stream started")
+                print("rpicam-vid stream started (60fps)")
                 
                 # Read MJPEG frames from stdout
                 buffer = b''
                 while self.running and self.process.poll() is None:
-                    chunk = self.process.stdout.read(8192)
+                    # Read a large chunk to drain pipe
+                    chunk = self.process.stdout.read(32768)
                     if not chunk:
                         break
                     
                     buffer += chunk
                     
-                    # Find JPEG frame boundaries
-                    start = buffer.find(b'\xff\xd8')
-                    end = buffer.find(b'\xff\xd9')
+                    # GREEDY FRAME PARSING:
+                    # Find the LAST complete frame in the buffer and discard everything before it.
+                    # This ensures we always show the freshest frame and never lag behind.
                     
-                    if start != -1 and end != -1 and end > start:
-                        # Extract complete frame
-                        new_frame = buffer[start:end+2]
+                    last_frame_end = buffer.rfind(b'\xff\xd9')
+                    
+                    if last_frame_end != -1:
+                        # Found at least one frame end.
+                        # Now find the start of THIS frame
+                        packet_end = last_frame_end + 2
                         
-                        with self.lock:
-                            self.frame = new_frame
+                        # Search backwards for start of this frame
+                        frame_start = buffer.rfind(b'\xff\xd8', 0, last_frame_end)
+                        
+                        if frame_start != -1:
+                            # Extract the latest complete frame
+                            new_frame = buffer[frame_start:packet_end]
                             
-                        # Move buffer forward
-                        buffer = buffer[end+2:]
-                        
-                        # Prevent buffer overflow if parsing fails
-                        if len(buffer) > 1024*1024: # 1MB safety limit
-                            buffer = b''
+                            with self.lock:
+                                self.frame = new_frame
+                            
+                            # DISCARD processed data and OLD frames
+                            # Keep only what's after the last frame end (start of next frame)
+                            buffer = buffer[packet_end:]
+                        else:
+                            # We have an end but no start? (partial buffer)
+                            # Keep buffer as is, wait for more data?
+                            # Or discard if buffer is too big to be a fragment?
+                            if len(buffer) > 500000:
+                                buffer = b''
+                    
+                    # Safety valve
+                    if len(buffer) > 1000000:
+                        buffer = b''
                 
             except Exception as e:
                 print(f"RpicamCamera stream error: {e}")
@@ -222,7 +242,8 @@ class RpicamCamera(BaseCamera):
                     except:
                         pass
                     self.process = None
-                time.sleep(2) # Wait before restart
+                time.sleep(2)
+
     
     async def get_frame(self):
         with self.lock:
