@@ -118,68 +118,90 @@ def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
 
 
 # ========================================
-# Pi Camera (RGB) Support using rpicam-still
+# Pi Camera (RGB) Support using rpicam-vid
 # ========================================
 
 class RpicamCamera(BaseCamera):
     """
-    Pi Camera using rpicam-still subprocess.
-    More reliable than picamera2 on newer Pi OS.
+    Pi Camera using rpicam-vid subprocess for continuous video streaming.
+    Outputs MJPEG directly for low latency.
     """
-    def __init__(self, resolution=(640, 480), framerate=10):
+    def __init__(self, resolution=(640, 480), framerate=15):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
         self.running = True
         self.available = False
-        self.temp_file = "/tmp/resofly_stream.jpg"
+        self.process = None
         
-        # Check if rpicam-still is available
+        # Check if rpicam-vid is available
         import shutil
-        if shutil.which("rpicam-still"):
+        if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera initialized at {resolution}")
+            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps")
             
-            # Start background capture thread
-            self.thread = threading.Thread(target=self._capture_loop, daemon=True)
+            # Start video streaming thread
+            self.thread = threading.Thread(target=self._stream_loop, daemon=True)
             self.thread.start()
         else:
-            print("rpicam-still not found - Pi Camera disabled")
+            print("rpicam-vid not found - Pi Camera disabled")
     
-    def _capture_loop(self):
-        """Background thread to continuously capture frames using rpicam-still."""
+    def _stream_loop(self):
+        """Background thread to continuously stream video using rpicam-vid."""
         import subprocess
         
         while self.running and self.available:
             try:
-                # Capture frame using rpicam-still
-                # -t 1: timeout 1ms (instant)
-                # -n: no preview
-                # --width/--height: resolution
+                # Start rpicam-vid outputting MJPEG to stdout
                 cmd = [
-                    "rpicam-still",
-                    "-o", self.temp_file,
-                    "-t", "1",
+                    "rpicam-vid",
+                    "-t", "0",  # Run indefinitely
                     "--width", str(self.resolution[0]),
                     "--height", str(self.resolution[1]),
-                    "-n"
+                    "--framerate", str(self.framerate),
+                    "--codec", "mjpeg",
+                    "-n",  # No preview
+                    "-o", "-"  # Output to stdout
                 ]
-                subprocess.run(cmd, capture_output=True, timeout=5)
                 
-                # Read the captured image
-                if os.path.exists(self.temp_file):
-                    with open(self.temp_file, "rb") as f:
-                        self.frame = f.read()
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=10**6
+                )
                 
-                # Control frame rate
-                time.sleep(1.0 / self.framerate)
+                print("rpicam-vid stream started")
                 
-            except subprocess.TimeoutExpired:
-                print("rpicam-still timeout")
-                time.sleep(1)
+                # Read MJPEG frames from stdout
+                buffer = b''
+                while self.running and self.process.poll() is None:
+                    chunk = self.process.stdout.read(4096)
+                    if not chunk:
+                        break
+                    
+                    buffer += chunk
+                    
+                    # Find JPEG frame boundaries
+                    start = buffer.find(b'\xff\xd8')  # JPEG start
+                    end = buffer.find(b'\xff\xd9')    # JPEG end
+                    
+                    if start != -1 and end != -1 and end > start:
+                        # Extract complete frame
+                        self.frame = buffer[start:end+2]
+                        buffer = buffer[end+2:]
+                        
+                        # Prevent buffer overflow
+                        if len(buffer) > 500000:
+                            buffer = b''
+                
             except Exception as e:
-                print(f"RpicamCamera capture error: {e}")
-                time.sleep(0.5)
+                print(f"RpicamCamera stream error: {e}")
+                time.sleep(1)
+            finally:
+                if self.process:
+                    self.process.terminate()
+                    self.process = None
     
     async def get_frame(self):
         return self.frame
@@ -189,11 +211,9 @@ class RpicamCamera(BaseCamera):
     
     def __del__(self):
         self.running = False
-        # Clean up temp file
-        import os
-        if os.path.exists(self.temp_file):
+        if self.process:
             try:
-                os.remove(self.temp_file)
+                self.process.terminate()
             except:
                 pass
 
@@ -202,7 +222,7 @@ class RpicamCamera(BaseCamera):
 rgb_camera_instance = None
 
 def get_rgb_camera():
-    """Get RGB camera instance (Pi Camera via rpicam-still)."""
+    """Get RGB camera instance (Pi Camera via rpicam-vid)."""
     global rgb_camera_instance
     if rgb_camera_instance is None:
         rgb_camera_instance = RpicamCamera()
