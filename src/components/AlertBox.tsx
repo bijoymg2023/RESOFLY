@@ -71,14 +71,14 @@ export const AlertBox = () => {
         </Badge>
       </CardHeader>
 
-      <CardContent className="flex-1 p-0 bg-black/50 font-mono text-xs overflow-hidden relative">
+      <CardContent className="flex-1 p-0 bg-black/50 font-mono text-xs overflow-hidden relative min-h-0">
         {/* CRT Scanline Effect */}
         <div className="absolute inset-0 pointer-events-none z-10 opacity-5 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))]" style={{ backgroundSize: "100% 2px, 3px 100%" }} />
 
-        <ScrollArea className="flex-1 w-full">
-          <div className="space-y-1">
+        <ScrollArea className="h-full w-full">
+          <div className="space-y-0 p-1">
             {alerts.length === 0 ? (
-              <div className="text-white/20 italic p-2 text-center text-xs">
+              <div className="text-white/20 italic p-4 text-center text-xs">
                 <span>{'>'} System Systems Normal...</span>
               </div>
             ) : (
@@ -89,7 +89,7 @@ export const AlertBox = () => {
                 return (
                   <div
                     key={alert.id}
-                    className={`group flex items-start space-x-3 p-2 hover:bg-white/5 rounded transition-colors cursor-default border-b border-white/5 last:border-0`}
+                    className={`group flex items-start space-x-3 px-3 py-2.5 hover:bg-white/5 transition-colors cursor-default border-b border-white/5 last:border-0`}
                   >
                     <span className="text-white/30 shrink-0 font-mono text-xs w-16">
                       {alert.timestamp}
@@ -111,7 +111,7 @@ export const AlertBox = () => {
             <div className="text-white/20 pt-2 animate-pulse px-2">_</div>
           </div>
         </ScrollArea>
-      </CardContent >
-    </Card >
+      </CardContent>
+    </Card>
   );
 };
