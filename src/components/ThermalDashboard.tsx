@@ -6,6 +6,7 @@ import { IncidentMap } from './IncidentMap';
 import { AlertBox } from './AlertBox';
 import { AlertsDetectionBox } from './AlertsDetectionBox';
 import { GPSCoordinateBox } from './GPSCoordinateBox';
+import { BluetoothScannerBox } from './BluetoothScannerBox';
 import { ThemeToggle } from './ThemeToggle';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -211,6 +212,11 @@ const ThermalDashboard = () => {
                   <SystemStatusContent />
                 </CardContent>
               </Card>
+
+              {/* Bluetooth Signal Tracker */}
+              <div className="h-[340px]">
+                <BluetoothScannerBox />
+              </div>
 
               {/* Mobile Actions - Only shows below lg */}
               <div className="lg:hidden grid grid-cols-2 gap-2">
