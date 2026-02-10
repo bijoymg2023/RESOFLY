@@ -92,229 +92,133 @@ export const GPSCoordinateBox = () => {
 
   return (
     <>
-      <Card className="bg-dashboard-panel border-dashboard-panel-border">
-        <CardHeader className="pb-3 sm:pb-4">
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center text-base sm:text-lg">
-              <Navigation className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-              {isMobile ? 'GPS' : 'GPS Coordinates'}
-            </CardTitle>
-            <div className="flex items-center space-x-2">
-              <Badge
-                variant="outline"
-                className={`text-xs sm:text-sm
-                  ${gpsData
-                    ? 'bg-success/20 text-success border-success/30'
-                    : 'bg-muted/20 text-muted-foreground border-muted/30'
-                  }
-                `}
-              >
-                <Satellite className="w-2 h-2 sm:w-3 sm:h-3 mr-1" />
-                {gpsData ? (isMobile ? 'Lock' : 'GPS Lock') : 'Searching'}
-              </Badge>
-              {isMobile && gpsData && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDetails(!showDetails)}
-                  className="h-6 w-6 p-0"
-                >
-                  <MoreVertical className="w-3 h-3" />
-                </Button>
-              )}
-            </div>
+      <Card className="bg-card/40 backdrop-blur-md border-border dark:border-white/10 overflow-hidden relative group">
+
+        {/* Decorative Background Elements */}
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.03)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none" />
+        <div className="absolute top-0 right-0 p-2 opacity-50">
+          <div className="w-16 h-16 border-t-2 border-r-2 border-cyan-500/20 rounded-tr-3xl" />
+        </div>
+        <div className="absolute bottom-0 left-0 p-2 opacity-50">
+          <div className="w-16 h-16 border-b-2 border-l-2 border-cyan-500/20 rounded-bl-3xl" />
+        </div>
+
+        <CardHeader className="pb-2 relative z-10 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center">
+            <Navigation className="w-4 h-4 mr-2 text-cyan-500" />
+            GLOBAL POSITIONING
+          </CardTitle>
+          <div className={`flex items-center space-x-2 px-2 py-1 rounded-full border ${gpsData ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500'}`}>
+            <div className={`w-2 h-2 rounded-full ${gpsData ? 'bg-emerald-500 animate-pulse' : 'bg-yellow-500 animate-bounce'}`} />
+            <span className="text-[10px] font-mono font-bold">{gpsData ? 'LOCKED' : 'SEARCHING'}</span>
           </div>
         </CardHeader>
 
-        <CardContent className="space-y-3 sm:space-y-4">
+        <CardContent className="space-y-6 relative z-10">
           {gpsData ? (
             <>
-              {/* Mobile-Optimized Coordinate Display */}
-              <div className="space-y-3">
-                {isMobile ? (
-                  // Mobile: Compact vertical layout
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center p-2 bg-muted/20 rounded-lg border border-dashboard-panel-border">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Latitude</p>
-                        <p className="text-sm font-mono">{gpsData.latitude.toFixed(4)}°</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-xs text-muted-foreground">Longitude</p>
-                        <p className="text-sm font-mono">{gpsData.longitude.toFixed(4)}°</p>
-                      </div>
-                    </div>
-
-                    {/* Expandable details on mobile */}
-                    {showDetails && (
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Alt:</span>
-                          <span className="font-mono">{gpsData.altitude.toFixed(1)}m</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Acc:</span>
-                          <span className="font-mono">±{gpsData.accuracy.toFixed(1)}m</span>
-                        </div>
-                        {gpsData.speed !== undefined && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Speed:</span>
-                            <span className="font-mono">{gpsData.speed.toFixed(1)} km/h</span>
-                          </div>
-                        )}
-                        {gpsData.heading !== undefined && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Head:</span>
-                            <span className="font-mono">{gpsData.heading.toFixed(0)}°</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
+              {/* Main Digital Coordinates */}
+              <div className="space-y-4">
+                <div className="flex items-baseline justify-between border-b border-border/50 pb-2">
+                  <span className="text-xs text-muted-foreground font-mono">LAT</span>
+                  <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-foreground tabular-nums">
+                    {gpsData.latitude.toFixed(6)}<span className="text-base text-muted-foreground ml-1">°N</span>
                   </div>
-                ) : (
-                  // Desktop: Original grid layout
-                  <>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="text-center p-3 bg-muted/20 rounded-lg border border-dashboard-panel-border">
-                        <p className="text-xs text-muted-foreground mb-1">Latitude</p>
-                        <p className="text-sm font-mono">{gpsData.latitude.toFixed(6)}°</p>
-                        <p className="text-xs text-muted-foreground">{formatCoordinate(gpsData.latitude, 'lat')}</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted/20 rounded-lg border border-dashboard-panel-border">
-                        <p className="text-xs text-muted-foreground mb-1">Longitude</p>
-                        <p className="text-sm font-mono">{gpsData.longitude.toFixed(6)}°</p>
-                        <p className="text-xs text-muted-foreground">{formatCoordinate(gpsData.longitude, 'lng')}</p>
-                      </div>
-                    </div>
-
-                    {/* Additional GPS Info */}
-                    <div className="grid grid-cols-2 gap-3 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Altitude:</span>
-                        <span className="font-mono">{gpsData.altitude.toFixed(1)}m</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Accuracy:</span>
-                        <span className="font-mono">±{gpsData.accuracy.toFixed(1)}m</span>
-                      </div>
-                      {gpsData.speed !== undefined && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Speed:</span>
-                          <span className="font-mono">{gpsData.speed.toFixed(1)} km/h</span>
-                        </div>
-                      )}
-                      {gpsData.heading !== undefined && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Heading:</span>
-                          <span className="font-mono">{gpsData.heading.toFixed(0)}°</span>
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-
-                {/* Last Update */}
-                <div className="flex items-center justify-center text-xs text-muted-foreground">
-                  <Clock className="w-2 h-2 sm:w-3 sm:h-3 mr-1" />
-                  Last update: {getTimeSinceUpdate()}
+                </div>
+                <div className="flex items-baseline justify-between border-b border-border/50 pb-2">
+                  <span className="text-xs text-muted-foreground font-mono">LON</span>
+                  <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-foreground tabular-nums">
+                    {gpsData.longitude.toFixed(6)}<span className="text-base text-muted-foreground ml-1">°E</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Mobile-Optimized Action Buttons */}
-              <div className={`flex ${isMobile ? 'flex-col space-y-2' : 'space-x-2'}`}>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={copyCoordinates}
-                  className={isMobile ? 'w-full' : 'flex-1'}
-                >
-                  <Copy className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                  {isMobile ? 'Copy Coordinates' : 'Copy'}
-                </Button>
+              {/* Data Strip */}
+              <div className="grid grid-cols-3 gap-2 py-2 bg-black/20 rounded-lg border border-white/5">
+                <div className="flex flex-col items-center">
+                  <span className="text-[10px] text-muted-foreground uppercase">ALT</span>
+                  <span className="text-sm font-mono font-bold text-cyan-400">{gpsData.altitude.toFixed(1)}m</span>
+                </div>
+                <div className="flex flex-col items-center border-l border-white/5">
+                  <span className="text-[10px] text-muted-foreground uppercase">SPD</span>
+                  <span className="text-sm font-mono font-bold text-cyan-400">{gpsData.speed?.toFixed(1) || 0}km/h</span>
+                </div>
+                <div className="flex flex-col items-center border-l border-white/5">
+                  <span className="text-[10px] text-muted-foreground uppercase">HDG</span>
+                  <span className="text-sm font-mono font-bold text-cyan-400">{gpsData.heading?.toFixed(0) || 0}°</span>
+                </div>
+              </div>
 
-                {isMobile ? (
-                  <div className="flex space-x-2">
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => setIsMapOpen(true)}
-                      className="flex-1"
-                    >
-                      <MapPin className="w-3 h-3 mr-1" />
-                      View Map
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={openInMaps}
-                      className="flex-1"
-                    >
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      Open
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={() => setIsMapOpen(true)}
-                      className="flex-1"
-                    >
-                      <MapPin className="w-4 h-4 mr-1" />
-                      View Map
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={openInMaps}
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </Button>
-                  </>
-                )}
+              {/* Actions */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <Button variant="outline" size="sm" onClick={copyCoordinates} className="border-dashed border-cyan-500/30 hover:bg-cyan-500/10 hover:text-cyan-400">
+                  <Copy className="w-3 h-3 mr-2" />
+                  <span className="text-xs font-mono">COPY DATA</span>
+                </Button>
+                <Button size="sm" onClick={() => setIsMapOpen(true)} className="bg-cyan-500 hover:bg-cyan-600 text-black font-bold">
+                  <MapPin className="w-3 h-3 mr-2" />
+                  <span className="text-xs font-mono">TACTICAL MAP</span>
+                </Button>
+              </div>
+
+              <div className="text-[10px] text-center text-muted-foreground font-mono opacity-50">
+                LAST UPDATE: {getTimeSinceUpdate()}
               </div>
             </>
           ) : (
-            <div className="text-center py-4 sm:py-6">
-              <Satellite className="w-6 h-6 sm:w-8 sm:h-8 mx-auto text-muted-foreground mb-2 animate-pulse" />
-              <p className="text-sm text-muted-foreground">Acquiring GPS signal...</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {isMobile ? 'Connecting to satellites' : 'Please wait while we connect to satellites'}
-              </p>
+            <div className="flex flex-col items-center justify-center py-10 space-y-4">
+              <div className="relative">
+                <div className="absolute inset-0 bg-cyan-500/20 blur-xl rounded-full animate-pulse" />
+                <Satellite className="w-12 h-12 text-cyan-500/50 animate-bounce relative z-10" />
+              </div>
+              <div className="text-center space-y-1">
+                <div className="text-sm font-bold text-cyan-500 font-mono tracking-wider">ACQUIRING SATELLITE LOCK</div>
+                <div className="text-xs text-muted-foreground">Triangulating position...</div>
+              </div>
+
+              {/* Mock loading bars */}
+              <div className="w-full max-w-[200px] space-y-1 opacity-50">
+                <div className="h-1 bg-cyan-900/50 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-500 animate-[loading_2s_ease-in-out_infinite]" style={{ width: '60%' }} />
+                </div>
+                <div className="h-1 bg-cyan-900/50 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-500 animate-[loading_3s_ease-in-out_infinite] delay-75" style={{ width: '40%' }} />
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Map Dialog - Mobile Responsive */}
       <Dialog open={isMapOpen} onOpenChange={setIsMapOpen}>
-        <DialogContent className={`${isMobile ? 'max-w-[90vw]' : 'max-w-2xl'}`}>
+        <DialogContent className="border-cyan-500/20 bg-black/90 backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center text-base sm:text-lg">
-              <MapPin className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
-              Current Location
+            <DialogTitle className="flex items-center text-cyan-500 font-mono uppercase tracking-widest">
+              <MapPin className="w-4 h-4 mr-2" />
+              Tactical Map View
             </DialogTitle>
           </DialogHeader>
-          <div className="aspect-video bg-muted/20 rounded-lg flex items-center justify-center border border-dashboard-panel-border">
+          <div className="aspect-video bg-cyan-950/20 rounded-lg flex items-center justify-center border border-cyan-500/30 relative overflow-hidden group">
+            {/* Grid bg for map placeholder */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.1)_1px,transparent_1px)] bg-[size:40px_40px]" />
+
             {gpsData && (
-              <div className="text-center p-4">
-                <MapPin className="w-8 h-8 sm:w-12 sm:h-12 mx-auto text-primary mb-4" />
-                <h3 className="text-base sm:text-lg font-semibold mb-2">Interactive Map</h3>
-                <p className="text-xs sm:text-sm text-muted-foreground mb-2">
-                  Coordinates: {gpsData.latitude.toFixed(6)}, {gpsData.longitude.toFixed(6)}
-                </p>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Map integration would be displayed here
-                </p>
+              <div className="text-center z-10 space-y-4">
+                <div className="inline-block p-4 rounded-full bg-cyan-500/10 border border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
+                  <MapPin className="w-8 h-8 text-cyan-400" />
+                </div>
+                <div>
+                  <div className="text-2xl font-bold font-mono text-white tracking-widest">TARGET LOCATED</div>
+                  <div className="text-cyan-400 font-mono">
+                    {gpsData.latitude.toFixed(6)}, {gpsData.longitude.toFixed(6)}
+                  </div>
+                </div>
                 <Button
-                  variant="outline"
-                  size="sm"
+                  className="bg-cyan-500 text-black hover:bg-cyan-400 font-bold"
                   onClick={openInMaps}
-                  className="w-full sm:w-auto"
                 >
-                  <ExternalLink className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                  Open in Google Maps
+                  <ExternalLink className="w-3 h-3 mr-2" />
+                  OPEN GOOGLE MAPS
                 </Button>
               </div>
             )}

@@ -53,7 +53,51 @@ const formatUptime = (seconds: number) => {
   return `${m}m`;
 };
 
-// Compact Horizontal System Status
+// Circular Progress Component
+const CircularProgress = ({ value, label, color, subtext, icon: Icon }: { value: number; label: string; color: string; subtext: string; icon: any }) => {
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (value / 100) * circumference;
+
+  return (
+    <div className="flex flex-col items-center justify-center p-2">
+      <div className="relative w-12 h-12 mb-1">
+        {/* Background Circle */}
+        <svg className="w-full h-full transform -rotate-90">
+          <circle
+            cx="24"
+            cy="24"
+            r={radius}
+            stroke="currentColor"
+            strokeWidth="3"
+            fill="transparent"
+            className="text-muted/20"
+          />
+          {/* Progress Circle */}
+          <circle
+            cx="24"
+            cy="24"
+            r={radius}
+            stroke="currentColor"
+            strokeWidth="3"
+            fill="transparent"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            className={`${color} transition-all duration-1000 ease-out`}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Icon className={`w-4 h-4 ${color}`} />
+        </div>
+      </div>
+      <div className="text-xs font-bold font-mono">{value}%</div>
+      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
+    </div>
+  );
+};
+
+// Revamped System Status Panel
 const SystemStatusContent = () => {
   const { data: status } = useQuery<SystemStatus>({
     queryKey: ['status'],
@@ -65,52 +109,42 @@ const SystemStatusContent = () => {
     refetchInterval: 5000
   });
 
-  if (!status) return <div className="text-[10px] p-2 text-center text-muted-foreground animate-pulse font-mono">INITIALIZING...</div>;
+  if (!status) return <div className="text-xs p-4 text-center text-cyan-500 animate-pulse font-mono tracking-widest">SYSTEM INITIALIZING...</div>;
 
   return (
-    <div className="flex items-center justify-between w-full space-x-2 text-[10px] font-mono">
-      {/* CPU */}
-      <div className="flex flex-col items-center min-w-[50px]">
-        <div className="text-muted-foreground mb-1 flex items-center"><Cpu className="w-3 h-3 mr-1" /> CPU</div>
-        <div className={`font-bold ${status.cpu_usage > 80 ? 'text-red-500' : 'text-cyan-500'}`}>
-          {status.cpu_usage.toFixed(0)}%
+    <div className="grid grid-cols-4 gap-2 divide-x divide-border/50 dark:divide-white/5">
+      <CircularProgress
+        value={status.cpu_usage}
+        label="CPU"
+        color={status.cpu_usage > 80 ? 'text-red-500' : 'text-cyan-500'}
+        subtext={`${status.cpu_usage.toFixed(0)}%`}
+        icon={Cpu}
+      />
+
+      <CircularProgress
+        value={status.memory_usage}
+        label="RAM"
+        color={status.memory_usage > 80 ? 'text-red-500' : 'text-purple-500'}
+        subtext={`${status.memory_usage.toFixed(0)}%`}
+        icon={Activity}
+      />
+
+      <div className="flex flex-col items-center justify-center p-2">
+        <div className={`text-xl font-black font-mono mb-1 ${status.temperature > 75 ? 'text-red-500' : 'text-emerald-500'}`}>
+          {status.temperature.toFixed(0)}°
+        </div>
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center">
+          <Thermometer className="w-3 h-3 mr-1" /> TEMP
         </div>
       </div>
 
-      <div className="h-6 w-px bg-border dark:bg-white/10" />
-
-      {/* RAM */}
-      <div className="flex flex-col items-center min-w-[50px]">
-        <div className="text-muted-foreground mb-1 flex items-center"><Activity className="w-3 h-3 mr-1" /> RAM</div>
-        <div className={`font-bold ${status.memory_usage > 80 ? 'text-red-500' : 'text-cyan-500'}`}>
-          {status.memory_usage.toFixed(0)}%
+      <div className="flex flex-col items-center justify-center p-2">
+        <div className="text-lg font-bold font-mono text-foreground mb-1">
+          {formatUptime(status.uptime).split(' ')[0]}
         </div>
-      </div>
-
-      <div className="h-6 w-px bg-border dark:bg-white/10" />
-
-      {/* TEMP */}
-      <div className="flex flex-col items-center min-w-[50px]">
-        <div className="text-muted-foreground mb-1 flex items-center"><Thermometer className="w-3 h-3 mr-1" /> TMP</div>
-        <div className={`font-bold ${status.temperature > 75 ? 'text-red-500' : 'text-emerald-500'}`}>
-          {status.temperature.toFixed(0)}°C
+        <div className="text-[10px] text-muted-foreground uppercase tracking-wider text-center">
+          UPTIME
         </div>
-      </div>
-
-      <div className="h-6 w-px bg-border dark:bg-white/10 hidden sm:block" />
-
-      {/* UPTIME */}
-      <div className="flex-col items-center min-w-[60px] hidden sm:flex">
-        <div className="text-muted-foreground mb-1">UPTIME</div>
-        <div className="text-foreground font-semibold">{formatUptime(status.uptime)}</div>
-      </div>
-
-      <div className="h-6 w-px bg-border dark:bg-white/10 hidden sm:block" />
-
-      {/* NET */}
-      <div className="flex-col items-center min-w-[50px] hidden sm:flex">
-        <div className="text-muted-foreground mb-1">NET</div>
-        <div className="text-emerald-500 font-bold">OK</div>
       </div>
     </div>
   );
