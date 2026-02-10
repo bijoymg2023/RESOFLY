@@ -1,14 +1,5 @@
-"""
-Centroid Tracker Implementation (Lightweight)
-=============================================
-Tracks objects across frames using Euclidean distance.
-Pure NumPy implementation (no SciPy dependency) for Raspberry Pi efficiency.
-"""
-
 from collections import OrderedDict
 import numpy as np
-from scipy import spatial  # We'll try to use scipy if available, else numpy fallback? 
-# actually, let's just use numpy for distance to be safe
 
 class CentroidTracker:
     def __init__(self, max_disappeared=10, max_distance=50):
