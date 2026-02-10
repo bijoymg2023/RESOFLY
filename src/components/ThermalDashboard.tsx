@@ -6,7 +6,6 @@ import { IncidentMap } from './IncidentMap';
 import { AlertBox } from './AlertBox';
 import { AlertsDetectionBox } from './AlertsDetectionBox';
 import { GPSCoordinateBox } from './GPSCoordinateBox';
-import { BluetoothScannerBox } from './BluetoothScannerBox';
 import { ThemeToggle } from './ThemeToggle';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
@@ -54,6 +53,7 @@ const formatUptime = (seconds: number) => {
   return `${m}m`;
 };
 
+// Compact Horizontal System Status
 const SystemStatusContent = () => {
   const { data: status } = useQuery<SystemStatus>({
     queryKey: ['status'],
@@ -65,51 +65,58 @@ const SystemStatusContent = () => {
     refetchInterval: 5000
   });
 
-  if (!status) return <div className="text-[10px] p-4 text-center text-muted-foreground animate-pulse font-mono">INITIALIZING TELEMETRY...</div>;
+  if (!status) return <div className="text-[10px] p-2 text-center text-muted-foreground animate-pulse font-mono">INITIALIZING...</div>;
 
   return (
-    <div className="space-y-4 font-mono">
+    <div className="flex items-center justify-between w-full space-x-2 text-[10px] font-mono">
       {/* CPU */}
-      <div className="space-y-1">
-        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-foreground/70">
-          <span className="flex items-center"><Cpu className="w-3 h-3 mr-1.5 opacity-70" /> CPU Load</span>
-          <span className="font-semibold">{status.cpu_usage.toFixed(1)}%</span>
+      <div className="flex flex-col items-center min-w-[50px]">
+        <div className="text-muted-foreground mb-1 flex items-center"><Cpu className="w-3 h-3 mr-1" /> CPU</div>
+        <div className={`font-bold ${status.cpu_usage > 80 ? 'text-red-500' : 'text-cyan-500'}`}>
+          {status.cpu_usage.toFixed(0)}%
         </div>
-        <HUDBar value={status.cpu_usage} color={status.cpu_usage > 80 ? "bg-red-500" : "bg-cyan-500"} />
       </div>
 
-      {/* Memory */}
-      <div className="space-y-1">
-        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-foreground/70">
-          <span className="flex items-center"><Activity className="w-3 h-3 mr-1.5 opacity-70" /> Memory</span>
-          <span className="font-semibold">{status.memory_usage.toFixed(1)}%</span>
+      <div className="h-6 w-px bg-border dark:bg-white/10" />
+
+      {/* RAM */}
+      <div className="flex flex-col items-center min-w-[50px]">
+        <div className="text-muted-foreground mb-1 flex items-center"><Activity className="w-3 h-3 mr-1" /> RAM</div>
+        <div className={`font-bold ${status.memory_usage > 80 ? 'text-red-500' : 'text-cyan-500'}`}>
+          {status.memory_usage.toFixed(0)}%
         </div>
-        <HUDBar value={status.memory_usage} color={status.memory_usage > 80 ? "bg-red-500" : "bg-cyan-500"} />
       </div>
 
-      {/* Temp */}
-      <div className="space-y-1">
-        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-foreground/70">
-          <span className="flex items-center"><Thermometer className="w-3 h-3 mr-1.5 opacity-70" /> Core Temp</span>
-          <span className="font-semibold">{status.temperature.toFixed(1)}°C</span>
+      <div className="h-6 w-px bg-border dark:bg-white/10" />
+
+      {/* TEMP */}
+      <div className="flex flex-col items-center min-w-[50px]">
+        <div className="text-muted-foreground mb-1 flex items-center"><Thermometer className="w-3 h-3 mr-1" /> TMP</div>
+        <div className={`font-bold ${status.temperature > 75 ? 'text-red-500' : 'text-emerald-500'}`}>
+          {status.temperature.toFixed(0)}°C
         </div>
-        <HUDBar value={(status.temperature / 100) * 100} color={status.temperature > 75 ? "bg-red-500" : "bg-emerald-500"} />
       </div>
 
-      {/* Footer Info */}
-      <div className="pt-3 mt-3 border-t border-border dark:border-white/5 grid grid-cols-2 gap-2">
-        <div className="bg-muted/50 dark:bg-white/5 rounded p-2 text-center border border-border dark:border-white/5">
-          <div className="text-[10px] text-muted-foreground uppercase">Uptime</div>
-          <div className="text-xs text-foreground font-semibold">{formatUptime(status.uptime)}</div>
-        </div>
-        <div className="bg-muted/50 dark:bg-white/5 rounded p-2 text-center border border-border dark:border-white/5">
-          <div className="text-[10px] text-muted-foreground uppercase">Network</div>
-          <div className="text-xs text-emerald-500 dark:text-emerald-400 font-semibold">SECURE</div>
-        </div>
+      <div className="h-6 w-px bg-border dark:bg-white/10 hidden sm:block" />
+
+      {/* UPTIME */}
+      <div className="flex-col items-center min-w-[60px] hidden sm:flex">
+        <div className="text-muted-foreground mb-1">UPTIME</div>
+        <div className="text-foreground font-semibold">{formatUptime(status.uptime)}</div>
+      </div>
+
+      <div className="h-6 w-px bg-border dark:bg-white/10 hidden sm:block" />
+
+      {/* NET */}
+      <div className="flex-col items-center min-w-[50px] hidden sm:flex">
+        <div className="text-muted-foreground mb-1">NET</div>
+        <div className="text-emerald-500 font-bold">OK</div>
       </div>
     </div>
   );
 };
+
+import SignalTracker from './SignalTracker';
 
 const ThermalDashboard = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -191,32 +198,28 @@ const ThermalDashboard = () => {
               </div>
             </div>
 
-            {/* RIGHT: GPS & System Status - Stacks on mobile, sidebar on desktop */}
-            <div className="lg:col-span-4 xl:col-span-3 space-y-4 lg:space-y-6">
+            {/* RIGHT: GPS & Signal Tracker & System Status */}
+            <div className="lg:col-span-4 xl:col-span-3 flex flex-col space-y-4">
 
-              {/* GPS Unit */}
-              <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm">
-                <GPSCoordinateBox />
+              {/* GPS & Signal Tracker Container - Side-by-side on desktop if space allows, or stacked */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1 min-h-0">
+                {/* GPS Unit */}
+                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-full min-h-[250px]">
+                  <GPSCoordinateBox />
+                </div>
+
+                {/* Signal Tracker */}
+                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-full min-h-[250px]">
+                  <SignalTracker />
+                </div>
               </div>
 
-              {/* System Status Panel */}
-              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-2xl">
-                <div className="p-3 lg:p-4 border-b border-border dark:border-white/5 flex justify-between items-center bg-muted/20 dark:bg-white/[0.02]">
-                  <div className="flex items-center space-x-2 text-cyan-500 dark:text-cyan-400">
-                    <Monitor className="w-4 h-4" />
-                    <span className="text-xs font-bold uppercase tracking-widest">System Diagnostics</span>
-                  </div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 dark:bg-cyan-400 animate-pulse" />
-                </div>
-                <CardContent className="p-3 sm:p-4 lg:p-6">
+              {/* System Status Panel - Horizontal Compact */}
+              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm">
+                <CardContent className="p-3">
                   <SystemStatusContent />
                 </CardContent>
               </Card>
-
-              {/* Bluetooth Signal Tracker */}
-              <div className="h-[340px]">
-                <BluetoothScannerBox />
-              </div>
 
               {/* Mobile Actions - Only shows below lg */}
               <div className="lg:hidden grid grid-cols-2 gap-2">
