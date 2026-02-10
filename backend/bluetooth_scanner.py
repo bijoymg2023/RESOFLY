@@ -3,6 +3,11 @@ import time
 import re
 import sys
 import shutil
+import os
+
+def log_debug(msg):
+    print(f"[DEBUG-BT] {msg}", flush=True)
+
 
 def get_bluetooth_devices():
     """
@@ -13,13 +18,16 @@ def get_bluetooth_devices():
     """
     
     try:
-        # 1. Find the path to btmgmt (it might be in /usr/bin or /usr/sbin)
+        # 1. Find the path to btmgmt
         btmgmt_path = shutil.which("btmgmt") or "/usr/bin/btmgmt"
         if not os.path.exists(btmgmt_path):
              btmgmt_path = "/usr/sbin/btmgmt"
+        
+        log_debug(f"Using btmgmt path: {btmgmt_path}")
 
         # 2. Check if we are on Linux
         if sys.platform != "linux" or not os.path.exists(btmgmt_path):
+            log_debug("Not on Linux or btmgmt missing - returning mock data")
             return [
                 {"mac": "XX:XX:XX:XX:XX:01", "name": "Target Phone", "rssi": -65},
                 {"mac": "AA:BB:CC:DD:EE:FF", "name": "Unknown Beacon", "rssi": -88},
@@ -27,12 +35,14 @@ def get_bluetooth_devices():
             ]
 
         # 3. Ensure Bluetooth is powered on
+        log_debug("Ensuring Bluetooth is Powered ON...")
         try:
-            subprocess.run(f"{btmgmt_path} power on", shell=True, timeout=2, capture_output=True)
-        except:
-            pass # Non-critical if it fails
+            subprocess.run(f"{btmgmt_path} power on", shell=True, timeout=3, capture_output=True)
+        except Exception as pe:
+            log_debug(f"Power on attempt error: {pe}")
 
         # 4. Run the scan
+        log_debug("Starting 7s Bluetooth LE scan...")
         try:
             cmd = f"timeout 7s {btmgmt_path} find"
             output = subprocess.check_output(cmd, shell=True).decode("utf-8", errors="ignore")
@@ -40,6 +50,8 @@ def get_bluetooth_devices():
             lines = output.split('\n')
             current_dev = {}
             devices = []
+            
+            log_debug(f"Scan complete. Found {len(lines)} lines of output.")
 
             for line in lines:
                 line = line.strip()
