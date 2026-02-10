@@ -38,30 +38,28 @@ class StreamProxyCamera(BaseCamera):
         
         while self.running:
             try:
-                # Open stream (timeout 5s to allow connection)
-                with requests.get(self.url, stream=True, timeout=5) as r:
+                # Open stream (timeout 3s for fast reconnect)
+                with requests.get(self.url, stream=True, timeout=3) as r:
                     if r.status_code == 200:
                         print(f"Connected to Camera: {self.url}")
                         bytes_data = bytes()
                         
-                        # Read chunks
-                        for chunk in r.iter_content(chunk_size=4096):
+                        # Read smaller chunks for lower latency
+                        for chunk in r.iter_content(chunk_size=1024):
                             if not self.running: break
                             bytes_data += chunk
                             
-                            # Find MJPEG Frame Boundaries
-                            a = bytes_data.find(b'\xff\xd8')
-                            b = bytes_data.find(b'\xff\xd9')
-                            
-                            if a != -1 and b != -1:
-                                # Found a full frame
-                                self.frame = bytes_data[a:b+2]
+                            # Find the LAST complete frame (skip old ones)
+                            b = bytes_data.rfind(b'\xff\xd9')
+                            if b != -1:
+                                a = bytes_data.rfind(b'\xff\xd8', 0, b)
+                                if a != -1:
+                                    # Use the latest frame, discard everything before
+                                    self.frame = bytes_data[a:b+2]
+                                    bytes_data = bytes_data[b+2:]
                                 
-                                # Move buffer forward
-                                bytes_data = bytes_data[b+2:]
-                                
-                                # Prevent buffer from growing infinitely if corrupt
-                                if len(bytes_data) > 100000:
+                                # Prevent buffer from growing
+                                if len(bytes_data) > 50000:
                                     bytes_data = bytes()
                     else:
                         print(f"Camera returned status: {r.status_code}")
@@ -154,10 +152,11 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # Start rpicam-vid outputting MJPEG to stdout
-                # Stable low latency tuning:
-                # - 640x480 @ 30fps (Prevent CPU overload)
-                # - exposure sport: faster shutter speed for motion
-                # - quality 60: clearer image
+                # Ultra low latency tuning:
+                # - 640x480 @ 30fps
+                # - exposure sport: faster shutter for motion
+                # - quality 50: trade quality for speed
+                # - denoise off: skip processing
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -165,8 +164,9 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "60",
+                    "--quality", "50",
                     "--exposure", "sport",
+                    "--denoise", "off",
                     "--inline",            
                     "--nopreview",
                     "--flush",
@@ -181,13 +181,13 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print("rpicam-vid stream started (60fps)")
+                print("rpicam-vid stream started (low-latency mode)")
                 
                 # Read MJPEG frames from stdout
                 buffer = b''
                 while self.running and self.process.poll() is None:
-                    # Read a large chunk to drain pipe
-                    chunk = self.process.stdout.read(32768)
+                    # Read smaller chunks more frequently for lower latency
+                    chunk = self.process.stdout.read(8192)
                     if not chunk:
                         break
                     
@@ -239,7 +239,7 @@ class RpicamCamera(BaseCamera):
                     except:
                         pass
                     self.process = None
-                time.sleep(2)
+                time.sleep(0.5)  # Fast reconnect
 
     
     async def get_frame(self):
@@ -288,4 +288,4 @@ async def generate_rgb_stream():
                 b'Waiting for camera...\r\n'
             )
         
-        await asyncio.sleep(0.016) # ~60 FPS polling rate (limited by camera framerate)
+        await asyncio.sleep(0.033) # ~30 FPS (matches camera framerate, reduces CPU)
