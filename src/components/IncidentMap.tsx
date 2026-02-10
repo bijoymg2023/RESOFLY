@@ -43,10 +43,10 @@ export const IncidentMap = () => {
     const center = { lat: 12.9716, lng: 77.5946 };
 
     return (
-        <Card className="h-full bg-[#0A0A0A] border border-white/10 overflow-hidden relative shadow-lg flex flex-col">
-            <CardHeader className="py-3 px-4 border-b border-white/5 bg-white/[0.02] absolute top-0 left-0 right-0 z-[1000] backdrop-blur-sm pointer-events-none">
+        <Card className="h-full bg-card dark:bg-[#0A0A0A] border border-border dark:border-white/10 overflow-hidden relative shadow-lg flex flex-col">
+            <CardHeader className="py-3 px-4 border-b border-border dark:border-white/5 bg-card/80 dark:bg-white/[0.02] absolute top-0 left-0 right-0 z-[1000] backdrop-blur-sm pointer-events-none">
                 <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center text-xs font-mono uppercase tracking-widest text-white/80">
+                    <CardTitle className="flex items-center text-xs font-mono uppercase tracking-widest text-foreground/80 dark:text-white/80">
                         <Navigation className="w-4 h-4 mr-2" />
                         Tactical Map
                     </CardTitle>

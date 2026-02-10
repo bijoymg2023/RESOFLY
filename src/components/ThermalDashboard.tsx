@@ -116,7 +116,7 @@ const ThermalDashboard = () => {
 
   return (
     <DetectionProvider>
-      <div className="min-h-screen bg-[#020202] text-white font-sans selection:bg-cyan-500/30 relative overflow-hidden">
+      <div className="min-h-screen bg-background text-foreground font-sans selection:bg-cyan-500/30 relative overflow-hidden">
 
         {/* --- Background Elements --- */}
         <div className="absolute inset-0 z-0 opacity-10 bg-[linear-gradient(to_right,#00bcd4_1px,transparent_1px),linear-gradient(to_bottom,#00bcd4_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_60%,transparent_100%)] pointer-events-none" />
@@ -124,7 +124,7 @@ const ThermalDashboard = () => {
 
 
         {/* --- Header --- */}
-        <header className="relative z-50 flex items-center justify-between p-4 border-b border-white/10 bg-[#050505]/80 backdrop-blur-md">
+        <header className="relative z-50 flex items-center justify-between p-4 border-b border-border bg-card/80 backdrop-blur-md">
           <div className="flex items-center space-x-3">
             <div className="relative group">
               <div className="absolute inset-0 bg-cyan-500 blur opacity-40 group-hover:opacity-60 transition-opacity" />
@@ -133,10 +133,10 @@ const ThermalDashboard = () => {
               </div>
             </div>
             <div>
-              <h1 className="text-xl font-black italic tracking-tighter text-white">
+              <h1 className="text-xl font-black italic tracking-tighter text-foreground">
                 RESOFLY
               </h1>
-              <p className="text-[10px] text-cyan-200/40 uppercase tracking-[0.2em] hidden sm:block">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] hidden sm:block">
                 Command & Control Link Established
               </p>
             </div>
@@ -165,7 +165,7 @@ const ThermalDashboard = () => {
 
         {/* --- Mobile Nav --- */}
         {isMobile && mobileMenuOpen && (
-          <div className="fixed inset-0 top-16 bg-black/95 backdrop-blur-xl z-40 sm:hidden border-t border-white/10">
+          <div className="fixed inset-0 top-16 bg-background/95 backdrop-blur-xl z-40 sm:hidden border-t border-border">
             <div className="p-4 space-y-3">
               {['Overview', 'Alerts', 'GPS Tracking'].map((item) => (
                 <Button key={item} variant="ghost" className="w-full justify-start text-cyan-100 hover:text-cyan-400 hover:bg-cyan-900/20 font-mono uppercase tracking-wider text-xs border border-transparent hover:border-cyan-500/30" onClick={() => setMobileMenuOpen(false)}>
@@ -194,18 +194,18 @@ const ThermalDashboard = () => {
             <div className="lg:col-span-4 xl:col-span-3 space-y-4 lg:space-y-6">
 
               {/* GPS Unit */}
-              <div className="rounded-xl overflow-hidden border border-white/10 bg-black/40 backdrop-blur-sm">
+              <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm">
                 <GPSCoordinateBox />
               </div>
 
               {/* System Status Panel */}
-              <Card className="bg-[#0A0A0A]/80 border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-2xl">
-                <div className="p-3 lg:p-4 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-                  <div className="flex items-center space-x-2 text-cyan-400">
+              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-2xl">
+                <div className="p-3 lg:p-4 border-b border-border dark:border-white/5 flex justify-between items-center bg-muted/20 dark:bg-white/[0.02]">
+                  <div className="flex items-center space-x-2 text-cyan-500 dark:text-cyan-400">
                     <Monitor className="w-4 h-4" />
                     <span className="text-xs font-bold uppercase tracking-widest">System Diagnostics</span>
                   </div>
-                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 dark:bg-cyan-400 animate-pulse" />
                 </div>
                 <CardContent className="p-3 sm:p-4 lg:p-6">
                   <SystemStatusContent />
