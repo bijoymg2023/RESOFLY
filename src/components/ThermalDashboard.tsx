@@ -18,7 +18,8 @@ import {
   X,
   Cpu,
   Globe,
-  Wifi
+  Wifi,
+  Clock
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -53,51 +54,36 @@ const formatUptime = (seconds: number) => {
   return `${m}m`;
 };
 
-// Circular Progress Component
-const CircularProgress = ({ value, label, color, subtext, icon: Icon }: { value: number; label: string; color: string; subtext: string; icon: any }) => {
-  const radius = 18;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (value / 100) * circumference;
-
-  return (
-    <div className="flex flex-col items-center justify-center p-2">
-      <div className="relative w-12 h-12 mb-1">
-        {/* Background Circle */}
-        <svg className="w-full h-full transform -rotate-90">
-          <circle
-            cx="24"
-            cy="24"
-            r={radius}
-            stroke="currentColor"
-            strokeWidth="3"
-            fill="transparent"
-            className="text-muted/20"
-          />
-          {/* Progress Circle */}
-          <circle
-            cx="24"
-            cy="24"
-            r={radius}
-            stroke="currentColor"
-            strokeWidth="3"
-            fill="transparent"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            className={`${color} transition-all duration-1000 ease-out`}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Icon className={`w-4 h-4 ${color}`} />
-        </div>
-      </div>
-      <div className="text-xs font-bold font-mono">{value}%</div>
-      <div className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</div>
+// Mini-Box Component for System Stats
+const StatBox = ({ label, value, subtext, color, icon: Icon }: { label: string; value: string; subtext?: string; color: string; icon: any }) => (
+  <div className="bg-black/40 border border-white/5 rounded-lg p-3 flex flex-col justify-between h-full relative overflow-hidden group">
+    {/* Background Accent */}
+    <div className={`absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity ${color}`}>
+      <Icon className="w-8 h-8" />
     </div>
-  );
-};
 
-// Revamped System Status Panel
+    <div className="flex items-center space-x-2 mb-2">
+      <Icon className={`w-4 h-4 ${color}`} />
+      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
+    </div>
+
+    <div>
+      <div className={`text-2xl font-black font-mono tracking-tighter ${color}`}>
+        {value}
+      </div>
+      {subtext && <div className="text-[10px] text-muted-foreground font-mono">{subtext}</div>}
+    </div>
+
+    {/* Progress Bar for percentage values */}
+    {value.includes('%') && (
+      <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
+        <div className={`h-full ${color.replace('text-', 'bg-')}`} style={{ width: value }} />
+      </div>
+    )}
+  </div>
+);
+
+// Revamped System Status Panel - 4 Grid Layout
 const SystemStatusContent = () => {
   const { data: status } = useQuery<SystemStatus>({
     queryKey: ['status'],
@@ -112,39 +98,46 @@ const SystemStatusContent = () => {
   if (!status) return <div className="text-xs p-4 text-center text-cyan-500 animate-pulse font-mono tracking-widest">SYSTEM INITIALIZING...</div>;
 
   return (
-    <div className="grid grid-cols-4 gap-2 divide-x divide-border/50 dark:divide-white/5">
-      <CircularProgress
-        value={status.cpu_usage}
-        label="CPU"
-        color={status.cpu_usage > 80 ? 'text-red-500' : 'text-cyan-500'}
-        subtext={`${status.cpu_usage.toFixed(0)}%`}
-        icon={Cpu}
-      />
-
-      <CircularProgress
-        value={status.memory_usage}
-        label="RAM"
-        color={status.memory_usage > 80 ? 'text-red-500' : 'text-purple-500'}
-        subtext={`${status.memory_usage.toFixed(0)}%`}
-        icon={Activity}
-      />
-
-      <div className="flex flex-col items-center justify-center p-2">
-        <div className={`text-xl font-black font-mono mb-1 ${status.temperature > 75 ? 'text-red-500' : 'text-emerald-500'}`}>
-          {status.temperature.toFixed(0)}°
+    <div className="h-full flex flex-col">
+      {/* Header matching other boxes */}
+      <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
+        <div className="flex items-center space-x-2 text-muted-foreground">
+          <Activity className="w-4 h-4" />
+          <span className="text-xs font-bold uppercase tracking-widest">System Diagnostics</span>
         </div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex items-center">
-          <Thermometer className="w-3 h-3 mr-1" /> TEMP
+        <div className="flex items-center space-x-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[10px] font-mono text-emerald-500">ONLINE</span>
         </div>
       </div>
 
-      <div className="flex flex-col items-center justify-center p-2">
-        <div className="text-lg font-bold font-mono text-foreground mb-1">
-          {formatUptime(status.uptime).split(' ')[0]}
-        </div>
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider text-center">
-          UPTIME
-        </div>
+      {/* 2x2 Grid */}
+      <div className="grid grid-cols-2 gap-3 flex-1">
+        <StatBox
+          label="CPU Load"
+          value={`${status.cpu_usage.toFixed(0)}%`}
+          color={status.cpu_usage > 80 ? 'text-red-500' : 'text-cyan-500'}
+          icon={Cpu}
+        />
+        <StatBox
+          label="Memory"
+          value={`${status.memory_usage.toFixed(0)}%`}
+          color={status.memory_usage > 80 ? 'text-red-500' : 'text-purple-500'}
+          icon={Activity}
+        />
+        <StatBox
+          label="Thermal"
+          value={`${status.temperature.toFixed(0)}°C`}
+          color={status.temperature > 75 ? 'text-red-500' : 'text-emerald-500'}
+          icon={Thermometer}
+        />
+        <StatBox
+          label="Uptime"
+          value={formatUptime(status.uptime).split(' ')[0]}
+          subtext={formatUptime(status.uptime).split(' ').slice(1).join(' ')}
+          color="text-white"
+          icon={Clock}
+        />
       </div>
     </div>
   );
