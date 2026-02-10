@@ -119,8 +119,8 @@ const ThermalDashboard = () => {
       <div className="min-h-screen bg-background text-foreground font-sans selection:bg-cyan-500/30 relative overflow-hidden">
 
         {/* --- Background Elements --- */}
-        <div className="absolute inset-0 z-0 opacity-10 bg-[linear-gradient(to_right,#00bcd4_1px,transparent_1px),linear-gradient(to_bottom,#00bcd4_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_60%,transparent_100%)] pointer-events-none" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vw] h-[500px] bg-cyan-900/20 blur-[120px] rounded-full pointer-events-none" />
+        <div className="absolute inset-0 z-0 opacity-[0.08] dark:opacity-10 bg-[linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_60%,transparent_100%)] pointer-events-none text-black dark:text-cyan-500" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vw] h-[500px] bg-primary/5 dark:bg-cyan-900/20 blur-[120px] rounded-full pointer-events-none" />
 
 
         {/* --- Header --- */}

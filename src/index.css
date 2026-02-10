@@ -6,40 +6,40 @@
 
 @layer base {
   :root {
-    /* Light theme */
-    --background: 210 20% 98%;
-    --foreground: 220 13% 18%;
+    /* Light theme - Professional, soft warm-gray */
+    --background: 220 14% 94%;
+    --foreground: 220 20% 14%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 220 13% 18%;
+    --card: 220 14% 97%;
+    --card-foreground: 220 20% 14%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 13% 18%;
+    --popover: 220 14% 97%;
+    --popover-foreground: 220 20% 14%;
 
-    --primary: 220 91% 65%;
-    --primary-foreground: 220 13% 9%;
+    --primary: 220 91% 55%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 94%;
-    --secondary-foreground: 220 13% 18%;
+    --secondary: 210 20% 90%;
+    --secondary-foreground: 220 20% 14%;
 
-    --muted: 210 40% 96%;
-    --muted-foreground: 220 13% 46%;
+    --muted: 210 15% 92%;
+    --muted-foreground: 220 10% 42%;
 
-    --accent: 195 100% 65%;
-    --accent-foreground: 220 13% 9%;
+    --accent: 195 90% 50%;
+    --accent-foreground: 220 20% 9%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
     --warning: 38 92% 50%;
-    --warning-foreground: 220 13% 9%;
+    --warning-foreground: 220 20% 9%;
 
     --success: 142 76% 36%;
     --success-foreground: 0 0% 98%;
 
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
-    --ring: 220 91% 65%;
+    --border: 220 15% 25%;
+    --input: 220 15% 80%;
+    --ring: 220 91% 55%;
 
     --radius: 0.75rem;
 
@@ -47,9 +47,9 @@
     --thermal: 14 100% 50%;
     --thermal-foreground: 0 0% 98%;
 
-    --dashboard-grid: 220 13% 95%;
-    --dashboard-panel: 0 0% 100%;
-    --dashboard-panel-border: 220 13% 91%;
+    --dashboard-grid: 220 15% 88%;
+    --dashboard-panel: 220 14% 97%;
+    --dashboard-panel-border: 220 15% 25%;
 
     /* Gradients */
     --gradient-primary: linear-gradient(135deg, hsl(220 91% 65%), hsl(195 100% 65%));
@@ -152,6 +152,43 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(220 15% 70%);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 15% 55%);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(220 15% 25%);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 15% 35%);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(220 15% 70%) transparent;
+}
+
+.dark * {
+  scrollbar-color: hsl(220 15% 25%) transparent;
 }
 
 @keyframes hover-slow {
