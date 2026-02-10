@@ -129,11 +129,11 @@ export const VideoStreamBox = () => {
   ];
 
   return (
-    <Card className="h-full bg-black border border-white/10 overflow-hidden relative group shadow-2xl flex flex-col rounded-xl">
+    <Card className="h-full bg-card dark:bg-black border border-border dark:border-white/10 overflow-hidden relative group shadow-2xl flex flex-col rounded-xl">
       {/* Header / Tabs */}
-      <div className="relative z-20 flex justify-between items-start p-4 bg-[#0A0A0A] border-b border-white/5">
+      <div className="relative z-20 flex justify-between items-start p-4 bg-muted/50 dark:bg-[#0A0A0A] border-b border-border dark:border-white/5">
         {/* Stream Type Tabs */}
-        <div className="flex space-x-1 bg-black/60 p-1 rounded-lg border border-white/10">
+        <div className="flex space-x-1 bg-muted dark:bg-black/60 p-1 rounded-lg border border-border dark:border-white/10">
           {videoTypes.map((type) => (
             <button
               key={type.key}
@@ -141,8 +141,8 @@ export const VideoStreamBox = () => {
               className={`
                         px-3 py-1.5 rounded-md text-[10px] font-bold tracking-wider flex items-center space-x-2 transition-all duration-300
                         ${activeType === type.key
-                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50 shadow-[0_0_10px_rgba(34,211,238,0.2)]'
-                  : 'text-white/40 hover:text-white hover:bg-white/5 border border-transparent'}
+                  ? 'bg-cyan-500/20 text-cyan-600 dark:text-cyan-400 border border-cyan-500/50 shadow-[0_0_10px_rgba(34,211,238,0.15)]'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/10 dark:hover:bg-white/5 border border-transparent'}
                     `}
             >
               <type.icon className="w-3 h-3" />
@@ -155,17 +155,17 @@ export const VideoStreamBox = () => {
         {activeType === 'Thermal' && (
           <div className="pointer-events-auto flex space-x-2">
             {/* Live/Gallery Toggle */}
-            <div className="flex bg-black/40 rounded-md border border-white/20 overflow-hidden">
+            <div className="flex bg-muted dark:bg-black/40 rounded-md border border-border dark:border-white/20 overflow-hidden">
               <button
                 onClick={() => setThermalMode('live')}
-                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'live' ? 'bg-green-500/20 text-green-400' : 'text-white/40'}`}
+                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'live' ? 'bg-green-500/20 text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}
               >
                 <Radio className="w-3 h-3" />
                 <span>LIVE</span>
               </button>
               <button
                 onClick={() => setThermalMode('gallery')}
-                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'gallery' ? 'bg-purple-500/20 text-purple-400' : 'text-white/40'}`}
+                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'gallery' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`}
               >
                 <Grid className="w-3 h-3" />
                 <span>GALLERY</span>
@@ -178,7 +178,7 @@ export const VideoStreamBox = () => {
               disabled={isCalibrating || isCapturing}
               size="sm"
               variant="outline"
-              className={`border-white/20 bg-black/40 text-cyan-500 hover:text-cyan-400 text-[10px] h-8 ${isCalibrating ? 'animate-pulse border-cyan-500' : ''}`}
+              className={`border-border dark:border-white/20 bg-muted dark:bg-black/40 text-cyan-600 dark:text-cyan-500 hover:text-cyan-500 dark:hover:text-cyan-400 text-[10px] h-8 ${isCalibrating ? 'animate-pulse border-cyan-500' : ''}`}
             >
               <RefreshCw className={`w-3 h-3 mr-2 ${isCalibrating ? 'animate-spin' : ''}`} />
               {isCalibrating ? 'CALIBRATING' : 'FFC'}
@@ -198,12 +198,12 @@ export const VideoStreamBox = () => {
         )}
       </div>
 
-      <CardContent className="flex-1 p-0 h-full relative flex flex-col bg-[#050505]">
+      <CardContent className="flex-1 p-0 h-full relative flex flex-col bg-neutral-900 dark:bg-[#050505]">
         {/* Content Area */}
         <div className="relative flex-1 flex items-center justify-center overflow-hidden">
 
           {/* Background Grid */}
-          <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]" />
+          <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(128,128,128,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(128,128,128,0.05)_1px,transparent_1px)] bg-[size:40px_40px]" />
 
           {activeType === 'Thermal' ? (
             <>
