@@ -36,10 +36,104 @@ export const useDetection = () => {
     return context;
 };
 
-// --- Provider ---
+// --- Demo Data for Demonstration ---
+
+const generateDemoAlerts = (): DetectionEvent[] => {
+    const now = new Date();
+    const makeTime = (minsAgo: number) => {
+        const t = new Date(now.getTime() - minsAgo * 60000);
+        return {
+            timestamp: t.toLocaleTimeString([], { hour12: false }),
+            fullTimestamp: t
+        };
+    };
+
+    return [
+        {
+            id: 'demo-1',
+            type: 'LIFE',
+            confidence: 0.94,
+            max_temp: 36.8,
+            lat: 12.9716,
+            lon: 77.5946,
+            ...makeTime(2),
+            isActive: true,
+        },
+        {
+            id: 'demo-2',
+            type: 'FIRE',
+            confidence: 0.87,
+            max_temp: 312.5,
+            lat: 12.9750,
+            lon: 77.5900,
+            ...makeTime(5),
+            isActive: true,
+        },
+        {
+            id: 'demo-3',
+            type: 'LIFE',
+            confidence: 0.91,
+            max_temp: 37.2,
+            lat: 12.9680,
+            lon: 77.5980,
+            ...makeTime(8),
+            isActive: true,
+        },
+        {
+            id: 'demo-4',
+            type: 'FIRE',
+            confidence: 0.78,
+            max_temp: 285.0,
+            lat: 12.9730,
+            lon: 77.6020,
+            ...makeTime(12),
+            isActive: true,
+        },
+        {
+            id: 'demo-5',
+            type: 'LIFE',
+            confidence: 0.96,
+            max_temp: 36.5,
+            lat: 12.9695,
+            lon: 77.5870,
+            ...makeTime(15),
+            isActive: true,
+        },
+        {
+            id: 'demo-6',
+            type: 'LIFE',
+            confidence: 0.82,
+            max_temp: 35.9,
+            lat: 12.9770,
+            lon: 77.5960,
+            ...makeTime(20),
+            isActive: false,
+        },
+        {
+            id: 'demo-7',
+            type: 'FIRE',
+            confidence: 0.89,
+            max_temp: 340.1,
+            lat: 12.9660,
+            lon: 77.5920,
+            ...makeTime(25),
+            isActive: false,
+        },
+        {
+            id: 'demo-8',
+            type: 'LIFE',
+            confidence: 0.73,
+            max_temp: 34.8,
+            lat: 12.9740,
+            lon: 77.5850,
+            ...makeTime(30),
+            isActive: false,
+        },
+    ];
+};
 
 export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [alerts, setAlerts] = useState<DetectionEvent[]>([]);
+    const [alerts, setAlerts] = useState<DetectionEvent[]>(generateDemoAlerts());
     const [selectedAlert, setSelectedAlert] = useState<DetectionEvent | null>(null);
 
     // Derived state for active alerts (unacknowledged)
