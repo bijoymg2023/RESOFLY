@@ -222,50 +222,50 @@ const ThermalDashboard = () => {
         {/* --- Main Dashboard Content --- */}
         <div className="relative z-10 p-2 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 max-w-[1920px] mx-auto">
 
-          {/* Main Layout - Responsive Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+          {/* Main Layout - Stacked Rows */}
+          <div className="flex flex-col space-y-6">
 
-            {/* LEFT: Video Stream - Takes more space on larger screens */}
-            <div className="lg:col-span-8 xl:col-span-9">
-              <div className="aspect-video min-h-[300px] sm:min-h-[400px] lg:min-h-[500px]">
+            {/* TOP: Video Stream - Full Width */}
+            <div className="w-full">
+              <div className="aspect-video min-h-[400px] lg:min-h-[600px]">
                 <VideoStreamBox />
               </div>
             </div>
 
-            {/* RIGHT: GPS & Signal Tracker & System Status */}
-            <div className="lg:col-span-4 xl:col-span-3 flex flex-col space-y-4">
+            {/* MIDDLE: GPS & Signal Tracker & System Status - Large & Prominent */}
+            {/* Same grid structure and height as bottom row for consistency */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
 
-              {/* GPS & Signal Tracker Container - Stacked */}
-              <div className="grid grid-cols-1 gap-4 flex-1">
-                {/* GPS Unit */}
-                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-[250px]">
-                  <GPSCoordinateBox />
-                </div>
+              {/* GPS Unit */}
+              <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
+                <GPSCoordinateBox />
+              </div>
 
-                {/* Signal Tracker */}
-                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-[250px]">
-                  <SignalTracker />
-                </div>
+              {/* Signal Tracker */}
+              <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
+                <SignalTracker />
+              </div>
 
-                {/* System Status - Now same size */}
-                <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm h-[250px] flex flex-col justify-center">
-                  <CardContent className="p-3">
+              {/* System Status */}
+              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm h-[350px] flex flex-col justify-center sm:col-span-2 lg:col-span-1">
+                <CardContent className="p-6 h-full flex items-center">
+                  <div className="w-full">
                     <SystemStatusContent />
-                  </CardContent>
-                </Card>
-              </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
-              {/* Mobile Actions - Only shows below lg */}
-              <div className="lg:hidden grid grid-cols-2 gap-2">
-                <Button className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 h-10 flex items-center justify-center space-x-2">
-                  <AlertTriangle className="w-4 h-4" />
-                  <span className="text-xs font-mono uppercase">Quick Alert</span>
-                </Button>
-                <Button className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-10 flex items-center justify-center space-x-2">
-                  <Navigation className="w-4 h-4" />
-                  <span className="text-xs font-mono uppercase">Locate</span>
-                </Button>
-              </div>
+            {/* Mobile Actions - Only shows below lg */}
+            <div className="lg:hidden grid grid-cols-2 gap-2">
+              <Button className="bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 h-10 flex items-center justify-center space-x-2">
+                <AlertTriangle className="w-4 h-4" />
+                <span className="text-xs font-mono uppercase">Quick Alert</span>
+              </Button>
+              <Button className="bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 h-10 flex items-center justify-center space-x-2">
+                <Navigation className="w-4 h-4" />
+                <span className="text-xs font-mono uppercase">Locate</span>
+              </Button>
             </div>
           </div>
 
