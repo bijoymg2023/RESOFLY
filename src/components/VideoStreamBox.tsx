@@ -25,81 +25,42 @@ type VideoType = 'RGB' | 'Thermal' | 'Overlay';
 type ThermalMode = 'live' | 'gallery';
 
 /**
- * RGBStreamView - Smooth frame polling for Pi Camera
- * Instead of MJPEG streaming (which buffers and lags), this polls
- * individual JPEG frames. The browser controls the pace:
- * fetch frame → display → fetch next. No buffer buildup.
+ * RGBStreamView - Native MJPEG stream for maximum FPS
+ * Uses the browser's built-in MJPEG decoder which is far faster
+ * than manual frame polling (no per-frame HTTP overhead).
  */
 const RGBStreamView = () => {
-  const imgRef = useRef<HTMLImageElement>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [fps, setFps] = useState(0);
-  const runningRef = useRef(true);
-
-  useEffect(() => {
-    runningRef.current = true;
-    let frameCount = 0;
-    let lastFpsTime = performance.now();
-
-    const pollFrame = async () => {
-      while (runningRef.current) {
-        try {
-          const res = await fetch(`/api/stream/rgb/frame?t=${Date.now()}`);
-          if (!res.ok) {
-            setIsConnected(false);
-            await new Promise(r => setTimeout(r, 1000));
-            continue;
-          }
-
-          const blob = await res.blob();
-          if (blob.type.startsWith('image/') && imgRef.current && runningRef.current) {
-            const url = URL.createObjectURL(blob);
-            const oldSrc = imgRef.current.src;
-            imgRef.current.src = url;
-            if (oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc);
-            setIsConnected(true);
-          }
-
-          // FPS counter
-          frameCount++;
-          const now = performance.now();
-          if (now - lastFpsTime >= 1000) {
-            setFps(frameCount);
-            frameCount = 0;
-            lastFpsTime = now;
-          }
-
-          // Tiny yield to prevent blocking UI thread
-          await new Promise(r => setTimeout(r, 5));
-        } catch {
-          setIsConnected(false);
-          await new Promise(r => setTimeout(r, 2000));
-        }
-      }
-    };
-
-    pollFrame();
-
-    return () => {
-      runningRef.current = false;
-      if (imgRef.current?.src.startsWith('blob:')) {
-        URL.revokeObjectURL(imgRef.current.src);
-      }
-    };
-  }, []);
+  const [hasError, setHasError] = useState(false);
 
   return (
     <div className="relative w-full h-full bg-black">
-      <img
-        ref={imgRef}
-        alt="Live RGB Feed"
-        className="w-full h-full object-contain"
-      />
-      {/* Live Indicator + FPS */}
+      {!hasError ? (
+        <img
+          src="/api/stream/rgb"
+          alt="Live RGB Feed"
+          className="w-full h-full object-contain"
+          onLoad={() => setIsConnected(true)}
+          onError={() => { setHasError(true); setIsConnected(false); }}
+        />
+      ) : (
+        <div className="flex flex-col items-center justify-center h-full text-white/40 font-mono">
+          <AlertCircle className="w-12 h-12 mb-3 text-red-500/50" />
+          <p className="text-xs tracking-widest text-red-400">STREAM OFFLINE</p>
+          <button
+            onClick={() => setHasError(false)}
+            className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Live Indicator */}
       <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
-        <div className={`w-2 h-2 rounded-full animate-pulse ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
-        <span className={`font-mono text-[9px] ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
-          {isConnected ? `LIVE ${fps}fps` : 'CONNECTING'}
+        <div className={`w-2 h-2 rounded-full animate-pulse ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
+        <span className={`font-mono text-[9px] ${isConnected ? 'text-green-400' : 'text-yellow-400'}`}>
+          {isConnected ? 'LIVE' : 'CONNECTING'}
         </span>
       </div>
     </div>
