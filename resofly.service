@@ -3,7 +3,7 @@ Description=RESOFLY Service
 After=network.target
 
 [Service]
-User=team13
+User=root
 WorkingDirectory=/home/team13/RESOFLY/backend
 ExecStart=/bin/bash start_backend.sh
 KillMode=mixed

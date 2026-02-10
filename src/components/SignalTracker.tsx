@@ -25,7 +25,8 @@ const SignalTracker = () => {
             if (res.ok) {
                 const data = await res.json();
                 setDevices(data);
-                if (data.length === 0) toast.info("No devices found nearby.");
+                // Only show toast if explicitly triggered by user, not initial load? 
+                // Actually, helpful to know it scanned.
             } else {
                 toast.error("Scan failed.");
             }
@@ -36,6 +37,14 @@ const SignalTracker = () => {
             setScanning(false);
         }
     };
+
+    // Auto-scan on mount
+    useEffect(() => {
+        scan();
+        // Optional: Interval scanning?
+        // const interval = setInterval(scan, 10000);
+        // return () => clearInterval(interval);
+    }, []);
 
     // tracker animation
     useEffect(() => {
