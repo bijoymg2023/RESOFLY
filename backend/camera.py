@@ -122,9 +122,16 @@ def capture_fresh_frame(stream_url="http://127.0.0.1:8080/mjpeg"):
 class RpicamCamera(BaseCamera):
     """
     Pi Camera using rpicam-vid subprocess for continuous video streaming.
-    Outputs MJPEG directly to stdout for high performance (30fps+).
+    Outputs MJPEG directly to stdout for high performance.
+    
+    Optimizations for smooth streaming:
+    - 1280x720 @ 30fps for sharp image
+    - JPEG quality 70 for good visual/bandwidth balance
+    - 32KB read chunks to minimize syscalls per frame
+    - asyncio.Event to notify consumers immediately when a new frame arrives
+    - Greedy frame parsing to always show the freshest frame
     """
-    def __init__(self, resolution=(640, 480), framerate=30):
+    def __init__(self, resolution=(1280, 720), framerate=30):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -132,12 +139,15 @@ class RpicamCamera(BaseCamera):
         self.available = False
         self.process = None
         self.lock = threading.Lock()
+        self._frame_seq = 0          # Monotonic frame counter
+        self._frame_event = asyncio.Event()  # Signals new frame to async consumers
+        self._loop = None            # Event loop reference for cross-thread signaling
         
         # Check if rpicam-vid is available
         import shutil
         if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera (vid) initialized at {resolution} @ {framerate}fps (Stable Low Latency)")
+            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (smooth stream)")
             
             # Start video streaming thread
             self.thread = threading.Thread(target=self._stream_loop, daemon=True)
@@ -145,18 +155,23 @@ class RpicamCamera(BaseCamera):
         else:
             print("rpicam-vid not found - Pi Camera disabled")
     
+    def _signal_new_frame(self):
+        """Thread-safe signaling to async consumers that a new frame is ready."""
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._frame_event.set)
+
     def _stream_loop(self):
         """Background thread to continuously stream video using rpicam-vid."""
         import subprocess
         
         while self.running and self.available:
             try:
-                # Start rpicam-vid outputting MJPEG to stdout
-                # Ultra low latency tuning:
-                # - 640x480 @ 30fps
-                # - exposure sport: faster shutter for motion
-                # - quality 50: trade quality for speed
-                # - denoise off: skip processing
+                # rpicam-vid with optimized settings for smooth streaming:
+                # - 1280x720: sharp HD image
+                # - quality 70: good visual with reasonable bandwidth
+                # - exposure sport: faster shutter for motion clarity
+                # - denoise off: skip post-processing for lower latency
+                # - flush: forces stdout flush per frame
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -164,7 +179,7 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "50",
+                    "--quality", "70",
                     "--exposure", "sport",
                     "--denoise", "off",
                     "--inline",            
@@ -181,27 +196,26 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print("rpicam-vid stream started (low-latency mode)")
+                print("rpicam-vid stream started (smooth HD mode)")
                 
                 # Read MJPEG frames from stdout
                 buffer = b''
                 while self.running and self.process.poll() is None:
-                    # Read smaller chunks more frequently for lower latency
-                    chunk = self.process.stdout.read(8192)
+                    # Read 32KB chunks - fewer syscalls, each read gets
+                    # a meaningful chunk of a JPEG frame (~30-60KB at 720p q70)
+                    chunk = self.process.stdout.read(32768)
                     if not chunk:
                         break
                     
                     buffer += chunk
                     
                     # GREEDY FRAME PARSING:
-                    # Find the LAST complete frame in the buffer and discard everything before it.
-                    # This ensures we always show the freshest frame and never lag behind.
+                    # Find the LAST complete frame in the buffer.
+                    # This ensures we always show the freshest frame.
                     
                     last_frame_end = buffer.rfind(b'\xff\xd9')
                     
                     if last_frame_end != -1:
-                        # Found at least one frame end.
-                        # Now find the start of THIS frame
                         packet_end = last_frame_end + 2
                         
                         # Search backwards for start of this frame
@@ -213,14 +227,15 @@ class RpicamCamera(BaseCamera):
                             
                             with self.lock:
                                 self.frame = new_frame
+                                self._frame_seq += 1
                             
-                            # DISCARD processed data and OLD frames
-                            # Keep only what's after the last frame end (start of next frame)
+                            # Signal async consumers immediately
+                            self._signal_new_frame()
+                            
+                            # Discard processed data (keep only the tail for next frame)
                             buffer = buffer[packet_end:]
                         else:
-                            # We have an end but no start? (partial buffer)
-                            # Keep buffer as is, wait for more data?
-                            # Or discard if buffer is too big to be a fragment?
+                            # Partial buffer - discard if too large
                             if len(buffer) > 500000:
                                 buffer = b''
                     
@@ -243,6 +258,22 @@ class RpicamCamera(BaseCamera):
 
     
     async def get_frame(self):
+        with self.lock:
+            return self.frame
+    
+    async def wait_for_frame(self, timeout=0.1):
+        """Wait for a NEW frame to arrive, with timeout.
+        Returns the frame if available, None on timeout."""
+        # Store the event loop reference for cross-thread signaling
+        if self._loop is None:
+            self._loop = asyncio.get_event_loop()
+        
+        self._frame_event.clear()
+        try:
+            await asyncio.wait_for(self._frame_event.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
+        
         with self.lock:
             return self.frame
     
@@ -270,22 +301,38 @@ def get_rgb_camera():
 
 
 async def generate_rgb_stream():
-    """Async generator for MJPEG stream from Pi Camera."""
+    """Async generator for MJPEG stream from Pi Camera.
+    
+    Uses event-driven frame delivery for smooth streaming:
+    - Waits for new frames via asyncio.Event (no fixed sleep)
+    - Yields immediately when a new frame arrives
+    - Falls back to polling at 30fps if events aren't working
+    """
     camera = get_rgb_camera()
+    last_seq = -1
     
     while True:
-        frame = await camera.get_frame()
+        # Wait for a new frame (event-driven, up to 50ms timeout)
+        frame = await camera.wait_for_frame(timeout=0.05)
         
         if frame:
-            yield (
-                b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
-            )
+            # Only yield if this is a genuinely new frame
+            with camera.lock:
+                current_seq = camera._frame_seq
+            
+            if current_seq != last_seq:
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                )
+                last_seq = current_seq
+            else:
+                # Same frame, short sleep to avoid busy-spinning
+                await asyncio.sleep(0.01)
         else:
             yield (
                 b'--frame\r\n'
                 b'Content-Type: text/plain\r\n\r\n'
                 b'Waiting for camera...\r\n'
             )
-        
-        await asyncio.sleep(0.033) # ~30 FPS (matches camera framerate, reduces CPU)
+            await asyncio.sleep(0.1)  # Longer wait when no camera
