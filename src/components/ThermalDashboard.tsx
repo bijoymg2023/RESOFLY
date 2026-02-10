@@ -34,12 +34,12 @@ interface SystemStatus {
 
 // Custom HUD Progress Bar
 const HUDBar = ({ value, color = "bg-cyan-500" }: { value: number; color?: string }) => (
-  <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-sm overflow-hidden border border-white/5 relative">
+  <div className="flex-1 h-1.5 bg-muted dark:bg-[#1a1a1a] rounded-sm overflow-hidden border border-border dark:border-white/5 relative">
     <div
-      className={`h-full ${color} shadow-[0_0_10px_rgba(34,211,238,0.5)] transition-all duration-500`}
+      className={`h-full ${color} shadow-[0_0_10px_rgba(34,211,238,0.3)] transition-all duration-500`}
       style={{ width: `${value}%` }}
     />
-    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_2px,#000_1px)] bg-[size:4px_100%] opacity-50" />
+    <div className="absolute inset-0 bg-[linear-gradient(90deg,transparent_2px,hsl(var(--background))_1px)] bg-[size:4px_100%] opacity-30 dark:opacity-50" />
   </div>
 );
 
@@ -64,46 +64,46 @@ const SystemStatusContent = () => {
     refetchInterval: 5000
   });
 
-  if (!status) return <div className="text-[10px] p-4 text-center text-cyan-500/50 animate-pulse font-mono">INITIALIZING TELEMETRY...</div>;
+  if (!status) return <div className="text-[10px] p-4 text-center text-muted-foreground animate-pulse font-mono">INITIALIZING TELEMETRY...</div>;
 
   return (
     <div className="space-y-4 font-mono">
       {/* CPU */}
       <div className="space-y-1">
-        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-cyan-200/70">
+        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-foreground/70">
           <span className="flex items-center"><Cpu className="w-3 h-3 mr-1.5 opacity-70" /> CPU Load</span>
-          <span>{status.cpu_usage.toFixed(1)}%</span>
+          <span className="font-semibold">{status.cpu_usage.toFixed(1)}%</span>
         </div>
         <HUDBar value={status.cpu_usage} color={status.cpu_usage > 80 ? "bg-red-500" : "bg-cyan-500"} />
       </div>
 
       {/* Memory */}
       <div className="space-y-1">
-        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-cyan-200/70">
+        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-foreground/70">
           <span className="flex items-center"><Activity className="w-3 h-3 mr-1.5 opacity-70" /> Memory</span>
-          <span>{status.memory_usage.toFixed(1)}%</span>
+          <span className="font-semibold">{status.memory_usage.toFixed(1)}%</span>
         </div>
         <HUDBar value={status.memory_usage} color={status.memory_usage > 80 ? "bg-red-500" : "bg-cyan-500"} />
       </div>
 
       {/* Temp */}
       <div className="space-y-1">
-        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-cyan-200/70">
+        <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-foreground/70">
           <span className="flex items-center"><Thermometer className="w-3 h-3 mr-1.5 opacity-70" /> Core Temp</span>
-          <span>{status.temperature.toFixed(1)}°C</span>
+          <span className="font-semibold">{status.temperature.toFixed(1)}°C</span>
         </div>
         <HUDBar value={(status.temperature / 100) * 100} color={status.temperature > 75 ? "bg-red-500" : "bg-emerald-500"} />
       </div>
 
       {/* Footer Info */}
-      <div className="pt-3 mt-3 border-t border-white/5 grid grid-cols-2 gap-2">
-        <div className="bg-white/5 rounded p-2 text-center border border-white/5">
-          <div className="text-[10px] text-white/30 uppercase">Uptime</div>
-          <div className="text-xs text-white">{formatUptime(status.uptime)}</div>
+      <div className="pt-3 mt-3 border-t border-border dark:border-white/5 grid grid-cols-2 gap-2">
+        <div className="bg-muted/50 dark:bg-white/5 rounded p-2 text-center border border-border dark:border-white/5">
+          <div className="text-[10px] text-muted-foreground uppercase">Uptime</div>
+          <div className="text-xs text-foreground font-semibold">{formatUptime(status.uptime)}</div>
         </div>
-        <div className="bg-white/5 rounded p-2 text-center border border-white/5">
-          <div className="text-[10px] text-white/30 uppercase">Network</div>
-          <div className="text-xs text-emerald-400">SECURE</div>
+        <div className="bg-muted/50 dark:bg-white/5 rounded p-2 text-center border border-border dark:border-white/5">
+          <div className="text-[10px] text-muted-foreground uppercase">Network</div>
+          <div className="text-xs text-emerald-500 dark:text-emerald-400 font-semibold">SECURE</div>
         </div>
       </div>
     </div>
@@ -118,8 +118,8 @@ const ThermalDashboard = () => {
     <DetectionProvider>
       <div className="min-h-screen bg-background text-foreground font-sans selection:bg-cyan-500/30 relative overflow-hidden">
 
-        {/* --- Background Elements --- */}
-        <div className="absolute inset-0 z-0 opacity-[0.08] dark:opacity-10 bg-[linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_60%,transparent_100%)] pointer-events-none text-black dark:text-cyan-500" />
+        {/* --- Background Grid Lines (full page) --- */}
+        <div className="absolute inset-0 z-0 opacity-[0.06] dark:opacity-[0.08] bg-[linear-gradient(to_right,currentColor_1px,transparent_1px),linear-gradient(to_bottom,currentColor_1px,transparent_1px)] bg-[size:3rem_3rem] pointer-events-none text-black dark:text-cyan-500" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[100vw] h-[500px] bg-primary/5 dark:bg-cyan-900/20 blur-[120px] rounded-full pointer-events-none" />
 
 

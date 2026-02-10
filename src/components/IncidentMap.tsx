@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -36,10 +36,39 @@ const MapController = () => {
     return null;
 };
 
+// Theme-aware tile layer
+const TILE_URLS = {
+    dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    light: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+};
+
+const ThemeAwareTileLayer = () => {
+    const [isDark, setIsDark] = useState(
+        document.documentElement.classList.contains('dark')
+    );
+
+    useEffect(() => {
+        const observer = new MutationObserver(() => {
+            setIsDark(document.documentElement.classList.contains('dark'));
+        });
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['class'],
+        });
+        return () => observer.disconnect();
+    }, []);
+
+    return (
+        <TileLayer
+            key={isDark ? 'dark' : 'light'}
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            url={isDark ? TILE_URLS.dark : TILE_URLS.light}
+        />
+    );
+};
+
 export const IncidentMap = () => {
     const { alerts, activeAlerts, selectedAlert } = useDetection();
-
-    // Default center (Bangalore)
     const center = { lat: 12.9716, lng: 77.5946 };
 
     return (
@@ -50,12 +79,9 @@ export const IncidentMap = () => {
                         <Navigation className="w-4 h-4 mr-2" />
                         Tactical Map
                     </CardTitle>
-                    <div className="flex space-x-2">
-                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px] font-mono">
-                            <Target className="w-3 h-3 mr-1" />
-                            {activeAlerts.length} TARGETS
-                        </Badge>
-                    </div>
+                    <Badge variant="outline" className="text-[10px] font-mono border-cyan-500/30 text-cyan-600 dark:text-cyan-400 bg-cyan-500/10">
+                        {activeAlerts.length} TARGETS
+                    </Badge>
                 </div>
             </CardHeader>
 
@@ -65,14 +91,9 @@ export const IncidentMap = () => {
                     zoom={13}
                     scrollWheelZoom={true}
                     className="h-full w-full z-0"
-                    style={{ background: '#1a1a1a' }}
+                    style={{ background: 'hsl(var(--background))' }}
                 >
-                    {/* Dark Mode Map Tiles - CartoDB Dark Matter */}
-                    <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-                        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                    />
-
+                    <ThemeAwareTileLayer />
                     <MapController />
 
                     {activeAlerts.map(alert => (
@@ -96,11 +117,11 @@ export const IncidentMap = () => {
                 </MapContainer>
 
                 {/* Overlay Grid */}
-                <div className="absolute inset-0 pointer-events-none z-[400] opacity-20 bg-[linear-gradient(rgba(0,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[size:20px_20px]" />
+                <div className="absolute inset-0 pointer-events-none z-[400] opacity-10 dark:opacity-20 bg-[linear-gradient(rgba(0,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.05)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(0,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[size:20px_20px]" />
 
                 {/* Corner Accents */}
-                <div className="absolute bottom-4 right-4 pointer-events-none z-[400] border-b-2 border-r-2 border-cyan-500/50 w-8 h-8" />
-                <div className="absolute bottom-4 left-4 pointer-events-none z-[400] border-b-2 border-l-2 border-cyan-500/50 w-8 h-8" />
+                <div className="absolute bottom-4 right-4 pointer-events-none z-[400] border-b-2 border-r-2 border-foreground/30 dark:border-cyan-500/50 w-8 h-8" />
+                <div className="absolute bottom-4 left-4 pointer-events-none z-[400] border-b-2 border-l-2 border-foreground/30 dark:border-cyan-500/50 w-8 h-8" />
 
             </CardContent>
         </Card>
