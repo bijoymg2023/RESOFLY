@@ -22,66 +22,69 @@ def get_bluetooth_devices():
         ]
 
     try:
-        # Run btmgmt find (needs sudo usually, make sure user has permissions or run typical scan)
-        # Using timeout to stop scanning after 5 seconds
-        cmd = "sudo timeout 5s btmgmt find"
-        
-        # On some systems 'hcitool lescan' might be used, but btmgmt is better for RSSI
-        # If btmgmt fails, we might need another approach.
-        
-        output = subprocess.check_output(cmd, shell=True).decode("utf-8", errors="ignore")
-        
-        devices = []
-        
-        # Regex to parse btmgmt output
-        # Example: hci0 dev_found: 59:90:3A:C7:60:02 type LE Random rssi -66 flags 0x0000 
-        #          AD flags 0x06 
-        #          name Galaxy S21
-        
-        # Simplify: just look for blocks
-        lines = output.split('\n')
-        current_dev = {}
-        
-        for line in lines:
-            line = line.strip()
-            if "dev_found" in line:
-                # Save previous if exists
+        # METHOD 1: btmgmt (Modern, clean)
+        # --------------------------------
+        if shutil.which("btmgmt"):
+            try:
+                cmd = "sudo timeout 5s btmgmt find"
+                output = subprocess.check_output(cmd, shell=True).decode("utf-8", errors="ignore")
+                
+                lines = output.split('\n')
+                current_dev = {}
+                devices = []
+
+                for line in lines:
+                    line = line.strip()
+                    if "dev_found" in line:
+                        if current_dev and 'mac' in current_dev:
+                            devices.append(current_dev)
+                        current_dev = {}
+                        
+                        mac_match = re.search(r"dev_found:\s+([0-9A-F:]{17})", line, re.I)
+                        rssi_match = re.search(r"rssi\s+(-?\d+)", line, re.I)
+                        
+                        if mac_match: current_dev['mac'] = mac_match.group(1)
+                        if rssi_match: current_dev['rssi'] = int(rssi_match.group(1))
+                            
+                    elif "name" in line and current_dev:
+                        name_match = re.search(r"name\s+(.*)", line, re.I)
+                        if name_match: current_dev['name'] = name_match.group(1)
+                
                 if current_dev and 'mac' in current_dev:
                     devices.append(current_dev)
-                
-                current_dev = {}
-                
-                # Extract MAC and RSSI
-                mac_match = re.search(r"dev_found:\s+([0-9A-F:]{17})", line, re.I)
-                rssi_match = re.search(r"rssi\s+(-?\d+)", line, re.I)
-                
-                if mac_match:
-                    current_dev['mac'] = mac_match.group(1)
-                if rssi_match:
-                    current_dev['rssi'] = int(rssi_match.group(1))
-                    
-            elif "name" in line and current_dev:
-                # Extract Name
-                name_match = re.search(r"name\s+(.*)", line, re.I)
-                if name_match:
-                    current_dev['name'] = name_match.group(1)
-        
-        # Append last one
-        if current_dev and 'mac' in current_dev:
-            devices.append(current_dev)
-            
-        # Deduplicate by MAC, keeping strongest signal
-        unique_devs = {}
-        for d in devices:
-            mac = d['mac']
-            if mac not in unique_devs or d.get('rssi', -100) > unique_devs[mac].get('rssi', -100):
-                unique_devs[mac] = d
-        
-        return list(unique_devs.values())
+
+                if devices:
+                    return _deduplicate(devices)
+            except subprocess.CalledProcessError:
+                pass # Fallback to hcitool
+
+        # METHOD 2: hcitool (Legacy but reliable)
+        # ------------------------------------
+        if shutil.which("hcitool"):
+             # hcitool lescan runs forever, need timeout
+             # parsing is tricky as it prints line by line
+             # We use 'hcitool lescan --duplicates' to get updates, but parsing RSSI needs 'btmon' or doing it differently.
+             # Actually, best way for RSSI with hcitool is 'hcitool rssi <MAC>' but that requires connection.
+             # 'hcitool scan' is for classic BT.
+             
+             # Better fallback: use `bluetoothctl`
+             pass
+
+        return []
 
     except Exception as e:
         print(f"Bluetooth scan error: {e}")
         return []
+
+def _deduplicate(devices):
+    unique_devs = {}
+    for d in devices:
+        mac = d['mac']
+        # Keep strongest signal
+        if mac not in unique_devs or d.get('rssi', -100) > unique_devs[mac].get('rssi', -100):
+            unique_devs[mac] = d
+    # Sort by strength
+    return sorted(list(unique_devs.values()), key=lambda x: x['rssi'], reverse=True)
 
 if __name__ == "__main__":
     print("Scanning for Bluetooth devices...")
