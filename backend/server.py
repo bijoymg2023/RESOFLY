@@ -18,6 +18,7 @@ from enum import Enum
 import camera
 import psutil
 import random
+import bluetooth_scanner
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -325,6 +326,48 @@ async def thermal_camera_status():
             "available": False,
             "error": str(e)
         }
+
+@api_router.get("/system/diagnostics")
+async def get_system_diagnostics(token: str = Depends(oauth2_scheme)):
+    """Get CPU, RAM, Temp."""
+    try:
+        cpu = psutil.cpu_percent()
+        ram = psutil.virtual_memory().percent
+        
+        # Temp (Pi specific)
+        temp = 0.0
+        try:
+            with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
+                temp = float(f.read()) / 1000.0
+        except:
+             # Mock temp for dev
+             temp = random.uniform(40.0, 60.0)
+
+        # Uptime
+        uptime = time.time() - psutil.boot_time()
+
+        return {
+            "cpu_usage": cpu,
+            "memory_usage": ram,
+            "temperature": temp,
+            "uptime": uptime,
+            "disk_usage": psutil.disk_usage('/').percent
+        }
+    except Exception as e:
+        logger.error(f"Diagnostics Error: {e}")
+        return {"error": str(e)}
+
+@api_router.get("/scan/bluetooth")
+async def scan_bluetooth(token: str = Depends(oauth2_scheme)):
+    """Scans for nearby Bluetooth LE devices and returns their RSSI."""
+    try:
+        # Run scanner in threadpool (blocking subprocess)
+        loop = asyncio.get_event_loop()
+        devices = await loop.run_in_executor(None, bluetooth_scanner.get_bluetooth_devices)
+        return devices
+    except Exception as e:
+        logger.error(f"Bluetooth Scan Error: {e}")
+        return []
 
 @api_router.post("/thermal/test-alert")
 async def create_test_alert(db: AsyncSession = Depends(get_db)):
