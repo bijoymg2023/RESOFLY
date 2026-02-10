@@ -235,25 +235,25 @@ const ThermalDashboard = () => {
             {/* RIGHT: GPS & Signal Tracker & System Status */}
             <div className="lg:col-span-4 xl:col-span-3 flex flex-col space-y-4">
 
-              {/* GPS & Signal Tracker Container - Side-by-side on desktop if space allows, or stacked */}
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1 min-h-0">
+              {/* GPS & Signal Tracker Container - Stacked */}
+              <div className="grid grid-cols-1 gap-4 flex-1">
                 {/* GPS Unit */}
-                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-full min-h-[250px]">
+                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-[250px]">
                   <GPSCoordinateBox />
                 </div>
 
                 {/* Signal Tracker */}
-                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-full min-h-[250px]">
+                <div className="rounded-xl overflow-hidden border border-border bg-card/40 backdrop-blur-sm h-[250px]">
                   <SignalTracker />
                 </div>
-              </div>
 
-              {/* System Status Panel - Horizontal Compact */}
-              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm">
-                <CardContent className="p-3">
-                  <SystemStatusContent />
-                </CardContent>
-              </Card>
+                {/* System Status - Now same size */}
+                <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm h-[250px] flex flex-col justify-center">
+                  <CardContent className="p-3">
+                    <SystemStatusContent />
+                  </CardContent>
+                </Card>
+              </div>
 
               {/* Mobile Actions - Only shows below lg */}
               <div className="lg:hidden grid grid-cols-2 gap-2">
@@ -269,15 +269,15 @@ const ThermalDashboard = () => {
             </div>
           </div>
 
-          {/* Bottom Section: 3 Boxes - Bigger, scrollable, polished */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
-            <div className="min-h-[300px] h-[45vh] max-h-[550px] overflow-hidden">
+          {/* Bottom Section: 3 Boxes - Uniform Height */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+            <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
               <IncidentMap />
             </div>
-            <div className="min-h-[300px] h-[45vh] max-h-[550px] overflow-hidden">
+            <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
               <AlertBox />
             </div>
-            <div className="min-h-[300px] h-[45vh] max-h-[550px] overflow-hidden sm:col-span-2 lg:col-span-1">
+            <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm sm:col-span-2 lg:col-span-1">
               <AlertsDetectionBox />
             </div>
           </div>
