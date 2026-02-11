@@ -792,13 +792,9 @@ async def startup():
                 if gps_data.get('latitude'):
                     lat, lon = gps_data['latitude'], gps_data['longitude']
             
-            # Create alert in database
-            try:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                async def save_and_broadcast():
-                    # Process NEW hotspots (each new person gets their own alert)
+            # Create alert in database - schedule on the running event loop
+            async def save_and_broadcast():
+                try:
                     async with AsyncSessionLocal() as db:
                         for hotspot in event.hotspots:
                             # Use track_id if available, else standard index
@@ -842,16 +838,18 @@ async def startup():
                             await ws_manager.broadcast(alert_data)
                         
                         await db.commit()
-                        
-                        await db.commit()
                     
                     print(f"[THERMAL] ✓ {len(event.hotspots)} alerts sent for frame {event.frame_number}")
-                
-                loop.run_until_complete(save_and_broadcast())
-                loop.close()
-                
-            except Exception as e:
-                print(f"[THERMAL] Error: {e}")
+                except Exception as e:
+                    print(f"[THERMAL] Error in save_and_broadcast: {e}")
+            
+            # Schedule on the running event loop (don't create a new one)
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(save_and_broadcast())
+            except RuntimeError:
+                # No running loop (shouldn't happen in FastAPI context)
+                print(f"[THERMAL] Warning: No running event loop for alert broadcast")
         
         # Create the unified pipeline
         global thermal_frame_pipeline
