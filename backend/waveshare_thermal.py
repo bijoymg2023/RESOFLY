@@ -92,7 +92,43 @@ class WaveshareThermal:
             self.spi_cs = DigitalOutputDevice(PIN_SPI_CS, active_high=False, initial_value=False)
 
             # DATA_READY signal (GPIO24)
-            data_ready = DigitalInputDevice(PIN_DATA_READY, pull_up=False)
+            # DigitalInputDevice uses edge detection which is broken on
+            # Bookworm with the rpigpio fallback (lgpio .so is wrong Python ABI).
+            # Try edge-detect first, fall back to simple GPIO polling.
+            data_ready = None
+            try:
+                data_ready = DigitalInputDevice(PIN_DATA_READY, pull_up=False)
+                logger.info("DATA_READY: edge-detect mode (fast)")
+            except Exception as edge_err:
+                logger.warning(f"Edge detection unavailable: {edge_err}")
+                try:
+                    import RPi.GPIO as _GPIO
+                    _GPIO.setwarnings(False)
+                    try:
+                        _GPIO.setmode(_GPIO.BCM)
+                    except ValueError:
+                        pass  # already set by gpiozero for output pins
+                    _GPIO.setup(24, _GPIO.IN)
+
+                    class PollingDataReady:
+                        """Polls GPIO24 state without edge detection."""
+                        def wait_for_active(self, timeout=1.0):
+                            deadline = time.time() + timeout
+                            while time.time() < deadline:
+                                if _GPIO.input(24):
+                                    return True
+                                time.sleep(0.002)  # 2ms poll = ~500Hz
+                            return False
+
+                        @property
+                        def value(self):
+                            return bool(_GPIO.input(24))
+
+                    data_ready = PollingDataReady()
+                    logger.info("DATA_READY: GPIO polling mode (no edge detection)")
+                except Exception as poll_err:
+                    logger.warning(f"GPIO polling also failed: {poll_err}")
+                    logger.info("Will rely on I2C status register polling for frame timing")
 
             # Hardware reset (GPIO23)
             reset_pin = DigitalOutputDevice(PIN_RESET, active_high=False, initial_value=True)
