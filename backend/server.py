@@ -100,6 +100,7 @@ class AlertType(str, Enum):
     warning = 'warning'
     info = 'info'
     success = 'success'
+    life = 'life'
 
 class AlertBase(BaseModel):
     type: AlertType
@@ -743,9 +744,9 @@ async def startup():
                 user.hashed_password = hashed_pwd
             
             await db.commit()
-            print("Admin user ready")
+            print("Admin user ready", flush=True)
     except Exception as e:
-        print(f"Warning: Could not setup admin user: {e}")
+        print(f"Warning: Could not setup admin user: {e}", flush=True)
     
     # 2. Log System Startup (separate try block, optional)
     try:
@@ -764,9 +765,9 @@ async def startup():
             )
             db.add(startup_alert)
             await db.commit()
-            print("Startup alert logged")
+            print("Startup alert logged", flush=True)
     except Exception as e:
-        print(f"Warning: Could not log startup alert: {e}")
+        print(f"Warning: Could not log startup alert: {e}", flush=True)
             
     # 3. Initialize Synchronized Thermal Pipeline
     # Priority: Live Waveshare HAT > Dataset video fallback
@@ -777,20 +778,22 @@ async def startup():
         waveshare_source = thermal_pipeline.WaveshareSource()
         if waveshare_source.is_available():
             source = waveshare_source
-            print("[THERMAL] ✓ Waveshare 80x62 Thermal HAT detected — using LIVE feed")
+            print("[THERMAL] ✓ Waveshare 80x62 Thermal HAT detected — using LIVE feed", flush=True)
         else:
-            print("[THERMAL] Waveshare HAT not available, checking dataset fallback...")
+            print("[THERMAL] Waveshare HAT not available, checking dataset fallback...", flush=True)
     except Exception as e:
-        print(f"[THERMAL] Waveshare init error: {e}, checking dataset fallback...")
+        import traceback
+        print(f"[THERMAL] Waveshare init error: {e}", flush=True)
+        traceback.print_exc()
     
     # Fallback to dataset video
     if source is None:
         dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
-        print(f"[THERMAL] Looking for dataset at: {dataset_video}")
-        print(f"[THERMAL] Dataset exists: {dataset_video.exists()}")
+        print(f"[THERMAL] Looking for dataset at: {dataset_video}", flush=True)
+        print(f"[THERMAL] Dataset exists: {dataset_video.exists()}", flush=True)
         if dataset_video.exists():
             source = thermal_pipeline.VideoSource(str(dataset_video))
-            print("[THERMAL] Using dataset video as thermal source")
+            print("[THERMAL] Using dataset video as thermal source", flush=True)
     
     if source is not None:
         
@@ -870,9 +873,9 @@ async def startup():
             source=source,
             on_detection=on_detection_event
         )
-        print("[THERMAL] Synchronized pipeline initialized")
+        print("[THERMAL] Synchronized pipeline initialized", flush=True)
     else:
-        print("[THERMAL] No thermal source available (no HAT, no dataset), detection disabled")
+        print("[THERMAL] No thermal source available (no HAT, no dataset), detection disabled", flush=True)
         thermal_frame_pipeline = None
 
     # 4. Start background monitor loop
