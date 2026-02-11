@@ -82,6 +82,59 @@ HUMAN_TEMP_THRESHOLD_INTENSITY = temperature_to_intensity(HUMAN_TEMP_THRESHOLD_C
 
 # ============ FRAME SOURCE ============
 
+class WaveshareSource:
+    """
+    Live thermal source from Waveshare 80x62 Thermal Camera HAT.
+    Wraps the waveshare_thermal hardware driver for the unified pipeline.
+    """
+    
+    def __init__(self):
+        self._available = False
+        self.camera = None
+        self.fps = 5  # Hardware limited ~5 FPS
+        self.frame_count = 0  # Live = unlimited
+        
+        try:
+            from waveshare_thermal import get_thermal_camera
+            self.camera = get_thermal_camera()
+            self._available = self.camera.is_available()
+            if self._available:
+                logger.info("WaveshareSource: Live 80x62 thermal camera connected")
+            else:
+                logger.info("WaveshareSource: Camera HAT not responding")
+        except ImportError:
+            logger.info("WaveshareSource: waveshare_thermal driver not available")
+        except Exception as e:
+            logger.warning(f"WaveshareSource: Init error: {e}")
+    
+    def get_frame(self) -> Optional[np.ndarray]:
+        if not self._available or self.camera is None:
+            return None
+        
+        frame = self.camera.get_frame()
+        if frame is not None:
+            # Ensure grayscale uint8
+            if len(frame.shape) == 3:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            return frame
+        return None
+    
+    def is_available(self) -> bool:
+        return self._available
+    
+    def get_temperature_frame(self) -> Optional[np.ndarray]:
+        """Get raw temperature data in °C (for heatmap display)."""
+        if self.camera:
+            return self.camera.get_temperature_frame()
+        return None
+    
+    def get_max_temperature(self) -> Optional[float]:
+        """Get max temp in current frame."""
+        if self.camera:
+            return self.camera.get_max_temperature()
+        return None
+
+
 class VideoSource:
     """Reads frames from a video file."""
     

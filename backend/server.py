@@ -756,13 +756,30 @@ async def startup():
         print(f"Warning: Could not log startup alert: {e}")
             
     # 3. Initialize Synchronized Thermal Pipeline
-    dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
-    print(f"[THERMAL] Looking for dataset at: {dataset_video}")
-    print(f"[THERMAL] Dataset exists: {dataset_video.exists()}")
+    # Priority: Live Waveshare HAT > Dataset video fallback
+    source = None
     
-    if dataset_video.exists():
-        # Create video source
-        source = thermal_pipeline.VideoSource(str(dataset_video))
+    # Try Waveshare Thermal HAT first
+    try:
+        waveshare_source = thermal_pipeline.WaveshareSource()
+        if waveshare_source.is_available():
+            source = waveshare_source
+            print("[THERMAL] ✓ Waveshare 80x62 Thermal HAT detected — using LIVE feed")
+        else:
+            print("[THERMAL] Waveshare HAT not available, checking dataset fallback...")
+    except Exception as e:
+        print(f"[THERMAL] Waveshare init error: {e}, checking dataset fallback...")
+    
+    # Fallback to dataset video
+    if source is None:
+        dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
+        print(f"[THERMAL] Looking for dataset at: {dataset_video}")
+        print(f"[THERMAL] Dataset exists: {dataset_video.exists()}")
+        if dataset_video.exists():
+            source = thermal_pipeline.VideoSource(str(dataset_video))
+            print("[THERMAL] Using dataset video as thermal source")
+    
+    if source is not None:
         
         # Detection callback - creates alerts and broadcasts via WebSocket
         def on_detection_event(event: thermal_pipeline.DetectionEvent):
@@ -844,7 +861,7 @@ async def startup():
         )
         print("[THERMAL] Synchronized pipeline initialized")
     else:
-        print("[THERMAL] No dataset found, detection disabled")
+        print("[THERMAL] No thermal source available (no HAT, no dataset), detection disabled")
         thermal_frame_pipeline = None
 
     # 4. Start background monitor loop
