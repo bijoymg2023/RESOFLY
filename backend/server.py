@@ -361,6 +361,7 @@ async def get_system_diagnostics(token: str = Depends(oauth2_scheme)):
 @api_router.get("/scan/bluetooth")
 async def scan_bluetooth(token: str = Depends(oauth2_scheme)):
     """Scans for nearby Bluetooth LE devices and returns their RSSI."""
+    print(">>> [API] Bluetooth Scan Request Received", flush=True)
     try:
         # Run scanner in threadpool (blocking subprocess)
         loop = asyncio.get_event_loop()
@@ -845,6 +846,9 @@ async def startup():
     else:
         print("[THERMAL] No dataset found, detection disabled")
         thermal_frame_pipeline = None
+
+    # 4. Start background monitor loop
+    asyncio.create_task(background_monitor())
 
 async def background_monitor():
     """Periodically checks system health and logs alerts."""
