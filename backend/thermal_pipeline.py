@@ -86,7 +86,12 @@ class WaveshareSource:
     """
     Live thermal source from Waveshare 80x62 Thermal Camera HAT.
     Wraps the waveshare_thermal hardware driver for the unified pipeline.
+    Upscales from native 80x62 to 640x496 for usable stream display.
     """
+    
+    # Output resolution (8x upscale from 80x62)
+    OUTPUT_WIDTH = 640
+    OUTPUT_HEIGHT = 496
     
     def __init__(self):
         self._available = False
@@ -116,7 +121,15 @@ class WaveshareSource:
             # Ensure grayscale uint8
             if len(frame.shape) == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            return frame
+            
+            # Upscale 80x62 → 640x496 with bicubic interpolation
+            upscaled = cv2.resize(
+                frame,
+                (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
+                interpolation=cv2.INTER_CUBIC
+            )
+            
+            return upscaled
         return None
     
     def is_available(self) -> bool:
@@ -356,27 +369,37 @@ class ThermalFramePipeline:
         return self._annotate(frame, self.current_hotspots)
     
     def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
-        """Draw bounding boxes and IDs on frame."""
-        annotated = frame.copy()
+        """Apply thermal colormap and draw bounding boxes + IDs on frame."""
+        # Apply thermal colormap for display (INFERNO: black→purple→orange→yellow)
+        if len(frame.shape) == 2:
+            annotated = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
+        else:
+            annotated = frame.copy()
+        
+        h_frame, w_frame = annotated.shape[:2]
+        # Scale factor for text/lines (bigger frames = bigger text)
+        scale = max(0.4, w_frame / 640.0)
+        thickness = max(1, int(scale * 2))
         
         for h in hotspots:
             if not hasattr(h, 'track_id'):
                 continue
                 
-            # Color based on confidence
+            # Bright colors that stand out against INFERNO colormap
             color = (0, 255, 0) if h.confidence >= 0.7 else (0, 255, 255)
             
             # Draw rectangle
-            cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, 2)
+            cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, thickness)
             
             # Draw label with ID
             label = f"ID:{h.track_id} {h.estimated_temp:.0f}C"
             cv2.putText(annotated, label, (h.x, h.y - 5), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+                       cv2.FONT_HERSHEY_SIMPLEX, scale * 0.5, color, thickness)
         
-        # Frame info overlay
+        # Frame info overlay (white text with dark shadow for readability)
         info = f"Frame: {self.frame_number} | Objects: {len(hotspots)} | Alerts: {self.alert_count}"
-        cv2.putText(annotated, info, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(annotated, info, (10, int(20 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale * 0.45, (0, 0, 0), thickness + 1)
+        cv2.putText(annotated, info, (10, int(20 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale * 0.45, (255, 255, 255), thickness)
         
         return annotated
     

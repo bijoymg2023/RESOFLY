@@ -10,6 +10,7 @@ import asyncio
 import time
 import glob
 import cv2
+import numpy as np
 from pathlib import Path
 from pydantic import BaseModel, Field
 from typing import List, Optional, Set
@@ -686,6 +687,13 @@ async def thermal_stream():
             yield b'--frame\r\nContent-Type: text/plain\r\n\r\nNo thermal source available\r\n'
         return StreamingResponse(placeholder(), media_type="multipart/x-mixed-replace; boundary=frame")
     
+    # Pre-generate a "no signal" placeholder frame
+    no_signal = np.zeros((496, 640, 3), dtype=np.uint8)
+    cv2.putText(no_signal, "THERMAL", (180, 220), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 180, 255), 3)
+    cv2.putText(no_signal, "Waiting for sensor data...", (140, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 1)
+    _, no_signal_jpeg = cv2.imencode('.jpg', no_signal, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    no_signal_bytes = no_signal_jpeg.tobytes()
+    
     async def generate():
         while True:
             # Process frame: detect + annotate (synchronized)
@@ -693,15 +701,20 @@ async def thermal_stream():
             
             if frame is not None:
                 _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                yield (
-                    b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' +
-                    jpeg.tobytes() +
-                    b'\r\n'
-                )
+                frame_bytes = jpeg.tobytes()
+            else:
+                # Send placeholder so browser doesn't show blank
+                frame_bytes = no_signal_bytes
             
-            # Target 15 FPS
-            await asyncio.sleep(1/15)
+            yield (
+                b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' +
+                frame_bytes +
+                b'\r\n'
+            )
+            
+            # Target ~8 FPS (Waveshare HAT is ~5 FPS, no need to poll faster)
+            await asyncio.sleep(1/8)
     
     return StreamingResponse(
         generate(),
