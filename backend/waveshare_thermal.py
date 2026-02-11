@@ -1,16 +1,22 @@
 """
 Waveshare 80x62 Thermal Camera HAT Driver
 ==========================================
-Hardware driver for the Waveshare LWIR thermal camera.
+Uses the official pysenxor library (MI48 chip) for proper SPI/I2C communication.
 
-Uses:
-- I2C (smbus) for camera configuration
-- SPI (spidev) for temperature data transfer
-- GPIO for DATA_READY signal
+The MI48 chip protocol:
+- I2C for register configuration (address 0x40)
+- SPI for frame data transfer (row-by-row, 160 bytes per xfer)
+- GPIO23 for hardware reset (nRESET)
+- GPIO24 for DATA_READY signal
+- GPIO7 for manual SPI chip select (CS)
 
-Resolution: 80x62 pixels
-Temperature Range: -20°C to 400°C
-Frame Rate: ~5 FPS (hardware limited)
+Data format: 16-bit deci-Kelvin -> Celsius = value/10 - 273.15
+
+Install pysenxor:
+    cd ~/RESOFLY/backend
+    wget https://files.waveshare.com/wiki/common/Thermal_Camera_Hat.zip
+    unzip Thermal_Camera_Hat.zip
+    cd pysenxor-master && pip install -e ./
 """
 
 import numpy as np
@@ -24,230 +30,239 @@ FRAME_WIDTH = 80
 FRAME_HEIGHT = 62
 FRAME_PIXELS = FRAME_WIDTH * FRAME_HEIGHT
 
-# I2C Configuration
-I2C_BUS = 1
-I2C_ADDR = 0x40
+# MI48 hardware constants
+MI48_I2C_ADDRESS = 0x40
+MI48_I2C_CHANNEL = 1
+MI48_SPI_BUS = 0
+MI48_SPI_CE = 0
+MI48_SPI_MODE = 0b00
+MI48_SPI_SPEED_HZ = 31200000  # 31.2 MHz
+MI48_SPI_XFER_SIZE = 160      # 1 row = 80 pixels x 2 bytes
+MI48_SPI_CS_DELAY = 0.0001
 
-# GPIO Pin for DATA_READY
-DATA_READY_PIN = 24
+# GPIO pins (BCM numbering)
+PIN_DATA_READY = "BCM24"
+PIN_RESET = "BCM23"
+PIN_SPI_CS = "BCM7"
 
 
 class WaveshareThermal:
     """
-    Hardware driver for Waveshare 80x62 Thermal Camera HAT.
-    
-    Reads raw temperature data via SPI and converts to grayscale
-    frame suitable for detection algorithms.
+    Hardware driver for Waveshare 80x62 Thermal Camera HAT (MI48 chip).
+    Uses the official pysenxor/senxor library for correct SPI protocol.
     """
-    
+
     def __init__(self):
         self.available = False
-        self.i2c = None
-        self.spi = None
-        self.crc_func = None
+        self.mi48 = None
+        self.spi_cs = None
         self.last_frame = None
-        self.min_temp = 20.0   # Expected min temp in scene (°C)
-        self.max_temp = 40.0   # Expected max temp for humans (°C)
-        
+        self.frame_count = 0
+        self.min_temp = 15.0
+        self.max_temp = 45.0
+
         self._init_hardware()
-    
+
     def _init_hardware(self):
-        """Initialize I2C, SPI, and GPIO interfaces."""
+        """Initialize MI48 camera using pysenxor library."""
         try:
-            import smbus2
-            import spidev
-            import crcmod
-            
-            # Initialize I2C for configuration
-            self.i2c = smbus2.SMBus(I2C_BUS)
-            
-            # Initialize SPI for data transfer
-            self.spi = spidev.SpiDev()
-            self.spi.open(0, 0)  # Bus 0, Device 0
-            self.spi.max_speed_hz = 20000000  # 20 MHz
-            self.spi.mode = 0  # SPI Mode 0
-            self.spi.bits_per_word = 8
-            
-            # CRC-16 for data validation
-            self.crc_func = crcmod.mkCrcFun(0x18005, initCrc=0xFFFF, xorOut=0x0000)
-            
-            # Try to initialize GPIO for DATA_READY (optional)
+            from smbus2 import SMBus
+            from spidev import SpiDev
+            from gpiozero import DigitalInputDevice, DigitalOutputDevice
+            from senxor.mi48 import MI48
+            from senxor.interfaces import SPI_Interface, I2C_Interface
+
+            logger.info("Initializing MI48 thermal camera via pysenxor...")
+
+            # I2C interface for register access
+            i2c_bus = SMBus(MI48_I2C_CHANNEL)
+            i2c = I2C_Interface(i2c_bus, MI48_I2C_ADDRESS)
+
+            # SPI interface for frame data
+            spi_dev = SpiDev(MI48_SPI_BUS, MI48_SPI_CE)
+            spi = SPI_Interface(spi_dev, xfer_size=MI48_SPI_XFER_SIZE)
+            spi.device.mode = MI48_SPI_MODE
+            spi.device.max_speed_hz = MI48_SPI_SPEED_HZ
+            spi.device.bits_per_word = 8
+            spi.device.lsbfirst = False
+            spi.device.cshigh = True
+            spi.device.no_cs = True
+
+            # Manual chip select (GPIO7)
+            self.spi_cs = DigitalOutputDevice(PIN_SPI_CS, active_high=False, initial_value=False)
+
+            # DATA_READY signal (GPIO24)
+            data_ready = DigitalInputDevice(PIN_DATA_READY, pull_up=False)
+
+            # Hardware reset (GPIO23)
+            reset_pin = DigitalOutputDevice(PIN_RESET, active_high=False, initial_value=True)
+
+            class ResetHandler:
+                def __init__(self, pin):
+                    self.pin = pin
+                def __call__(self):
+                    self.pin.on()
+                    time.sleep(0.000035)
+                    self.pin.off()
+                    time.sleep(0.050)
+
+            # Create MI48 instance (this triggers reset + powerup + bootup)
+            self.mi48 = MI48(
+                [i2c, spi],
+                data_ready=data_ready,
+                reset_handler=ResetHandler(reset_pin)
+            )
+
+            # Configure camera
+            self.mi48.set_fps(5)  # 5 FPS for stable operation
+
+            # Enable noise filters if firmware supports it
             try:
-                import RPi.GPIO as GPIO
-                GPIO.setmode(GPIO.BCM)
-                GPIO.setup(DATA_READY_PIN, GPIO.IN)
-                self.gpio_available = True
-            except:
-                self.gpio_available = False
-                logger.warning("GPIO not available, using timing-based frame sync")
-            
-            # Configure camera (write initial register values)
-            self._configure_camera()
-            
+                fw_major = int(self.mi48.fw_version[0])
+                if fw_major >= 2:
+                    self.mi48.enable_filter(f1=True, f2=True, f3=False)
+                    self.mi48.set_offset_corr(0.0)
+                    logger.info(f"MI48 FW v{self.mi48.fw_version} - filters enabled")
+            except Exception as e:
+                logger.warning(f"Could not configure filters: {e}")
+
+            # Start continuous streaming with header
+            self.mi48.start(stream=True, with_header=True)
+
             self.available = True
-            logger.info("Waveshare 80x62 Thermal Camera initialized successfully")
-            
+            logger.info(
+                f"Waveshare 80x62 Thermal Camera initialized successfully "
+                f"(MI48, I2C=0x{MI48_I2C_ADDRESS:02X})"
+            )
+
         except ImportError as e:
-            logger.warning(f"Waveshare Thermal HAT libraries not installed: {e}")
-            logger.info("Install with: pip install smbus2 spidev crcmod RPi.GPIO")
+            logger.warning(f"Waveshare HAT libraries not installed: {e}")
+            logger.info(
+                "Install pysenxor: cd ~/RESOFLY/backend && "
+                "wget https://files.waveshare.com/wiki/common/Thermal_Camera_Hat.zip && "
+                "unzip Thermal_Camera_Hat.zip && cd pysenxor-master && pip install -e ./"
+            )
         except Exception as e:
-            logger.warning(f"Waveshare Thermal HAT initialization failed: {e}")
-    
-    def _configure_camera(self):
-        """Configure camera registers via I2C."""
-        try:
-            # Basic configuration commands
-            # These may need adjustment based on Waveshare documentation
-            # Register 0x01: Enable continuous mode
-            self.i2c.write_byte_data(I2C_ADDR, 0x01, 0x01)
-            time.sleep(0.1)
-        except Exception as e:
-            logger.warning(f"Camera I2C config failed: {e}")
-    
-    def _wait_for_data_ready(self, timeout=1.0):
-        """Wait for DATA_READY signal or timeout."""
-        if self.gpio_available:
-            import RPi.GPIO as GPIO
-            start = time.time()
-            while time.time() - start < timeout:
-                if GPIO.input(DATA_READY_PIN):
-                    return True
-                time.sleep(0.001)
-            return False
-        else:
-            # Fallback: just wait a frame period (~200ms for 5fps)
-            time.sleep(0.2)
-            return True
-    
-    def _read_raw_frame(self):
+            logger.warning(f"Waveshare Thermal HAT init failed: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _read_frame(self):
         """
-        Read raw temperature data from SPI.
-        
-        Returns: numpy array of shape (62, 80) with raw ADC values
+        Read one frame from the MI48 via SPI.
+
+        Returns: tuple (temperature_celsius_array, header) or (None, None)
         """
-        if not self.available or self.spi is None:
-            return None
-        
+        if not self.available or self.mi48 is None:
+            return None, None
+
         try:
-            # Wait for frame to be ready
-            if not self._wait_for_data_ready():
-                logger.debug("DATA_READY timeout, reading anyway...")
-            
-            # Each pixel is 2 bytes (16-bit temperature value)
-            # Total: 80 * 62 * 2 = 9920 bytes + 2 bytes CRC = 9922 bytes
-            bytes_to_read = FRAME_PIXELS * 2 + 2
-            
-            # Send dummy bytes to generate clock and receive data
-            raw_bytes = self.spi.xfer2([0x00] * bytes_to_read)
-            
-            # Validate CRC (last 2 bytes)
-            data_bytes = bytes(raw_bytes[:-2])
-            received_crc = (raw_bytes[-2] << 8) | raw_bytes[-1]
-            
-            if self.crc_func:
-                calculated_crc = self.crc_func(data_bytes)
-                if calculated_crc != received_crc:
-                    # CRC mismatch: WARN but still use the frame data
-                    # Many thermal cameras have CRC issues but data is still usable
-                    logger.debug(f"CRC mismatch (got {received_crc:#06x}, expected {calculated_crc:#06x}), using frame anyway")
-            
-            # Convert to 16-bit array
-            raw_data = np.frombuffer(data_bytes, dtype=np.uint16)
-            
-            # Check if data is all zeros (camera not sending data)
-            if np.max(raw_data) == 0:
-                logger.debug("SPI returned all zeros — camera may need more init time")
-                return None
-            
-            # Reshape to frame dimensions
-            frame = raw_data.reshape((FRAME_HEIGHT, FRAME_WIDTH))
-            
-            return frame
-            
+            # Wait for DATA_READY signal
+            if hasattr(self.mi48, 'data_ready') and self.mi48.data_ready is not None:
+                self.mi48.data_ready.wait_for_active(timeout=1.0)
+            else:
+                # Fallback: poll status register
+                for _ in range(100):
+                    status = self.mi48.get_status()
+                    if status & 0x10:  # DATA_READY bit
+                        break
+                    time.sleep(0.01)
+
+            # Assert chip select, read frame, deassert
+            if self.spi_cs:
+                self.spi_cs.on()
+                time.sleep(MI48_SPI_CS_DELAY)
+
+            data, header = self.mi48.read()
+
+            if self.spi_cs:
+                time.sleep(MI48_SPI_CS_DELAY)
+                self.spi_cs.off()
+
+            if data is None:
+                return None, None
+
+            return data, header
+
         except Exception as e:
-            logger.error(f"SPI read error: {e}")
-            return None
-    
+            logger.error(f"MI48 read error: {e}")
+            if self.spi_cs:
+                self.spi_cs.off()
+            return None, None
+
     def get_temperature_frame(self):
         """
         Get temperature frame in Celsius.
-        
-        Returns: numpy array of shape (62, 80) with temperature in °C
+
+        Returns: numpy array of shape (62, 80) with temperature in degrees C
         """
-        raw = self._read_raw_frame()
-        if raw is None:
+        data, header = self._read_frame()
+        if data is None:
             return None
-        
-        # Convert raw ADC to temperature
-        # Waveshare uses: Temp(°C) = raw_value / 100
-        temp_frame = raw.astype(np.float32) / 100.0
-        
-        return temp_frame
-    
+
+        try:
+            # pysenxor already converts deci-Kelvin to Celsius
+            # data is float16 array, reshape to (62, 80)
+            from senxor.utils import data_to_frame
+            temp_frame = data_to_frame(data, self.mi48.fpa_shape)
+            self.frame_count += 1
+            return temp_frame.astype(np.float32)
+        except Exception as e:
+            logger.error(f"Frame parse error: {e}")
+            return None
+
     def get_frame(self):
         """
         Get grayscale frame normalized for detection.
-        
+
         Returns: 8-bit grayscale numpy array (62, 80)
         """
-        # Retry up to 3 times if read fails
-        temp_frame = None
-        for attempt in range(3):
-            temp_frame = self.get_temperature_frame()
-            if temp_frame is not None:
-                break
-            time.sleep(0.05)  # Brief pause before retry
-        
+        temp_frame = self.get_temperature_frame()
         if temp_frame is None:
             if self.last_frame is not None:
-                return self.last_frame  # Return cached frame
-            # Generate a diagnostic test pattern so the stream isn't blank
-            logger.warning("No SPI data received — sending test pattern")
+                return self.last_frame
+
+            # Generate diagnostic test pattern
+            logger.warning("No frame data - sending test pattern")
             pattern = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), dtype=np.uint8)
-            # Gradient pattern to prove stream is working
             for y in range(FRAME_HEIGHT):
                 for x in range(FRAME_WIDTH):
                     pattern[y, x] = int((x / FRAME_WIDTH) * 200 + (y / FRAME_HEIGHT) * 55)
             return pattern
-        
-        # Dynamic range adjustment based on scene
-        scene_min = max(self.min_temp, np.percentile(temp_frame, 5))
-        scene_max = min(self.max_temp, np.percentile(temp_frame, 99))
-        
-        # Prevent division by zero
+
+        # Dynamic range normalization
+        scene_min = max(self.min_temp, float(np.percentile(temp_frame, 5)))
+        scene_max = min(self.max_temp, float(np.percentile(temp_frame, 99)))
+
         if scene_max <= scene_min:
             scene_max = scene_min + 1.0
-        
-        # Normalize to 0-255
+
         normalized = (temp_frame - scene_min) / (scene_max - scene_min)
         normalized = np.clip(normalized, 0, 1)
         grayscale = (normalized * 255).astype(np.uint8)
-        
+
         self.last_frame = grayscale
         return grayscale
-    
+
     def get_max_temperature(self):
-        """Get the maximum temperature in the current frame (°C)."""
+        """Get the maximum temperature in the current frame (deg C)."""
         temp = self.get_temperature_frame()
         if temp is not None:
             return float(np.max(temp))
         return None
-    
+
     def is_available(self):
         """Check if camera is available."""
         return self.available
-    
+
     def close(self):
         """Release hardware resources."""
         try:
-            if self.spi:
-                self.spi.close()
-            if self.i2c:
-                self.i2c.close()
-            if self.gpio_available:
-                import RPi.GPIO as GPIO
-                GPIO.cleanup(DATA_READY_PIN)
-        except:
+            if self.mi48:
+                self.mi48.stop()
+            if self.spi_cs:
+                self.spi_cs.off()
+        except Exception:
             pass
 
 
