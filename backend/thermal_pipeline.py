@@ -122,12 +122,15 @@ class WaveshareSource:
             if len(frame.shape) == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # Upscale 80x62 → 640x496 with bicubic interpolation
+            # Upscale 80x62 → 640x496 with Lanczos (best quality) + smooth
             upscaled = cv2.resize(
                 frame,
                 (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
-                interpolation=cv2.INTER_CUBIC
+                interpolation=cv2.INTER_LANCZOS4
             )
+            
+            # Gaussian blur to eliminate pixel grid artifacts
+            upscaled = cv2.GaussianBlur(upscaled, (5, 5), 1.5)
             
             return upscaled
         return None
@@ -185,7 +188,7 @@ class ThermalDetector:
         adaptive: bool = True
     ):
         self.min_area = min_area
-        self.blur_kernel = blur_kernel
+        self.blur_kernel = max(blur_kernel, 7)  # Larger blur for cleaner detection
         self.adaptive = adaptive
     
     def process(self, frame: np.ndarray) -> Tuple[List[Hotspot], np.ndarray]:
@@ -212,7 +215,7 @@ class ThermalDetector:
         if self.adaptive:
             mean = np.mean(blurred)
             std = np.std(blurred)
-            thresh_val = int(min(180, mean + 1.5 * std))  # Clamp to 180 to prevent runaway
+            thresh_val = int(min(200, mean + 2.0 * std))  # Higher threshold = fewer false positives
             thresh_val = max(thresh_val, HUMAN_TEMP_THRESHOLD_INTENSITY)
         else:
             thresh_val = HUMAN_TEMP_THRESHOLD_INTENSITY
@@ -220,10 +223,11 @@ class ThermalDetector:
         # Binary threshold
         _, binary = cv2.threshold(blurred, thresh_val, 255, cv2.THRESH_BINARY)
         
-        # Morphological cleanup
-        kernel = np.ones((3, 3), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+        # Morphological cleanup (5x5 kernel to merge fragmented blobs)
+        kernel = np.ones((5, 5), np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)   # Remove noise
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # Fill gaps
+        binary = cv2.morphologyEx(binary, cv2.MORPH_DILATE, kernel) # Merge nearby blobs
         
         # Find contours
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -279,8 +283,8 @@ class ThermalFramePipeline:
     
     def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
         self.source = source
-        self.detector = ThermalDetector(adaptive=True, min_area=30)
-        self.tracker = CentroidTracker(max_disappeared=10, max_distance=50)
+        self.detector = ThermalDetector(adaptive=True, min_area=150)
+        self.tracker = CentroidTracker(max_disappeared=50, max_distance=120)
         self.on_detection = on_detection
         
         self.frame_number = 0
@@ -312,7 +316,7 @@ class ThermalFramePipeline:
         # 2. Prepare bounding boxes for tracker
         rects = []
         for h in raw_hotspots:
-            if h.confidence >= 0.5:
+            if h.confidence >= 0.65:
                 rects.append((h.x, h.y, h.width, h.height))
         
         # 3. Update Tracker
@@ -369,37 +373,32 @@ class ThermalFramePipeline:
         return self._annotate(frame, self.current_hotspots)
     
     def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
-        """Apply thermal colormap and draw bounding boxes + IDs on frame."""
+        """Apply thermal colormap and draw clean bounding boxes on frame."""
         # Apply thermal colormap for display (INFERNO: black→purple→orange→yellow)
         if len(frame.shape) == 2:
             annotated = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
         else:
             annotated = frame.copy()
         
-        h_frame, w_frame = annotated.shape[:2]
-        # Scale factor for text/lines (bigger frames = bigger text)
-        scale = max(0.4, w_frame / 640.0)
-        thickness = max(1, int(scale * 2))
+        # Only annotate high-confidence detections (reduces clutter)
+        strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.65]
         
-        for h in hotspots:
-            if not hasattr(h, 'track_id'):
-                continue
-                
-            # Bright colors that stand out against INFERNO colormap
-            color = (0, 255, 0) if h.confidence >= 0.7 else (0, 255, 255)
+        for h in strong:
+            # Color by confidence: green=high, cyan=medium
+            color = (0, 255, 0) if h.confidence >= 0.8 else (0, 255, 255)
             
-            # Draw rectangle
-            cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, thickness)
+            # Thin rectangle (1px) for clean look
+            cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, 1)
             
-            # Draw label with ID
-            label = f"ID:{h.track_id} {h.estimated_temp:.0f}C"
-            cv2.putText(annotated, label, (h.x, h.y - 5), 
-                       cv2.FONT_HERSHEY_SIMPLEX, scale * 0.5, color, thickness)
+            # Small compact label
+            label = f"{h.estimated_temp:.0f}C"
+            cv2.putText(annotated, label, (h.x, h.y - 4), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA)
         
-        # Frame info overlay (white text with dark shadow for readability)
-        info = f"Frame: {self.frame_number} | Objects: {len(hotspots)} | Alerts: {self.alert_count}"
-        cv2.putText(annotated, info, (10, int(20 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale * 0.45, (0, 0, 0), thickness + 1)
-        cv2.putText(annotated, info, (10, int(20 * scale)), cv2.FONT_HERSHEY_SIMPLEX, scale * 0.45, (255, 255, 255), thickness)
+        # Minimal status bar (bottom-left, small)
+        info = f"Objects: {len(strong)}"
+        cv2.putText(annotated, info, (8, annotated.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 0), 2, cv2.LINE_AA)
+        cv2.putText(annotated, info, (8, annotated.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
         
         return annotated
     
@@ -435,7 +434,7 @@ async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 15)
         
         if frame is not None:
             # Encode as JPEG
-            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
             
             yield (
                 b'--frame\r\n'
