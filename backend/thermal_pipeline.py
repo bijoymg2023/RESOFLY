@@ -122,15 +122,20 @@ class WaveshareSource:
             if len(frame.shape) == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # Upscale 80x62 → 640x496 with Lanczos (best quality) + smooth
-            upscaled = cv2.resize(
-                frame,
-                (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
-                interpolation=cv2.INTER_LANCZOS4
-            )
+            # --- 2-stage upscale with bilateral filtering ---
+            # This produces smooth, clean thermal images like the Waveshare demo.
+            # Bilateral filter preserves heat edges while eliminating pixel grid.
             
-            # Gaussian blur to eliminate pixel grid artifacts
-            upscaled = cv2.GaussianBlur(upscaled, (5, 5), 1.5)
+            # Stage 1: 80x62 → 320x248 (4x) with cubic interpolation
+            mid = cv2.resize(frame, (320, 248), interpolation=cv2.INTER_CUBIC)
+            # Bilateral filter: smooth flat regions, preserve heat boundaries
+            mid = cv2.bilateralFilter(mid, d=9, sigmaColor=75, sigmaSpace=75)
+            
+            # Stage 2: 320x248 → 640x496 (2x) with Lanczos
+            upscaled = cv2.resize(mid, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
+                                  interpolation=cv2.INTER_LANCZOS4)
+            # Second bilateral pass for silky-smooth gradients
+            upscaled = cv2.bilateralFilter(upscaled, d=9, sigmaColor=50, sigmaSpace=50)
             
             return upscaled
         return None
@@ -283,7 +288,7 @@ class ThermalFramePipeline:
     
     def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
         self.source = source
-        self.detector = ThermalDetector(adaptive=True, min_area=150)
+        self.detector = ThermalDetector(adaptive=True, min_area=300)
         self.tracker = CentroidTracker(max_disappeared=50, max_distance=120)
         self.on_detection = on_detection
         
@@ -374,26 +379,28 @@ class ThermalFramePipeline:
     
     def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
         """Apply thermal colormap and draw clean bounding boxes on frame."""
-        # Apply thermal colormap for display (INFERNO: black→purple→orange→yellow)
+        # Apply JET colormap (blue→cyan→green→yellow→red) — matches Waveshare demo
         if len(frame.shape) == 2:
-            annotated = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
+            annotated = cv2.applyColorMap(frame, cv2.COLORMAP_JET)
         else:
             annotated = frame.copy()
         
         # Only annotate high-confidence detections (reduces clutter)
-        strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.65]
+        strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.70]
         
         for h in strong:
-            # Color by confidence: green=high, cyan=medium
-            color = (0, 255, 0) if h.confidence >= 0.8 else (0, 255, 255)
+            # White boxes stand out on JET colormap
+            color = (255, 255, 255)
             
             # Thin rectangle (1px) for clean look
             cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, 1)
             
-            # Small compact label
+            # Small compact label with dark shadow for readability
             label = f"{h.estimated_temp:.0f}C"
             cv2.putText(annotated, label, (h.x, h.y - 4), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1, cv2.LINE_AA)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 2, cv2.LINE_AA)
+            cv2.putText(annotated, label, (h.x, h.y - 4), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
         
         # Minimal status bar (bottom-left, small)
         info = f"Objects: {len(strong)}"
@@ -434,7 +441,7 @@ async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 15)
         
         if frame is not None:
             # Encode as JPEG
-            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
             
             yield (
                 b'--frame\r\n'
