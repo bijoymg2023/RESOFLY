@@ -86,18 +86,27 @@ class WaveshareSource:
     """
     Live thermal source from Waveshare 80x62 Thermal Camera HAT.
     Wraps the waveshare_thermal hardware driver for the unified pipeline.
-    Upscales from native 80x62 to 1280x992 for maximum quality display.
+    
+    Best possible quality from this sensor:
+    - Native: 80x62 pixels (4,960 thermal pixels)
+    - Display: 960x744 (12x upscale — sweet spot for quality vs bandwidth)
+    - Detection: runs on 480x372 (6x) for speed
     """
     
-    # Output resolution (16x upscale from 80x62)
-    OUTPUT_WIDTH = 1280
-    OUTPUT_HEIGHT = 992
+    # Display resolution (12x upscale — best balance of quality and streaming speed)
+    OUTPUT_WIDTH = 960
+    OUTPUT_HEIGHT = 744
+    
+    # Detection resolution (6x — half of display, fast for contour ops)
+    DETECT_WIDTH = 480
+    DETECT_HEIGHT = 372
     
     def __init__(self):
         self._available = False
         self.camera = None
         self.fps = 5  # Hardware limited ~5 FPS
         self.frame_count = 0  # Live = unlimited
+        self._prev_frame = None  # For temporal smoothing
         
         try:
             from waveshare_thermal import get_thermal_camera
@@ -122,36 +131,39 @@ class WaveshareSource:
             if len(frame.shape) == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # --- Ultra-smooth pipeline matching Waveshare demo quality ---
-            # Key insight: The YouTube demo has perfectly smooth backgrounds
-            # because they heavily smooth BEFORE applying the colormap.
-            # No CLAHE (it amplifies sensor noise into visible speckles).
+            # --- Best possible quality pipeline for 80x62 sensor ---
             
-            # 1. Normalize raw 80x62 to full 0-255 range for max contrast
+            # 1. Normalize to full 0-255 range
             frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             
-            # 2. Denoise the raw 80x62 frame (kills sensor noise at source,
-            #    very cheap at this tiny resolution)
+            # 2. Temporal smoothing: blend with previous frame to reduce
+            #    frame-to-frame sensor noise flicker (huge quality boost)
+            if self._prev_frame is not None:
+                frame = cv2.addWeighted(frame, 0.6, self._prev_frame, 0.4, 0)
+            self._prev_frame = frame.copy()
+            
+            # 3. Denoise at native 80x62 (cheapest, most effective)
             frame = cv2.GaussianBlur(frame, (3, 3), 0.8)
             
-            # 3. Convert to float32 for precision during upscale
+            # 4. Float32 upscale to display resolution
             fframe = frame.astype(np.float32)
-            
-            # 4. Single smooth upscale 80x62 → 1280x992 in float32
-            #    INTER_CUBIC on float32 produces much smoother gradients
             upscaled = cv2.resize(fframe, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
                                   interpolation=cv2.INTER_CUBIC)
             
-            # 5. Heavy Gaussian blur — this is the key to the silky-smooth
-            #    Waveshare demo look. Large kernel eliminates ALL pixel grid
-            #    artifacts and sensor noise patterns.
-            upscaled = cv2.GaussianBlur(upscaled, (31, 31), 0)
+            # 5. Smooth out pixel grid — 21x21 is aggressive enough to
+            #    eliminate grid but not so big it's slow on Pi
+            upscaled = cv2.GaussianBlur(upscaled, (21, 21), 0)
             
             # 6. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
             
             return upscaled
         return None
+    
+    def get_detect_frame(self, display_frame: np.ndarray) -> np.ndarray:
+        """Downscale display frame for fast detection processing."""
+        return cv2.resize(display_frame, (self.DETECT_WIDTH, self.DETECT_HEIGHT),
+                         interpolation=cv2.INTER_AREA)
     
     def is_available(self) -> bool:
         return self._available
@@ -301,8 +313,9 @@ class ThermalFramePipeline:
     
     def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
         self.source = source
-        self.detector = ThermalDetector(adaptive=True, min_area=1200)
-        self.tracker = CentroidTracker(max_disappeared=50, max_distance=240)
+        # min_area=400 on 480x372 detect frame (~equivalent to 1600 on 960x744)
+        self.detector = ThermalDetector(adaptive=True, min_area=400)
+        self.tracker = CentroidTracker(max_disappeared=50, max_distance=120)
         self.on_detection = on_detection
         
         self.frame_number = 0
@@ -319,6 +332,7 @@ class ThermalFramePipeline:
     def process_next(self) -> Optional[np.ndarray]:
         """
         Get next frame, detect hotspots, track objects, trigger alerts for NEW IDs.
+        Detection runs on smaller frame for speed; boxes scaled up for display.
         """
         frame = self.source.get_frame()
         if frame is None:
@@ -328,13 +342,29 @@ class ThermalFramePipeline:
         self.current_frame = frame.copy()
         timestamp = datetime.utcnow()
         
-        # 1. Detect hotspots on THIS frame
-        raw_hotspots, binary = self.detector.process(frame)
+        # 1. Detect hotspots on SMALLER frame for speed
+        if hasattr(self.source, 'get_detect_frame'):
+            detect_frame = self.source.get_detect_frame(frame)
+            scale_x = frame.shape[1] / detect_frame.shape[1]
+            scale_y = frame.shape[0] / detect_frame.shape[0]
+        else:
+            detect_frame = frame
+            scale_x = scale_y = 1.0
+        
+        raw_hotspots, binary = self.detector.process(detect_frame)
+        
+        # Scale hotspot coordinates back to display resolution
+        if scale_x != 1.0:
+            for h in raw_hotspots:
+                h.x = int(h.x * scale_x)
+                h.y = int(h.y * scale_y)
+                h.width = int(h.width * scale_x)
+                h.height = int(h.height * scale_y)
         
         # 2. Prepare bounding boxes for tracker
         rects = []
         for h in raw_hotspots:
-            if h.confidence >= 0.65:
+            if h.confidence >= 0.70:
                 rects.append((h.x, h.y, h.width, h.height))
         
         # 3. Update Tracker
@@ -354,7 +384,7 @@ class ThermalFramePipeline:
                 cy = h.y + h.height // 2
                 dist = np.sqrt((cx - centroid[0])**2 + (cy - centroid[1])**2)
                 
-                if dist < 50:  # Threshold to associate
+                if dist < 120:  # Threshold to associate
                     if dist < min_dist:
                         min_dist = dist
                         best_match = h
@@ -434,18 +464,17 @@ class ThermalFramePipeline:
 
 # ============ ASYNC STREAM GENERATOR ============
 
-async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 15):
+async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 8):
     """
     Async generator for MJPEG stream.
     
-    Each frame is:
-    1. Fetched from source
-    2. Processed for detection
-    3. Annotated with bounding boxes
-    4. Encoded as JPEG
-    5. Yielded for HTTP streaming
+    Optimized for zero-lag streaming:
+    - FPS=8 (slightly above hardware 5 FPS — no frame starvation)
+    - JPEG quality 85 (visually identical to 100, ~3x smaller file size)
+    - Minimal sleep to keep the stream responsive
     """
     frame_delay = 1.0 / fps
+    last_jpeg = None
     
     while True:
         start = time.time()
@@ -453,13 +482,16 @@ async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 15)
         frame = pipeline.process_next()
         
         if frame is not None:
-            # Encode as JPEG
-            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
-            
+            # JPEG 85 = best quality/size ratio. 100 is 3x larger with
+            # no visible difference, and causes stream buffering/freezing.
+            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            last_jpeg = jpeg
+        
+        if last_jpeg is not None:
             yield (
                 b'--frame\r\n'
                 b'Content-Type: image/jpeg\r\n\r\n' + 
-                jpeg.tobytes() + 
+                last_jpeg.tobytes() + 
                 b'\r\n'
             )
         
@@ -467,6 +499,8 @@ async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 15)
         elapsed = time.time() - start
         if elapsed < frame_delay:
             await asyncio.sleep(frame_delay - elapsed)
+        else:
+            await asyncio.sleep(0.01)  # Yield control even if behind
 
 
 # ============ TEST ============
