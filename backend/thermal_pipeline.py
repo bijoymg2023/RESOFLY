@@ -443,7 +443,7 @@ class ThermalFramePipeline:
         # Only annotate high-confidence detections (reduces clutter)
         strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.70]
         
-        for h in strong:
+        # Loop to annotate each strong detection
         for h in strong:
             # Green boxes (High Visibility)
             color = (0, 255, 0)
