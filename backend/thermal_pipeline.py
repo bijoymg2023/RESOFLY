@@ -330,7 +330,9 @@ class ThermalFramePipeline:
         self.current_hotspots: List[Hotspot] = []
         
         # Track which IDs we've already alerted on
-        self.alerted_ids: Set[int] = set()
+        # Track timestamps for alerts to allow re-alerting
+        # Dict[int, float] -> {track_id: last_alert_timestamp}
+        self.alerted_ids: dict = {}
         
         # Stats
         self.detection_count = 0
@@ -402,9 +404,12 @@ class ThermalFramePipeline:
                 h.track_id = object_id  # We'll need to add this field to Hotspot dataclass
                 tracked_hotspots.append(h)
                 
-                # Check if this is a NEW object we haven't alerted on yet
-                if object_id not in self.alerted_ids:
-                    self.alerted_ids.add(object_id)
+                # Check if this is a NEW object OR if it's time to re-alert (e.g. 5 seconds)
+                now = time.time()
+                last_alert = self.alerted_ids.get(object_id, 0.0)
+                
+                if (now - last_alert) > 5.0:  # 5-second cooldown
+                    self.alerted_ids[object_id] = now
                     new_alerts.append(h)
                     self.alert_count += 1
         
@@ -439,11 +444,12 @@ class ThermalFramePipeline:
         strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.70]
         
         for h in strong:
-            # White boxes stand out on JET colormap
-            color = (255, 255, 255)
+        for h in strong:
+            # Green boxes (High Visibility)
+            color = (0, 255, 0)
             
-            # Thin rectangle (1px) for clean look
-            cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, 1)
+            # Thicker rectangle (2px)
+            cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, 2)
             
             # Small compact label with dark shadow for readability
             label = f"{h.estimated_temp:.0f}C"
