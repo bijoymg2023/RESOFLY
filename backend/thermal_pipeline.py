@@ -86,12 +86,12 @@ class WaveshareSource:
     """
     Live thermal source from Waveshare 80x62 Thermal Camera HAT.
     Wraps the waveshare_thermal hardware driver for the unified pipeline.
-    Upscales from native 80x62 to 640x496 for usable stream display.
+    Upscales from native 80x62 to 1280x992 for maximum quality display.
     """
     
-    # Output resolution (8x upscale from 80x62)
-    OUTPUT_WIDTH = 640
-    OUTPUT_HEIGHT = 496
+    # Output resolution (16x upscale from 80x62)
+    OUTPUT_WIDTH = 1280
+    OUTPUT_HEIGHT = 992
     
     def __init__(self):
         self._available = False
@@ -122,22 +122,27 @@ class WaveshareSource:
             if len(frame.shape) == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # --- 2-stage upscale with bilateral filtering ---
-            # This produces smooth, clean thermal images like the Waveshare demo.
-            # Bilateral filter preserves heat edges while eliminating pixel grid.
+            # --- CLAHE + 3-stage upscale with triple bilateral filtering ---
+            # Maximum quality pipeline for ultra-smooth thermal imagery.
             
-            # Stage 1: 80x62 → 320x248 (4x) with cubic interpolation
-            mid = cv2.resize(frame, (320, 248), interpolation=cv2.INTER_CUBIC)
-            # Bilateral filter: smooth flat regions, preserve heat boundaries
-            mid = cv2.bilateralFilter(mid, d=9, sigmaColor=75, sigmaSpace=75)
+            # CLAHE: Dramatically improves thermal contrast and reveals detail
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+            frame = clahe.apply(frame)
             
-            # Stage 2: 320x248 → 640x496 (2x) with Lanczos
-            upscaled = cv2.resize(mid, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
-                                  interpolation=cv2.INTER_LANCZOS4)
-            # Second bilateral pass for silky-smooth gradients
-            upscaled = cv2.bilateralFilter(upscaled, d=9, sigmaColor=50, sigmaSpace=50)
+            # Stage 1: 80x62 → 320x248 (4x)
+            s1 = cv2.resize(frame, (320, 248), interpolation=cv2.INTER_CUBIC)
+            s1 = cv2.bilateralFilter(s1, d=9, sigmaColor=75, sigmaSpace=75)
             
-            return upscaled
+            # Stage 2: 320x248 → 640x496 (2x)
+            s2 = cv2.resize(s1, (640, 496), interpolation=cv2.INTER_LANCZOS4)
+            s2 = cv2.bilateralFilter(s2, d=9, sigmaColor=60, sigmaSpace=60)
+            
+            # Stage 3: 640x496 → 1280x992 (2x)
+            s3 = cv2.resize(s2, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
+                            interpolation=cv2.INTER_LANCZOS4)
+            s3 = cv2.bilateralFilter(s3, d=7, sigmaColor=40, sigmaSpace=40)
+            
+            return s3
         return None
     
     def is_available(self) -> bool:
@@ -288,8 +293,8 @@ class ThermalFramePipeline:
     
     def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
         self.source = source
-        self.detector = ThermalDetector(adaptive=True, min_area=300)
-        self.tracker = CentroidTracker(max_disappeared=50, max_distance=120)
+        self.detector = ThermalDetector(adaptive=True, min_area=1200)
+        self.tracker = CentroidTracker(max_disappeared=50, max_distance=240)
         self.on_detection = on_detection
         
         self.frame_number = 0
@@ -441,7 +446,7 @@ async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 15)
         
         if frame is not None:
             # Encode as JPEG
-            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
             
             yield (
                 b'--frame\r\n'
