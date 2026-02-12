@@ -142,17 +142,24 @@ class WaveshareSource:
                 frame = cv2.addWeighted(frame, 0.6, self._prev_frame, 0.4, 0)
             self._prev_frame = frame.copy()
             
-            # 3. Denoise at native 80x62 (cheapest, most effective)
+            # 3. Enhance Contrast (CLAHE) - Make people POP from background
+            # Clip limit 2.0, Grid size 8x8 is standard for thermal
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            frame = clahe.apply(frame)
+            
+            # 4. Denoise lightly (preserve edges)
             frame = cv2.GaussianBlur(frame, (3, 3), 0)
             
-            # 4. Float32 upscale to display resolution
+            # 5. Float32 upscale to display resolution
+            # CUBIC is sharper than Linear. At 640x496 it's fast enough.
             fframe = frame.astype(np.float32)
             upscaled = cv2.resize(fframe, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
-                                  interpolation=cv2.INTER_LINEAR)
+                                  interpolation=cv2.INTER_CUBIC)
             
-            # 5. Smooth out pixel grid — 5x5 is enough for linear
-            #    eliminate grid but not so big it's slow on Pi
-            upscaled = cv2.GaussianBlur(upscaled, (5, 5), 0)
+            # 6. Sharpening (Unsharp Mask) instead of Blurring
+            # This makes edges crisp instead of blobby
+            gaussian_3 = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
+            upscaled = cv2.addWeighted(upscaled, 1.5, gaussian_3, -0.5, 0)
             
             # 6. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
