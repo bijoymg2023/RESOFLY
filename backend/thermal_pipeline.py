@@ -122,27 +122,35 @@ class WaveshareSource:
             if len(frame.shape) == 3:
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             
-            # --- CLAHE + 3-stage upscale with triple bilateral filtering ---
-            # Maximum quality pipeline for ultra-smooth thermal imagery.
+            # --- Ultra-smooth pipeline matching Waveshare demo quality ---
+            # Key insight: The YouTube demo has perfectly smooth backgrounds
+            # because they heavily smooth BEFORE applying the colormap.
+            # No CLAHE (it amplifies sensor noise into visible speckles).
             
-            # CLAHE: Dramatically improves thermal contrast and reveals detail
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
-            frame = clahe.apply(frame)
+            # 1. Normalize raw 80x62 to full 0-255 range for max contrast
+            frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             
-            # Stage 1: 80x62 → 320x248 (4x)
-            s1 = cv2.resize(frame, (320, 248), interpolation=cv2.INTER_CUBIC)
-            s1 = cv2.bilateralFilter(s1, d=9, sigmaColor=75, sigmaSpace=75)
+            # 2. Denoise the raw 80x62 frame (kills sensor noise at source,
+            #    very cheap at this tiny resolution)
+            frame = cv2.GaussianBlur(frame, (3, 3), 0.8)
             
-            # Stage 2: 320x248 → 640x496 (2x)
-            s2 = cv2.resize(s1, (640, 496), interpolation=cv2.INTER_LANCZOS4)
-            s2 = cv2.bilateralFilter(s2, d=9, sigmaColor=60, sigmaSpace=60)
+            # 3. Convert to float32 for precision during upscale
+            fframe = frame.astype(np.float32)
             
-            # Stage 3: 640x496 → 1280x992 (2x)
-            s3 = cv2.resize(s2, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
-                            interpolation=cv2.INTER_LANCZOS4)
-            s3 = cv2.bilateralFilter(s3, d=7, sigmaColor=40, sigmaSpace=40)
+            # 4. Single smooth upscale 80x62 → 1280x992 in float32
+            #    INTER_CUBIC on float32 produces much smoother gradients
+            upscaled = cv2.resize(fframe, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
+                                  interpolation=cv2.INTER_CUBIC)
             
-            return s3
+            # 5. Heavy Gaussian blur — this is the key to the silky-smooth
+            #    Waveshare demo look. Large kernel eliminates ALL pixel grid
+            #    artifacts and sensor noise patterns.
+            upscaled = cv2.GaussianBlur(upscaled, (31, 31), 0)
+            
+            # 6. Convert back to uint8
+            upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
+            
+            return upscaled
         return None
     
     def is_available(self) -> bool:
