@@ -93,13 +93,13 @@ class WaveshareSource:
     - Detection: runs on 480x372 (6x) for speed
     """
     
-    # Display resolution (12x upscale — best balance of quality and streaming speed)
-    OUTPUT_WIDTH = 960
-    OUTPUT_HEIGHT = 744
+    # Display resolution (8x upscale — standard 640x480-ish)
+    OUTPUT_WIDTH = 640
+    OUTPUT_HEIGHT = 496
     
-    # Detection resolution (6x — half of display, fast for contour ops)
-    DETECT_WIDTH = 480
-    DETECT_HEIGHT = 372
+    # Detection resolution (2x — fast for contour ops)
+    DETECT_WIDTH = 160
+    DETECT_HEIGHT = 124
     
     def __init__(self):
         self._available = False
@@ -143,16 +143,16 @@ class WaveshareSource:
             self._prev_frame = frame.copy()
             
             # 3. Denoise at native 80x62 (cheapest, most effective)
-            frame = cv2.GaussianBlur(frame, (3, 3), 0.8)
+            frame = cv2.GaussianBlur(frame, (3, 3), 0)
             
             # 4. Float32 upscale to display resolution
             fframe = frame.astype(np.float32)
             upscaled = cv2.resize(fframe, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
-                                  interpolation=cv2.INTER_CUBIC)
+                                  interpolation=cv2.INTER_LINEAR)
             
-            # 5. Smooth out pixel grid — 21x21 is aggressive enough to
+            # 5. Smooth out pixel grid — 5x5 is enough for linear
             #    eliminate grid but not so big it's slow on Pi
-            upscaled = cv2.GaussianBlur(upscaled, (21, 21), 0)
+            upscaled = cv2.GaussianBlur(upscaled, (5, 5), 0)
             
             # 6. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
@@ -469,7 +469,7 @@ async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 8):
     Async generator for MJPEG stream.
     
     Optimized for zero-lag streaming:
-    - FPS=8 (slightly above hardware 5 FPS — no frame starvation)
+    - FPS=15 (Higher target to drain buffer faster)
     - JPEG quality 85 (visually identical to 100, ~3x smaller file size)
     - Minimal sleep to keep the stream responsive
     """
