@@ -841,7 +841,7 @@ async def startup():
                             
                             alert = AlertDB(
                                 id=alert_id,
-                                type='life',
+                                type='LIFE',
                                 title=f'PERSON #{obj_id} DETECTED',
                                 message=f"New target tracked (ID: {obj_id}, {hotspot.estimated_temp:.0f}°C, {int(hotspot.confidence*100)}%)",
                                 timestamp=event.timestamp,

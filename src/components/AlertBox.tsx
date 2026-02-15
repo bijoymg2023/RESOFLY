@@ -98,7 +98,7 @@ export const AlertBox = () => {
                     {alert.type}
                   </span>
                   <span className="text-foreground/80 dark:text-white/80 flex-1 text-[11px] truncate">
-                    {alert.type === 'LIFE'
+                    {(alert.type === 'LIFE' || alert.type === 'life')
                       ? `Human Signature (Conf: ${(alert.confidence * 100).toFixed(0)}%)`
                       : `Detection Event at ${alert.lat.toFixed(4)}, ${alert.lon.toFixed(4)}`
                     }
