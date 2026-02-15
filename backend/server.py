@@ -78,7 +78,7 @@ class AlertDB(Base):
     type = Column(String)
     title = Column(String)
     message = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=get_ist_time)
     acknowledged = Column(Boolean, default=False)
     # New Detection Fields
     lat = Column(Float, default=0.0)
@@ -90,7 +90,7 @@ class StatusCheckDB(Base):
     __tablename__ = "status_checks"
     id = Column(String, primary_key=True, index=True)
     client_name = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=get_ist_time)
 
 # Pydantic Schemas
 class Token(BaseModel):
@@ -444,7 +444,7 @@ async def get_gps(current_user: UserDB = Depends(get_current_user)):
          # Ensure timestamp is datetime
          if isinstance(data.get("timestamp"), str):
              # basic fallback if parsing failed
-             data["timestamp"] = datetime.utcnow()
+             data["timestamp"] = get_ist_time()
          return GPSData(**data)
          
     # Fallback if no GPS hardware found (return zeros instead of mock)
@@ -479,7 +479,7 @@ async def get_system_status(current_user: UserDB = Depends(get_current_user)):
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate, db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     new_status = StatusCheckDB(
-        id=str(uuid.uuid4()), client_name=input.client_name, timestamp=datetime.utcnow()
+        id=str(uuid.uuid4()), client_name=input.client_name, timestamp=get_ist_time()
     )
     db.add(new_status)
     await db.commit()
@@ -771,7 +771,7 @@ async def startup():
                 type='info',
                 title='System Online',
                 message='ResoFly Backend started successfully.',
-                timestamp=datetime.utcnow(),
+                timestamp=get_ist_time(),
                 acknowledged=False,
                 lat=0.0,
                 lon=0.0,

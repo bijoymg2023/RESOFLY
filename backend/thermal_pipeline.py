@@ -609,12 +609,16 @@ class ThermalFramePipeline:
                 tracked_hotspots.append(h)
                 
                 # Trigger Alert IF:
-                if is_confirmed and object_id not in self.alerted_ids:
-                    now = time.time()
+                # 1. Confirmed Object
+                # 2. Not in Per-ID Cooldown (30s)
+                # 3. Not in Global Cooldown (8s)
+                
+                last_id_alert = self.alerted_ids.get(object_id, 0)
+                now = time.time()
+                
+                if is_confirmed and (now - last_id_alert) > 30.0:
                     
                     # Check Global Cooldown (8 seconds silence)
-                    # Use predefined variable (initialized in __init__)
-                    # Force strict check
                     if (now - self.global_last_alert) < 8.0:
                         continue
                         
@@ -622,13 +626,13 @@ class ThermalFramePipeline:
                     if self.last_alert_coords:
                         lx, ly = self.last_alert_coords
                         dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
-                        if dist < 150:
-                            # Mark as alerted to stop checking, but don't send event
-                            self.alerted_ids[object_id] = True
+                        if dist < 100: # Reduced radius
+                             # Update timestamp to prevent immediate re-check
+                            self.alerted_ids[object_id] = now
                             continue
 
                     # FIRE ALERT
-                    self.alerted_ids[object_id] = True
+                    self.alerted_ids[object_id] = now
                     self.global_last_alert = now
                     self.last_alert_coords = (h.x, h.y)
                     new_alerts.append(h)
@@ -667,9 +671,10 @@ class ThermalFramePipeline:
             
             # --- GARBAGE COLLECTION ---
             # Cleanup alert IDs
-            active_ids = {h.track_id for h in final_list}
-            for alerted_id in list(self.alerted_ids.keys()):
-                if alerted_id not in active_ids:
+            # Only remove if VERY old (e.g. 5 minutes) to prevent re-alerting on flicker
+            now = time.time()
+            for alerted_id, timestamp in list(self.alerted_ids.items()):
+                if (now - timestamp) > 300: # 5 minutes retention
                     self.alerted_ids.pop(alerted_id, None)
             
             # Cleanup track memory
