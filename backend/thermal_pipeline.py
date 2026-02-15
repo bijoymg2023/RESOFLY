@@ -414,11 +414,27 @@ class ThermalDetector:
                 changed = False
                 unmerged = []
                 for other in hotspots:
-                    # Check distance between centers
-                    # If close (< 80px), MERGE THEM
-                    dist = ((base.x - other.x)**2 + (base.y - other.y)**2)**0.5
-                    if dist < 80:  # Union Range (Aggressive)
-                        # Create Union Box
+                    # Check Overlap / Proximity (The "Magnet" Logic)
+                    # We inflate the boxes by 40px to see if they are "close enough" to merge.
+                    # This bridges the gap between Head and Torso caused by clothes.
+                    
+                    pad = 40
+                    
+                    # Box A (Base)
+                    ax1, ay1 = base.x - pad, base.y - pad
+                    ax2, ay2 = base.x + base.width + pad, base.y + base.height + pad
+                    
+                    # Box B (Other)
+                    bx1, by1 = other.x - pad, other.y - pad
+                    bx2, by2 = other.x + other.width + pad, other.y + other.height + pad
+                    
+                    # Intersection Check
+                    # If they don't overlap, x_overlap or y_overlap will be negative/zero
+                    overlap_x = min(ax2, bx2) - max(ax1, bx1)
+                    overlap_y = min(ay2, by2) - max(ay1, by1)
+                    
+                    if overlap_x > 0 and overlap_y > 0:
+                        # MERGE THEM
                         x1 = min(base.x, other.x)
                         y1 = min(base.y, other.y)
                         x2 = max(base.x + base.width, other.x + other.width)
