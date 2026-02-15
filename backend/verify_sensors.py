@@ -4,6 +4,22 @@ import time
 import os
 import subprocess
 
+# --- VENV AUTO-SWITCH ---
+# Check if running in a venv (sys.prefix != sys.base_prefix)
+# And if not, check common venv locations and restart.
+if sys.prefix == sys.base_prefix:
+    possible_venvs = [
+        os.path.join(os.path.dirname(__file__), "../.venv"),      # relative from backend/
+        os.path.join(os.path.dirname(__file__), ".venv"),         # inside backend/
+        "/home/team13/RESOFLY/.venv"                              # absolute
+    ]
+    for venv_path in possible_venvs:
+        python_bin = os.path.join(venv_path, "bin", "python3")
+        if os.path.exists(python_bin):
+            print(f"-> Switching to virtual environment: {python_bin}")
+            # Re-execute with venv python
+            os.execv(python_bin, [python_bin] + sys.argv)
+
 print("========================================")
 print("   RESOFLY SENSOR VERIFICATION TOOL     ")
 print("========================================")
