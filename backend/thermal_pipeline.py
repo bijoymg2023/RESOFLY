@@ -171,25 +171,24 @@ class WaveshareSource:
             mid_w = self.OUTPUT_WIDTH // 2
             mid_h = self.OUTPUT_HEIGHT // 2
             
-            # Use LANCZOS4 (Best quality for upscaling)
-            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_LANCZOS4)
+            # Use CUBIC (Fast & Good enough with smoothing)
+            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_CUBIC)
             
-            # --- "High-Def Silky" Smoothing (Bilateral Filter) ---
-            # Smoothens flat areas (noise) but keeps edges sharp.
-            # d=7: Sweet spot between speed (5) and quality (9)
-            # sigma=100: Strong smoothing for background noise
+            # --- "Fast Silky" Smoothing ---
+            # d=5: Much faster than 7 or 9.
+            # sigma=75: Good enough for smoothing background noise.
             mid_u8 = np.clip(mid_frame, 0, 255).astype(np.uint8)
-            mid_u8 = cv2.bilateralFilter(mid_u8, 7, 100, 100)
+            mid_u8 = cv2.bilateralFilter(mid_u8, 5, 75, 75)
             mid_frame = mid_u8.astype(np.float32)
             
             # Stage 2: 2x Upscale (320 -> 640)
             upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                   interpolation=cv2.INTER_CUBIC)
             
-            # 6. Definition Boost (Moderate Sharpening)
-            # Increased strength (1.5) to make targets pop against the smooth background.
+            # 6. Definition Boost (Light Sharpening)
+            # Strength 1.0: Crisp but not grainy.
             gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-            upscaled = cv2.addWeighted(upscaled, 2.5, gaussian_blur, -1.5, 0)
+            upscaled = cv2.addWeighted(upscaled, 2.0, gaussian_blur, -1.0, 0)
             
             # 7. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
@@ -369,10 +368,26 @@ class ThermalDetector:
                     inertia=inertia
                 ))
         
-        # Sort by confidence
+        # Sort by confidence (Highest first)
         hotspots.sort(key=lambda h: h.confidence, reverse=True)
         
-        return hotspots, binary
+        # --- Satellite Suppression (NMS) ---
+        # "Small boxes next to big ones" -> Remove them.
+        # We keep the best box, and kill anything nearby.
+        final_hotspots = []
+        while hotspots:
+            best = hotspots.pop(0)
+            final_hotspots.append(best)
+            
+            # Filter out remaining hotspots that are too close (Euclidean distance)
+            # Threshold: 30 pixels (on the 160x120 grid)
+            # This merges hands/limbs into the main Body/Head detection
+            hotspots = [
+                h for h in hotspots 
+                if ((h.x - best.x)**2 + (h.y - best.y)**2)**0.5 > 30
+            ]
+        
+        return final_hotspots, binary
 
 
 # ============ UNIFIED FRAME PIPELINE ============
