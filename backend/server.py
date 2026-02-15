@@ -414,13 +414,22 @@ import gps_real
 
 # Initialize real GPS reader (Adjust port if using UART vs USB)
 # Common ports: /dev/ttyUSB0, /dev/ttyACM0, /dev/serial0
-try:
-    gps_reader = gps_real.GPSReader(port='/dev/ttyUSB0') 
-    gps_reader.start()
-    print("GPS Module Initialized")
-except Exception as e:
-    print(f"Warning: GPS Init Failed: {e}")
-    gps_reader = None
+gps_reader = None
+possible_gps_ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyAMA0', '/dev/serial0']
+
+for port in possible_gps_ports:
+    try:
+        if os.path.exists(port):
+            print(f"Attempting GPS on {port}...")
+            gps_reader = gps_real.GPSReader(port=port) 
+            gps_reader.start()
+            print(f"GPS Module Initialized on {port}")
+            break
+    except Exception as e:
+        print(f"Warning: GPS Init Failed on {port}: {e}")
+
+if not gps_reader:
+    print("Warning: No GPS module found. Location data will be 0.0")
 
 @api_router.get("/gps", response_model=GPSData)
 async def get_gps(current_user: UserDB = Depends(get_current_user)):
@@ -800,12 +809,14 @@ async def startup():
         # Detection callback - creates alerts and broadcasts via WebSocket
         def on_detection_event(event: thermal_pipeline.DetectionEvent):
             """Handle detection event - save to DB and broadcast."""
-            # Get GPS (fallback to demo coordinates)
-            lat = 12.9716 + random.uniform(-0.01, 0.01)
-            lon = 77.5946 + random.uniform(-0.01, 0.01)
+            # Get GPS (Default to 0.0 if no lock)
+            lat = 0.0
+            lon = 0.0
+            
             if gps_reader:
                 gps_data = gps_reader.get_data()
-                if gps_data.get('latitude'):
+                # Check if we have a valid fix (non-zero)
+                if gps_data.get('latitude') and gps_data.get('latitude') != 0.0:
                     lat, lon = gps_data['latitude'], gps_data['longitude']
             
             # Create alert in database - schedule on the running event loop
