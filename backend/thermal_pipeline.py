@@ -171,26 +171,28 @@ class WaveshareSource:
             mid_w = self.OUTPUT_WIDTH // 2
             mid_h = self.OUTPUT_HEIGHT // 2
             
-            # Use LANCZOS4 (High quality) instead of Cubic
-            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_LANCZOS4)
+            # Use CUBIC (Faster than Lanczos, still good)
+            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_CUBIC)
             
             # --- "Beauty Mode" Smoothing (Bilateral Filter) ---
             # Smoothens flat areas (noise) but keeps edges sharp.
-            # d=9: Neighborhood diameter
+            # d=5: Reduced from 9 for SPEED (Lag reduction)
             # sigmaColor=75: Mix pixels if color is close (smooths gradients)
             # sigmaSpace=75: Mix pixels if close in space
             # Note: Converted to uint8 temporarily for bilateral filter (it requires it)
             mid_u8 = np.clip(mid_frame, 0, 255).astype(np.uint8)
-            mid_u8 = cv2.bilateralFilter(mid_u8, 9, 75, 75)
+            mid_u8 = cv2.bilateralFilter(mid_u8, 5, 75, 75)
             mid_frame = mid_u8.astype(np.float32)
             
             # Stage 2: 2x Upscale (320 -> 640)
             upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                   interpolation=cv2.INTER_CUBIC)
             
-            # 6. Minimal Polish (No Sharpening)
-            # We skip unsharp mask because it effectively undoes the smoothing.
-            # Just light contrast touch-up if needed, but CLAHE covered it.
+            # 6. Definition Boost (Light Sharpening)
+            # Re-introduced at LOW strength (0.8) to add definition back
+            # without bringing back the grain/static.
+            gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
+            upscaled = cv2.addWeighted(upscaled, 1.8, gaussian_blur, -0.8, 0)
             
             # 7. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
