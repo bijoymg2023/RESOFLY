@@ -28,15 +28,46 @@ print("========================================")
 print("\n[1/2] Testing Bluetooth Scanner...")
 try:
     import bluetooth_scanner
-    print("Running: bluetooth_scanner.get_bluetooth_devices()")
-    devices = bluetooth_scanner.get_bluetooth_devices()
-    print(f"Result: Found {len(devices)} devices.")
-    for d in devices:
-        print(f"  - {d}")
-    
-    if not devices:
-        print("-> WARNING: 0 devices found. Did you run with 'sudo'?")
-        print("   Try: sudo python3 backend/verify_sensors.py")
+    print(f"Running as UID: {os.geteuid()}")
+    print(f"Current PATH: {os.environ.get('PATH')}")
+
+    print("\n--- Testing Bluetooth Scanner (via scan_helper.sh) ---")
+    try:
+        script_path = os.path.join(os.path.dirname(__file__), "scan_helper.sh")
+        if not os.path.exists(script_path):
+             print(f"ERROR: scan_helper.sh NOT FOUND at {script_path}")
+        else:
+             print(f"Script found at: {script_path}")
+             # Run it
+             cmd = ["bash", script_path]
+             if os.geteuid() != 0:
+                 cmd.insert(0, "sudo")
+             
+             print(f"Executing: {' '.join(cmd)}")
+             result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+             
+             print(f"Exit Code: {result.returncode}")
+             print(f"STDOUT:\n{result.stdout}")
+             print(f"STDERR:\n{result.stderr}")
+             
+             if not result.stdout.strip():
+                 print("WARNING: Output was empty! This explains 'IDLE' dashboard.")
+    except Exception as e:
+        print(f"Error running scan helper: {e}")
+
+    # Also test via Python module
+    print("\n--- Testing Python Wrapper (bluetooth_scanner.py) ---")
+    try:
+        devices = bluetooth_scanner.get_bluetooth_devices()
+        print(f"Found {len(devices)} devices via Python wrapper.")
+        for d in devices:
+            print(f"  - {d}")
+        
+        if not devices:
+            print("-> WARNING: 0 devices found. Did you run with 'sudo'?")
+            print("   Try: sudo python3 backend/verify_sensors.py")
+    except Exception as e:
+        print(f"Python Wrapper Error: {e}")
 except Exception as e:
     print(f"-> ERROR: Bluetooth scan failed: {e}")
 
