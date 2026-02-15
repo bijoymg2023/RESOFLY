@@ -37,6 +37,9 @@ IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
 
 def get_ist_time():
     return datetime.now(IST_OFFSET)
+# Global Signal Cache (Zero-Lag)
+signal_cache = []
+signal_cache_lock = asyncio.Lock()
 
 # Setup
 ROOT_DIR = Path(__file__).parent
@@ -371,30 +374,9 @@ async def get_system_diagnostics(token: str = Depends(oauth2_scheme)):
 
 @api_router.get("/scan/bluetooth")
 async def scan_bluetooth(token: str = Depends(oauth2_scheme)):
-    """Scans for nearby Bluetooth LE and Wi-Fi devices."""
-    print(">>> [API] Signal Scan Request Received", flush=True)
-    try:
-        loop = asyncio.get_event_loop()
-        
-        # Parallel scans
-        bt_task = loop.run_in_executor(None, bluetooth_scanner.get_bluetooth_devices)
-        wifi_task = loop.run_in_executor(None, wifi_scanner.get_wifi_devices)
-        
-        bt_devices, wifi_devices = await asyncio.gather(bt_task, wifi_task)
-        
-        # Mark types
-        for d in bt_devices: d['type'] = 'bluetooth'
-        for d in wifi_devices: d['type'] = 'wifi'
-        
-        all_devices = bt_devices + wifi_devices
-        # Sort by signal strength
-        all_devices.sort(key=lambda x: x.get('rssi', -100), reverse=True)
-        
-        print(f"[API] Scan complete: Found {len(bt_devices)} BT, {len(wifi_devices)} WiFi", flush=True)
-        return all_devices
-    except Exception as e:
-        logger.error(f"Signal Scan Error: {e}")
-        return []
+    """Returns cached signal data instantly."""
+    async with signal_cache_lock:
+        return signal_cache
 
 @api_router.post("/thermal/test-alert")
 async def create_test_alert(db: AsyncSession = Depends(get_db)):
@@ -918,8 +900,43 @@ async def startup():
         print("[THERMAL] No thermal source available (no HAT, no dataset), detection disabled", flush=True)
         thermal_frame_pipeline = None
 
-    # 4. Start background monitor loop
+    # 4. Start background monitor loops
     asyncio.create_task(background_monitor())
+    asyncio.create_task(signal_monitor_loop())
+
+async def signal_monitor_loop():
+    """Continuous background scanning for signals (Zero-Lag Architecture)."""
+    global signal_cache
+    print("[SIGNAL] Background scanner initialized", flush=True)
+    while True:
+        try:
+            loop = asyncio.get_running_loop()
+            
+            # Run scans in parallel
+            bt_task = loop.run_in_executor(None, bluetooth_scanner.get_bluetooth_devices)
+            wifi_task = loop.run_in_executor(None, wifi_scanner.get_wifi_devices)
+            
+            bt_devices, wifi_devices = await asyncio.gather(bt_task, wifi_task)
+            
+            # Prepare result
+            now = datetime.now()
+            for d in bt_devices: d['type'] = 'bluetooth'
+            for d in wifi_devices: d['type'] = 'wifi'
+            
+            all_devices = bt_devices + wifi_devices
+            all_devices.sort(key=lambda x: x.get('rssi', -100), reverse=True)
+            
+            # Atomic update of global cache
+            async with signal_cache_lock:
+                signal_cache = all_devices
+            
+            # Short sleep between scans to prevent 100% CPU on hardware bus
+            # Hardware scan already takes ~8s, this just adds a breath
+            await asyncio.sleep(1)
+            
+        except Exception as e:
+            print(f"[SIGNAL] Background loop error: {e}", flush=True)
+            await asyncio.sleep(5)
 
 async def background_monitor():
     """Periodically checks system health and logs alerts."""

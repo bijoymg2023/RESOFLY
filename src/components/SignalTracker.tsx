@@ -32,9 +32,8 @@ const SignalTracker = () => {
 
                 setDevices(prev => {
                     const mergedMap = new Map<string, SignalDevice>();
-                    prev.forEach(d => {
-                        if (now - d.lastSeen < 12000) mergedMap.set(d.mac, d);
-                    });
+                    // Aggressive Pruning: If not seen in the latest background scan, remove it.
+                    // This creates a "Live" feel where lost devices drop off immediately.
                     data.forEach((d: any) => {
                         mergedMap.set(d.mac, { ...d, lastSeen: now });
                     });
@@ -45,6 +44,9 @@ const SignalTracker = () => {
                     const fresh = data.find((d: any) => d.mac === target.mac);
                     if (fresh) {
                         setTarget(prev => ({ ...prev!, rssi: fresh.rssi, lastSeen: now }));
+                    } else if (now - (target.lastSeen || 0) > 12000) {
+                        // If target lost for >12s, clear target
+                        setTarget(null);
                     }
                 }
             }
@@ -53,11 +55,12 @@ const SignalTracker = () => {
         } finally {
             setScanning(false);
         }
-    }, [target?.mac]);
+    }, [target]);
 
     useEffect(() => {
         scan();
-        const interval = setInterval(scan, 5000);
+        // High-frequency polling (Instant Backend Cache retrieval)
+        const interval = setInterval(scan, 2000);
         return () => clearInterval(interval);
     }, [scan]);
 
