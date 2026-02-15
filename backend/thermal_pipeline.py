@@ -622,6 +622,7 @@ class ThermalFramePipeline:
                     
                     # Check Global Cooldown (8 seconds silence)
                     if (now - self.global_last_alert) < 8.0:
+                        print(f"[DEBUG] Global Cooldown Active. Time since last: {now - self.global_last_alert:.1f}s", flush=True)
                         continue
                         
                     # Check Spatial Duplication (Did we just alert here RECENTLY?)
@@ -632,10 +633,12 @@ class ThermalFramePipeline:
                         dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
                         if dist < 100: # Reduced radius
                              # Update timestamp to prevent immediate re-check
+                            print(f"[DEBUG] Spatial Duplicate. Dist: {dist:.1f}", flush=True)
                             self.alerted_ids[object_id] = now
                             continue
 
                     # FIRE ALERT
+                    print(f"[DEBUG] TRIGGERING ALERT for ID {object_id}!", flush=True)
                     self.alerted_ids[object_id] = now
                     self.global_last_alert = now
                     self.last_alert_coords = (h.x, h.y)
