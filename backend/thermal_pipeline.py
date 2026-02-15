@@ -146,10 +146,11 @@ class WaveshareSource:
                 # 1. Normalize to full 0-255 range
                 frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
                 
-                # 2. Temporal smoothing: blend with previous frame
-                if self._prev_frame is not None:
-                    frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
-                self._prev_frame = frame.copy()
+                # 2. Temporal smoothing: DISABLED
+                # This was causing "spreading" (ghosting) during motion.
+                # if self._prev_frame is not None:
+                #    frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
+                # self._prev_frame = frame.copy()
                 
                 # 3. Gamma Correction (Brighten shadows / mid-tones)
                 # Gamma < 1.0 = lighter, Gamma > 1.0 = darker (Wait, standard gamma is inv)
