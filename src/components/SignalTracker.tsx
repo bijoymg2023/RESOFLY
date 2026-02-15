@@ -87,7 +87,8 @@ const SignalTracker = () => {
             const raw = target.rssi;
             setSmoothedRssi(prev => {
                 const current = prev ?? raw;
-                const next = current + (raw - current) * 0.05;
+                // Gain 0.15: Faster tracking for mobile targets, reduced lag
+                const next = current + (raw - current) * 0.15;
                 return Math.abs(next - current) < 0.001 ? raw : next;
             });
         }, 30);
@@ -167,11 +168,10 @@ const SignalTracker = () => {
                     )}
                 </div>
 
-                {/* LIST SECTION - Continues below HUD in same scroll area */}
+                {/* LIST SECTION - 2 COLUMN SIMPLIFIED */}
                 <div className="min-h-full">
-                    <div className="grid grid-cols-[1fr_60px_70px] px-6 py-3 text-[9px] font-black uppercase text-white/20 tracking-[0.3em] border-b border-white/5 sticky top-0 bg-zinc-950/90 backdrop-blur-xl z-30">
+                    <div className="grid grid-cols-[1fr_80px] px-6 py-3 text-[9px] font-black uppercase text-white/20 tracking-[0.3em] border-b border-white/5 sticky top-0 bg-zinc-950/90 backdrop-blur-xl z-30">
                         <span>Identity</span>
-                        <span className="text-center">Energy</span>
                         <span className="text-right">Distance</span>
                     </div>
 
@@ -179,7 +179,7 @@ const SignalTracker = () => {
                         {devices.map((device) => (
                             <div
                                 key={device.mac}
-                                className={`group grid grid-cols-[1fr_60px_70px] items-center px-3 py-2.5 rounded transition-all duration-300 ${target?.mac === device.mac ? 'bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.05)] border border-cyan-500/10' : 'bg-transparent border border-transparent hover:bg-white/[0.03]'}`}
+                                className={`group grid grid-cols-[1fr_80px] items-center px-4 py-3 rounded transition-all duration-300 ${target?.mac === device.mac ? 'bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.05)] border border-cyan-500/10' : 'bg-transparent border border-transparent hover:bg-white/[0.03]'}`}
                                 onClick={() => setTarget(device)}
                             >
                                 <div className="flex items-center space-x-4">
@@ -196,17 +196,8 @@ const SignalTracker = () => {
                                     </div>
                                 </div>
 
-                                <div className="flex flex-col items-center">
-                                    <span className={`text-[10px] font-black tabular-nums transition-all ${getSignalColor(device.rssi)}`}>
-                                        {device.rssi}
-                                    </span>
-                                    <div className="w-8 h-0.5 bg-white/5 rounded-full mt-1 overflow-hidden">
-                                        <div className={`h-full ${getSignalColor(device.rssi).split(' ')[0].replace('text-', 'bg-')}`} style={{ width: `${Math.min(100, Math.max(0, (device.rssi + 95) * 1.8))}%` }} />
-                                    </div>
-                                </div>
-
                                 <div className="text-right">
-                                    <div className="text-[12px] font-black text-white/80 tabular-nums">
+                                    <div className={`text-[13px] font-black transition-all tabular-nums ${target?.mac === device.mac ? 'text-cyan-400' : 'text-white/80'}`}>
                                         {calculateDistance(device.rssi)}
                                         <span className="text-[8px] text-white/20 ml-0.5 font-bold italic lowercase">m</span>
                                     </div>
