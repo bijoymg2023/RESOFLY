@@ -701,7 +701,7 @@ async def thermal_stream():
             frame = thermal_frame_pipeline.process_next()
             
             if frame is not None:
-                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
                 frame_bytes = jpeg.tobytes()
             else:
                 # Send placeholder so browser doesn't show blank
