@@ -418,15 +418,15 @@ class ThermalDetector:
                     # We inflate the boxes by 40px to see if they are "close enough" to merge.
                     # This bridges the gap between Head and Torso caused by clothes.
                     
-                    pad = 40
+                    param_inflate = 25
                     
                     # Box A (Base)
-                    ax1, ay1 = base.x - pad, base.y - pad
-                    ax2, ay2 = base.x + base.width + pad, base.y + base.height + pad
+                    ax1, ay1 = base.x - param_inflate, base.y - param_inflate
+                    ax2, ay2 = base.x + base.width + param_inflate, base.y + base.height + param_inflate
                     
                     # Box B (Other)
-                    bx1, by1 = other.x - pad, other.y - pad
-                    bx2, by2 = other.x + other.width + pad, other.y + other.height + pad
+                    bx1, by1 = other.x - param_inflate, other.y - param_inflate
+                    bx2, by2 = other.x + other.width + param_inflate, other.y + other.height + param_inflate
                     
                     # Intersection Check
                     # If they don't overlap, x_overlap or y_overlap will be negative/zero
@@ -562,12 +562,12 @@ class ThermalFramePipeline:
                         best_match = h
             
             # --- SMOOTHING LOGIC ---
-            # Retrieve last known state
             last_state = self.track_memory.get(object_id)
             
             if best_match:
-                # We have a live detection
+                # LIVE DETECTION
                 h = best_match
+                h.is_ghost = False  # Flag as LIVE
                 
                 if last_state:
                     # Smooth the box: 65% new, 35% old (Faster Response)
@@ -583,36 +583,27 @@ class ThermalFramePipeline:
                     'hotspot_data': h 
                 }
             else:
-                # NO live detection (Gap Filling)
-                # Use memory if available
+                # GHOST DETECTION (Gap Filling)
                 if last_state:
                     h = last_state['hotspot_data']
-                    # Use last known dimensions, but CentroidTracker's current position
-                    # CentroidTracker updates position even without detection (if predicted) or holds it
-                    # Here we just use the last smooth rect to prevent jumping
+                    h.is_ghost = True  # Flag as GHOST
+                    # Use last known dimensions
                     h.x = last_state['x']
                     h.y = last_state['y']
                     h.width = last_state['w']
                     h.height = last_state['h']
                 else:
-                    continue # Should not happen unless tracker has ghost id with no history
+                    continue 
 
             h.track_id = object_id
             
             # --- PROBATION CHECK (Anti-Spam) ---
-            # Default probation was 5. We increase to 8 to be sure it's a person.
             persistence = self.tracker.persistence.get(object_id, 0)
             is_confirmed = persistence >= 8
-            
             h.is_confirmed = is_confirmed
             tracked_hotspots.append(h)
             
             # Trigger Alert IF:
-            # 1. Object IS CONFIRMED (Passed probation)
-            # 2. We have NOT alerted on this ID yet (Infinite Cooldown PER ID)
-            # 3. GLOBAL RATE LIMIT: Don't spam multiple alerts in 8 seconds
-            # 4. SPATIAL CHECK: Don't alert if new ID is in same spot as last alert
-            
             if is_confirmed and object_id not in self.alerted_ids:
                 now = time.time()
                 
@@ -626,8 +617,7 @@ class ThermalFramePipeline:
                 if last_coords:
                     lx, ly = last_coords
                     dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
-                    if dist < 150: # If within 150px of last alert, it's the same guy
-                        # Mark as alerted to stop checking, but don't send event
+                    if dist < 150:
                         self.alerted_ids[object_id] = True
                         continue
 
@@ -635,9 +625,39 @@ class ThermalFramePipeline:
                 self.alerted_ids[object_id] = True
                 self.global_last_alert = now
                 self.last_alert_coords = (h.x, h.y)
-                
                 new_alerts.append(h)
                 self.alert_count += 1
+        
+        # --- GHOST KILLER (Fix Nested Boxes) ---
+        # If a Ghost Box overlaps with a Live Box, it means it was merged.
+        # We must kill the Ghost to prevent it from showing up inside the new box.
+        
+        final_list = []
+        live_boxes = [h for h in tracked_hotspots if not getattr(h, 'is_ghost', False)]
+        
+        for h in tracked_hotspots:
+            if getattr(h, 'is_ghost', False):
+                # This is a Ghost. Check if it's inside a Live Box.
+                killed = False
+                for live in live_boxes:
+                    # Check Intersection
+                    ix = min(h.x + h.width, live.x + live.width) - max(h.x, live.x)
+                    iy = min(h.y + h.height, live.y + live.height) - max(h.y, live.y)
+                    
+                    # If significant overlap, kill it
+                    if ix > 0 and iy > 0:
+                        killed = True
+                        # Force remove from tracker memory
+                        self.tracker.deregister(h.track_id)
+                        if h.track_id in self.track_memory:
+                            del self.track_memory[h.track_id]
+                        break
+                
+                if not killed:
+                    final_list.append(h)
+            else:
+                final_list.append(h)
+
         
         # --- GARBAGE COLLECTION ---
         # Cleanup alert IDs
