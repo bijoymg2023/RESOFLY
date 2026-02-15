@@ -854,7 +854,7 @@ async def startup():
                                 lat=person_lat,
                                 lon=person_lon,
                                 confidence=hotspot.confidence,
-                                max_temp=hotspot.max_intensity
+                                max_temp=hotspot.estimated_temp
                             )
                             db.add(alert)
                             
@@ -864,7 +864,7 @@ async def startup():
                                 "type": "LIFE",
                                 "title": f"PERSON #{obj_id}",
                                 "confidence": hotspot.confidence,
-                                "max_temp": hotspot.max_intensity,
+                                "max_temp": hotspot.estimated_temp,
                                 "estimated_temp": hotspot.estimated_temp,
                                 "lat": person_lat,
                                 "lon": person_lon,

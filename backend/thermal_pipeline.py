@@ -372,7 +372,10 @@ class ThermalDetector:
                 
                 # Scoring Logic
                 temp_diff = estimated_temp - HUMAN_TEMP_THRESHOLD_C
+                temp_diff = estimated_temp - HUMAN_TEMP_THRESHOLD_C
                 confidence = min(0.95, 0.5 + (temp_diff / 15.0) * 0.45)
+                # Clamp to prevent saturation if temp is high
+                if confidence > 0.95: confidence = 0.99 # Allow 99%, but not 105%
                 
                 # Boost for good shapes
                 if circularity > 0.6: confidence += 0.1
@@ -622,10 +625,9 @@ class ThermalFramePipeline:
                     # e.g. 0.5 (Standing) -> 2.0 (Lying down) = delta 1.5
                     if abs(current_ar - last_ar) > 0.5 and h.is_confirmed:
                         print(f"[DEBUG] SHAPE CHANGE ID {object_id}: AR {last_ar:.2f} -> {current_ar:.2f}", flush=True)
-                        # RESET alert timer for this ID to allow IMMEDIATE re-alert
-                        # We set it to 0 so the "30s cooldown" check below passes.
-                        # Note: Global 8s cooldown will still prevent spam storms.
-                        self.alerted_ids[object_id] = 0
+                        # DISABLED: User reported duplicate alerts.
+                        # Strict 1-Alert-Per-ID policy active.
+                        # self.alerted_ids[object_id] = 0
 
                 # Update memory with new Aspect Ratio
                 if object_id in self.track_memory:
