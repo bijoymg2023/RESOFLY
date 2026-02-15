@@ -812,6 +812,9 @@ async def startup():
     
     if source is not None:
         
+        # Capture the main event loop for thread-safe scheduling
+        main_loop = asyncio.get_running_loop()
+
         # Detection callback - creates alerts and broadcasts via WebSocket
         def on_detection_event(event: thermal_pipeline.DetectionEvent):
             """Handle detection event - save to DB and broadcast."""
@@ -877,10 +880,14 @@ async def startup():
                 except Exception as e:
                     print(f"[THERMAL] Error in save_and_broadcast: {e}")
             
-                loop.create_task(save_and_broadcast())
-            except RuntimeError:
-                # No running loop (shouldn't happen in FastAPI context)
-                print(f"[THERMAL] Warning: No running event loop for alert broadcast")
+            # Schedule on the main loop from the thermal thread
+            try:
+                if main_loop.is_running():
+                    asyncio.run_coroutine_threadsafe(save_and_broadcast(), main_loop)
+                else:
+                     print("[ERROR] Main loop is closed, cannot save alert", flush=True)
+            except Exception as e:
+                 print(f"[ERROR] Could not schedule alert task: {e}", flush=True)
         
         # Create the unified pipeline
         global thermal_frame_pipeline
