@@ -69,7 +69,7 @@ const ThemeAwareTileLayer = () => {
 
 export const IncidentMap = () => {
     const { alerts, activeAlerts, selectedAlert } = useDetection();
-    const center = { lat: 12.9716, lng: 77.5946 };
+    const center = { lat: 0.0, lng: 0.0 };
 
     return (
         <Card className="h-full bg-card dark:bg-[#0A0A0A] border border-border dark:border-white/10 overflow-hidden relative shadow-lg flex flex-col">
