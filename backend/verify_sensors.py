@@ -68,11 +68,41 @@ try:
             print("   Try: sudo python3 backend/verify_sensors.py")
     except Exception as e:
         print(f"Python Wrapper Error: {e}")
+
+    print("\n[2/3] Testing Wi-Fi Scanner (New Feature)...")
+    try:
+        # Check if iwlist exists
+        if not shutil.which("iwlist"):
+             print("WARNING: 'iwlist' not found. Is it installed? (sudo apt install wireless-tools)")
+        else:
+             print("Running: sudo iwlist wlan0 scanning")
+             res = subprocess.run(["sudo", "iwlist", "wlan0", "scanning"], capture_output=True, text=True)
+             if res.returncode != 0:
+                 print(f"Wi-Fi Scan Error (Code {res.returncode}):\n{res.stderr}")
+             else:
+                 output = res.stdout
+                 cells = output.split("Cell ")
+                 wifi_devs = []
+                 for cell in cells:
+                     ssid_match = re.search(r'ESSID:"([^"]+)"', cell)
+                     signal_match = re.search(r'Signal level=(-\d+) dBm', cell)
+                     if ssid_match and signal_match:
+                         wifi_devs.append({
+                             "ssid": ssid_match.group(1),
+                             "rssi": int(signal_match.group(1))
+                         })
+                 
+                 print(f"Found {len(wifi_devs)} Wi-Fi Networks:")
+                 for w in wifi_devs[:5]: # Show top 5
+                     print(f"  - {w['ssid']} ({w['rssi']} dBm)")
+    except Exception as e:
+        print(f"Wi-Fi Test Failed: {e}")
+
 except Exception as e:
     print(f"-> ERROR: Bluetooth scan failed: {e}")
 
 # 2. GPS TEST
-print("\n[2/2] Testing GPS Module...")
+print("\n[3/3] Testing GPS Module...") # Changed from [2/2] to [3/3]
 GPS_PORT = "/dev/serial0"
 print(f"Target Port: {GPS_PORT}")
 
