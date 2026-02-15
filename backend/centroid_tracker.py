@@ -15,6 +15,7 @@ class CentroidTracker:
         self.objects[self.next_object_id] = centroid
         self.disappeared[self.next_object_id] = 0
         self.persistence[self.next_object_id] = 0  # Start at 0, confirming at N
+        print(f"[TRACKER] Registered NEW ID {self.next_object_id}", flush=True)
         self.next_object_id += 1
 
     def deregister(self, object_id):
@@ -71,6 +72,7 @@ class CentroidTracker:
                 self.objects[object_id] = input_centroids[col]
                 self.disappeared[object_id] = 0
                 self.persistence[object_id] += 1  # Increment frame count
+                print(f"[TRACKER] Matched ID {object_id} -> Persistence {self.persistence[object_id]}", flush=True)
 
                 used_rows.add(row)
                 used_cols.add(col)
