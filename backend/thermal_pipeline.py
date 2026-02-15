@@ -162,33 +162,28 @@ class WaveshareSource:
             clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
             frame = clahe.apply(frame)
             
-            # 5. Multi-Stage Upscaling (Smooth & Organic)
-            # Direct 8x makes pixels look like lego blocks. 
-            # We step up 4x, blur the grid, then step up 2x.
-            fframe = frame.astype(np.float32)
+            # Stage 1: 2x Upscale (80 -> 160) - "Early Filter" Strategy
+            # Processing 20k pixels instead of 80k pixels = 4x Speedup
+            small_w = self.OUTPUT_WIDTH // 4 
+            small_h = self.OUTPUT_HEIGHT // 4
             
-            # Stage 1: 4x Upscale (80 -> 320)
-            mid_w = self.OUTPUT_WIDTH // 2
-            mid_h = self.OUTPUT_HEIGHT // 2
+            # Use CUBIC for the first step
+            small_frame = cv2.resize(fframe, (small_w, small_h), interpolation=cv2.INTER_CUBIC)
             
-            # Use CUBIC (Fast & Good enough with smoothing)
-            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_CUBIC)
+            # --- "Silky" Smoothing (Early Stage) ---
+            # d=5, sigma=75 on 160px image is very effective and INSTANT.
+            small_u8 = np.clip(small_frame, 0, 255).astype(np.uint8)
+            small_u8 = cv2.bilateralFilter(small_u8, 5, 75, 75)
+            small_frame = small_u8.astype(np.float32)
             
-            # --- "Fast Silky" Smoothing ---
-            # d=5: Much faster than 7 or 9.
-            # sigma=75: Good enough for smoothing background noise.
-            mid_u8 = np.clip(mid_frame, 0, 255).astype(np.uint8)
-            mid_u8 = cv2.bilateralFilter(mid_u8, 5, 75, 75)
-            mid_frame = mid_u8.astype(np.float32)
-            
-            # Stage 2: 2x Upscale (320 -> 640)
-            upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
+            # Stage 2: 4x Upscale (160 -> 640) - "Big Jump"
+            upscaled = cv2.resize(small_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                   interpolation=cv2.INTER_CUBIC)
             
             # 6. Definition Boost (Light Sharpening)
-            # Strength 1.0: Crisp but not grainy.
+            # Strength 0.8: Crisp but not grainy.
             gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-            upscaled = cv2.addWeighted(upscaled, 2.0, gaussian_blur, -1.0, 0)
+            upscaled = cv2.addWeighted(upscaled, 1.8, gaussian_blur, -0.8, 0)
             
             # 7. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
@@ -371,20 +366,23 @@ class ThermalDetector:
         # Sort by confidence (Highest first)
         hotspots.sort(key=lambda h: h.confidence, reverse=True)
         
-        # --- Satellite Suppression (NMS) ---
-        # "Small boxes next to big ones" -> Remove them.
-        # We keep the best box, and kill anything nearby.
+        # --- Dynamic Satellite Suppression (NMS) ---
+        # "Merge hands into body"
+        # Radius depends on the size of the person.
         final_hotspots = []
         while hotspots:
             best = hotspots.pop(0)
             final_hotspots.append(best)
             
-            # Filter out remaining hotspots that are too close (Euclidean distance)
-            # Threshold: 30 pixels (on the 160x120 grid)
-            # This merges hands/limbs into the main Body/Head detection
+            # Dynamic Radius: If it's a big person (close), radius is big.
+            # If it's a small person (far), radius is small (min 60px).
+            # 1.5x width covers outstretched arms roughly.
+            suppression_radius = max(60, best.width * 1.5, best.height * 1.5)
+            
+            # Filter out remaining hotspots
             hotspots = [
                 h for h in hotspots 
-                if ((h.x - best.x)**2 + (h.y - best.y)**2)**0.5 > 30
+                if ((h.x - best.x)**2 + (h.y - best.y)**2)**0.5 > suppression_radius
             ]
         
         return final_hotspots, binary
