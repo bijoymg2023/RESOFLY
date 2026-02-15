@@ -141,19 +141,26 @@ class WaveshareSource:
             # 1. Normalize to full 0-255 range
             frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
             
-            # 2. Temporal smoothing: blend with previous frame to reduce
-            #    frame-to-frame sensor noise flicker (huge quality boost)
+            # 2. Temporal smoothing: blend with previous frame
             if self._prev_frame is not None:
-                frame = cv2.addWeighted(frame, 0.6, self._prev_frame, 0.4, 0)
+                frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
             self._prev_frame = frame.copy()
             
-            # 3. Enhance Contrast (CLAHE) - Make people POP from background
-            # Clip limit 2.0, Grid size 8x8 is standard for thermal
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            frame = clahe.apply(frame)
+            # 3. Gamma Correction (Brighten shadows / mid-tones)
+            # Gamma < 1.0 = lighter, Gamma > 1.0 = darker (Wait, standard gamma is inv)
+            # actually for thermal, we want to expand the 'warm' range.
+            # Let's use a look-up table for speed.
+            gamma = 1.5
+            invGamma = 1.0 / gamma
+            table = np.array([((i / 255.0) ** invGamma) * 255
+                for i in np.arange(0, 256)]).astype("uint8")
+            frame = cv2.LUT(frame, table)
             
-            # 4. Denoise lightly (preserve edges)
-            frame = cv2.GaussianBlur(frame, (3, 3), 0)
+            # 4. Strong Contrast Enhancement (CLAHE)
+            # Clip limit 4.0 makes it very high contrast (Military style)
+            # Grid 8x8 is good for 80x62 sensor
+            clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+            frame = clahe.apply(frame)
             
             # 5. Float32 upscale to display resolution
             # CUBIC is sharper than Linear.
@@ -161,12 +168,12 @@ class WaveshareSource:
             upscaled = cv2.resize(fframe, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
                                   interpolation=cv2.INTER_CUBIC)
             
-            # 6. Sharpening (Unsharp Mask) ENABLED for RECOGNITION
-            # Enhanced strength (2.0) to make edges "pop"
+            # 6. Sharpening (Unsharp Mask)
+            # Radius 2.0, Strength 3.0 (Very sharp)
             gaussian_3 = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-            upscaled = cv2.addWeighted(upscaled, 2.0, gaussian_3, -1.0, 0)
+            upscaled = cv2.addWeighted(upscaled, 3.0, gaussian_3, -2.0, 0)
             
-            # 6. Convert back to uint8
+            # 7. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
             
             return upscaled
