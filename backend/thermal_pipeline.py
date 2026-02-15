@@ -422,21 +422,31 @@ class ThermalFramePipeline:
             if best_match:
                 # Assign ID to hotspot
                 h = best_match
-                h.track_id = object_id  # We'll need to add this field to Hotspot dataclass
+                h.track_id = object_id
+                
+                # --- PROBATION CHECK ---
+                # Should we trust this object yet?
+                # Check persistence count from tracker
+                persistence = self.tracker.persistence.get(object_id, 0)
+                is_confirmed = persistence >= self.tracker.probation_frames
+                
+                h.is_confirmed = is_confirmed
                 tracked_hotspots.append(h)
                 
-                # Check if this is a NEW object OR if it's time to re-alert (e.g. 5 seconds)
+                # Trigger Alert IF:
+                # 1. New Alert Interval passed
+                # 2. Object IS CONFIRMED (Passed probation)
                 now = time.time()
                 last_alert = self.alerted_ids.get(object_id, 0.0)
                 
-                if (now - last_alert) > 5.0:  # 5-second cooldown
+                if is_confirmed and (now - last_alert) > 5.0:
                     self.alerted_ids[object_id] = now
                     new_alerts.append(h)
                     self.alert_count += 1
         
         self.current_hotspots = tracked_hotspots
         
-        # 5. Trigger Alerts (only for NEW objects)
+        # 5. Trigger Alerts (only for CONFIRMED objects)
         if new_alerts:
             self.detection_count += 1
             
@@ -461,12 +471,12 @@ class ThermalFramePipeline:
         else:
             annotated = frame.copy()
         
-        # Only annotate high-confidence detections
-        strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.60]
+        # Filter for display
+        # We show EVERYTHING, but style them differently based on 'confirmed' status
+        visible = [h for h in hotspots if hasattr(h, 'track_id')]
         
-        # Loop to annotate each strong detection
-        for h in strong:
-            # Add padding to make box bigger/looser
+        for h in visible:
+            # Add padding
             pad = 8
             h_img, w_img = annotated.shape[:2]
             
@@ -475,41 +485,48 @@ class ThermalFramePipeline:
             w = min(w_img - x, h.width + 2*pad)
             height = min(h_img - y, h.height + 2*pad)
             
-            # Green boxes (High Visibility)
-            color = (0, 255, 0)
+            # --- STYLE: Confirmed vs Probation ---
+            if h.is_confirmed:
+                # Green = Confirmed Target
+                color = (0, 255, 0)
+                thickness = 2
+                label = f"{h.estimated_temp:.0f}C | Life: {self._calculate_life_score(h)}%"
+            else:
+                # Gray = Probation (Acquiring...)
+                color = (128, 128, 128)
+                thickness = 1
+                label = "..." # Minimal label for noise
+                
+                # Skip drawing noise if confidence is super low
+                if h.confidence < 0.3: continue
             
-            # Thicker rectangle (2px)
-            cv2.rectangle(annotated, (x, y), (x + w, y + height), color, 2)
+            cv2.rectangle(annotated, (x, y), (x + w, y + height), color, thickness)
             
-            # Calculate Liveness Score
-            # 1. Proximity to 34°C (skin)
-            ideal_temp = 34.0
-            diff = abs(h.estimated_temp - ideal_temp)
-            temp_score = max(0, 100 - (diff * 4))
-            
-            # 2. Shape Score (Top-down view)
-            # 0.7 - 0.9 is ideal for a head
-            shape_factor = 1.0
-            if h.circularity > 0.6:
-                shape_factor = 1.2
-            
-            liveness = min(100, temp_score * shape_factor)
-            
-            # Label with Temp and Life Score
-            label = f"{h.estimated_temp:.0f}C | Life: {int(liveness)}%"
-            
-            # Draw label background for readability
-            (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-            cv2.rectangle(annotated, (x, y - text_h - 4), (x + text_w, y), (0,0,0), -1)
-            
-            cv2.putText(annotated, label, (x, y - 4), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+            # Draw Label (Only for confirmed or high confidence)
+            if h.is_confirmed:
+                (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
+                cv2.rectangle(annotated, (x, y - text_h - 4), (x + text_w, y), (0,0,0), -1)
+                cv2.putText(annotated, label, (x, y - 4), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
         
-        # Minimal status bar (bottom-left, small)
-        info = f"Targets: {len(strong)}"
+        # Minimal status bar
+        active_targets = sum(1 for h in visible if h.is_confirmed)
+        info = f"Targets: {active_targets} | Acquiring: {len(visible) - active_targets}"
         cv2.putText(annotated, info, (8, annotated.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
         
         return annotated
+
+    def _calculate_life_score(self, h: Hotspot) -> int:
+        """Helper to scoring logic."""
+        ideal_temp = 34.0
+        diff = abs(h.estimated_temp - ideal_temp)
+        temp_score = max(0, 100 - (diff * 4))
+        
+        shape_factor = 1.0
+        if h.circularity > 0.6: shape_factor += 0.2
+        if h.convexity > 0.9:   shape_factor += 0.1
+        
+        return int(min(100, temp_score * shape_factor))
     
     def get_stats(self) -> dict:
         """Return pipeline statistics."""

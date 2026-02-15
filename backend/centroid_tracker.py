@@ -2,21 +2,26 @@ from collections import OrderedDict
 import numpy as np
 
 class CentroidTracker:
-    def __init__(self, max_disappeared=10, max_distance=50):
+    def __init__(self, max_disappeared=10, max_distance=50, probation_frames=5):
         self.next_object_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
+        self.persistence = OrderedDict()  # Track consecutive frames seen
         self.max_disappeared = max_disappeared
         self.max_distance = max_distance
+        self.probation_frames = probation_frames
 
     def register(self, centroid):
         self.objects[self.next_object_id] = centroid
         self.disappeared[self.next_object_id] = 0
+        self.persistence[self.next_object_id] = 0  # Start at 0, confirming at N
         self.next_object_id += 1
 
     def deregister(self, object_id):
         del self.objects[object_id]
         del self.disappeared[object_id]
+        if object_id in self.persistence:
+            del self.persistence[object_id]
 
     def update(self, rects):
         """
@@ -65,6 +70,7 @@ class CentroidTracker:
                 object_id = object_ids[row]
                 self.objects[object_id] = input_centroids[col]
                 self.disappeared[object_id] = 0
+                self.persistence[object_id] += 1  # Increment frame count
 
                 used_rows.add(row)
                 used_cols.add(col)
