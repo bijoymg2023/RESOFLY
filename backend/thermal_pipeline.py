@@ -319,8 +319,9 @@ class ThermalFramePipeline:
     
     def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
         self.source = source
-        # min_area=400 on 480x372 detect frame (~equivalent to 1600 on 960x744)
-        self.detector = ThermalDetector(adaptive=True, min_area=400)
+        # min_area=25 on 160x124 detect frame (approx 100 pixels on 640x480)
+        # This allows detecting people much further away (small heat blobs)
+        self.detector = ThermalDetector(adaptive=True, min_area=25)
         self.tracker = CentroidTracker(max_disappeared=50, max_distance=120)
         self.on_detection = on_detection
         
@@ -433,33 +434,50 @@ class ThermalFramePipeline:
     
     def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
         """Apply thermal colormap and draw clean bounding boxes on frame."""
-        # Apply JET colormap (blue→cyan→green→yellow→red) — matches Waveshare demo
+        # Apply INFERNO colormap (purple->orange->yellow) — matches reference image
         if len(frame.shape) == 2:
-            annotated = cv2.applyColorMap(frame, cv2.COLORMAP_JET)
+            annotated = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
         else:
             annotated = frame.copy()
         
-        # Only annotate high-confidence detections (reduces clutter)
-        strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.70]
+        # Only annotate high-confidence detections
+        strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.60]
         
         # Loop to annotate each strong detection
         for h in strong:
+            # Add padding to make box bigger/looser
+            pad = 8
+            h_img, w_img = annotated.shape[:2]
+            
+            x = max(0, h.x - pad)
+            y = max(0, h.y - pad)
+            w = min(w_img - x, h.width + 2*pad)
+            height = min(h_img - y, h.height + 2*pad)
+            
             # Green boxes (High Visibility)
             color = (0, 255, 0)
             
             # Thicker rectangle (2px)
-            cv2.rectangle(annotated, (h.x, h.y), (h.x + h.width, h.y + h.height), color, 2)
+            cv2.rectangle(annotated, (x, y), (x + w, y + height), color, 2)
             
-            # Small compact label with dark shadow for readability
-            label = f"{h.estimated_temp:.0f}C"
-            cv2.putText(annotated, label, (h.x, h.y - 4), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 0), 2, cv2.LINE_AA)
-            cv2.putText(annotated, label, (h.x, h.y - 4), 
+            # Calculate Liveness Score based on proximity to 34°C (skin temp)
+            # 34°C is ideal. +/- 10°C reduces score.
+            ideal_temp = 34.0
+            diff = abs(h.estimated_temp - ideal_temp)
+            liveness = max(0, min(100, 100 - (diff * 4)))
+            
+            # Label with Temp and Life Score
+            label = f"{h.estimated_temp:.0f}C | Life: {int(liveness)}%"
+            
+            # Draw label background for readability
+            (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
+            cv2.rectangle(annotated, (x, y - text_h - 4), (x + text_w, y), (0,0,0), -1)
+            
+            cv2.putText(annotated, label, (x, y - 4), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
         
         # Minimal status bar (bottom-left, small)
-        info = f"Objects: {len(strong)}"
-        cv2.putText(annotated, info, (8, annotated.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 0), 2, cv2.LINE_AA)
+        info = f"Targets: {len(strong)}"
         cv2.putText(annotated, info, (8, annotated.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
         
         return annotated
