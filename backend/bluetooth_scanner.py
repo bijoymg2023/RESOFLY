@@ -37,17 +37,29 @@ def get_bluetooth_devices():
             # Use 'sudo' only if not root, handled by caller or script? 
             # Actually, script just runs commands. If we are user, we need sudo.
             is_root = (os.geteuid() == 0)
-            prefix = "" if is_root else "sudo "
+            # 4. Run the scan (Match verify_sensors.py logic exactly)
+            cmd = ["bash", script_path]
+            if not is_root:
+                cmd.insert(0, "sudo")
             
-            cmd = f"{prefix}bash {script_path}"
-            output = subprocess.check_output(cmd, shell=True).decode("utf-8", errors="ignore")
+            log_debug(f"Executing: {' '.join(cmd)}")
+            
+            # Use run() instead of check_output() to capture output even on errors/timeout
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+            
+            output = result.stdout
+            if not output:
+                 # Check stderr if stdout is empty
+                 log_debug(f"Warning: Empty stdout. Stderr: {result.stderr}")
             
             lines = output.split('\n')
             current_dev = {}
             devices = []
             
             log_debug(f"Scan complete. Output length: {len(output)} chars.")
-            # log_debug(f"DEBUG OUTPUT: {output[:500]}...") 
+            # Log content for debugging "58 chars" issue
+            if len(output) < 200:
+                log_debug(f"DEBUG OUTPUT CONTENT: {output}")
 
             for line in lines:
                 line = line.strip()
