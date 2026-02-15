@@ -39,7 +39,7 @@ def get_ist_time():
     return datetime.now(IST_OFFSET)
 # Global Signal Cache (Zero-Lag)
 signal_cache = []
-signal_cache_lock = asyncio.Lock()
+signal_cache_lock = None # Initialized in startup()
 
 # Setup
 ROOT_DIR = Path(__file__).parent
@@ -739,6 +739,8 @@ async def thermal_stream():
 # Startup
 @app.on_event("startup")
 async def startup():
+    global signal_cache_lock
+    signal_cache_lock = asyncio.Lock()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
