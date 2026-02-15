@@ -622,11 +622,16 @@ class ThermalFramePipeline:
                     if (now - self.global_last_alert) < 8.0:
                         continue
                         
-                    # Check Spatial Duplication (Did we just alert here?)
-                    if self.last_alert_coords:
+                    # Check Spatial Duplication (Did we just alert here RECENTLY?)
+                    # Only check if last alert was < 15 seconds ago
+                    # This fixes "User left and came back but got no alert"
+                    if self.last_alert_coords and (now - self.global_last_alert) < 15.0:
                         lx, ly = self.last_alert_coords
                         dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
                         if dist < 100: # Reduced radius
+                             # Update timestamp to prevent immediate re-check
+                            self.alerted_ids[object_id] = now
+                            continue
                              # Update timestamp to prevent immediate re-check
                             self.alerted_ids[object_id] = now
                             continue
