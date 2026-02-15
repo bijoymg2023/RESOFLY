@@ -9,7 +9,7 @@ from datetime import datetime
 # pip install pyserial pynmea2
 
 class GPSReader:
-    def __init__(self, port='/dev/ttyUSB0', baudrate=9600):
+    def __init__(self, port='/dev/serial0', baudrate=9600):
         self.port = port
         self.baudrate = baudrate
         self.current_data = {
