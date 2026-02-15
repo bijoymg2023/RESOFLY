@@ -15,8 +15,9 @@ import time
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple, Callable, Set
-from dataclasses import dataclass, asdict
+from typing import List, Optional, Tuple, Callable
+from dataclasses import dataclass
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,162 +38,6 @@ class Hotspot:
     confidence: float
     circularity: float = 0.0  # 1.0 = perfect circle (Head from top view)
     track_id: Optional[int] = None  # Persistent object ID from tracker
-
-
-# ... (rest of file)
-
-
-    def process(self, frame: np.ndarray) -> Tuple[List[Hotspot], np.ndarray]:
-        """
-        Process frame and return hotspots + binary mask.
-        
-        Returns:
-            hotspots: List of detected hotspots
-            binary: Thresholded binary image
-        """
-        # Ensure grayscale
-        if len(frame.shape) == 3:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = frame.copy()
-        
-        # Normalize
-        gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-        
-        # Denoise
-        blurred = cv2.GaussianBlur(gray, (self.blur_kernel, self.blur_kernel), 0)
-        
-        # Adaptive threshold based on frame statistics
-        if self.adaptive:
-            mean = np.mean(blurred)
-            std = np.std(blurred)
-            thresh_val = int(min(200, mean + 2.0 * std))  # Higher threshold = fewer false positives
-            thresh_val = max(thresh_val, HUMAN_TEMP_THRESHOLD_INTENSITY)
-        else:
-            thresh_val = HUMAN_TEMP_THRESHOLD_INTENSITY
-        
-        # Binary threshold
-        _, binary = cv2.threshold(blurred, thresh_val, 255, cv2.THRESH_BINARY)
-        
-        # Morphological cleanup
-        # DRONE VIEW OPTIMIZATION:
-        # Use smaller kernel for open/close to preserve small details
-        # DO NOT DILATE heavily, or heads close together will merge into one blob.
-        kernel = np.ones((3, 3), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)   # Remove noise
-        # binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # Fill gaps (Optional, maybe skip for heads)
-        
-        # Find contours
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        hotspots = []
-        for cnt in contours:
-            area = cv2.contourArea(cnt)
-            
-            if area >= self.min_area:
-                x, y, w, h = cv2.boundingRect(cnt)
-                
-                # Calculate Circularity (Top-down head detection metrics)
-                perimeter = cv2.arcLength(cnt, True)
-                circularity = 0.0
-                if perimeter > 0:
-                    circularity = 4 * np.pi * area / (perimeter * perimeter)
-                
-                # Get max intensity in region
-                mask = np.zeros(gray.shape, dtype=np.uint8)
-                cv2.drawContours(mask, [cnt], -1, 255, -1)
-                max_intensity = float(np.max(gray[mask == 255]))
-                
-                # Estimate temperature
-                estimated_temp = intensity_to_temperature(max_intensity)
-                
-                # Confidence based on temperature AND circularity
-                # Perfect circle = 1.0. Square = 0.78.
-                # Heads are usually 0.6 - 0.9.
-                temp_diff = estimated_temp - HUMAN_TEMP_THRESHOLD_C
-                
-                # Base confidence from temp
-                confidence = min(0.95, 0.5 + (temp_diff / 15.0) * 0.45)
-                
-                # Boost for circular shapes (Top down view)
-                if circularity > 0.6:
-                    confidence += 0.1
-                
-                confidence = max(0.1, min(1.0, confidence))
-                
-                hotspots.append(Hotspot(
-                    x=int(x), y=int(y),
-                    width=int(w), height=int(h),
-                    area=float(area),
-                    max_intensity=max_intensity,
-                    estimated_temp=estimated_temp,
-                    confidence=confidence,
-                    circularity=circularity
-                ))
-        
-        # Sort by confidence
-        hotspots.sort(key=lambda h: h.confidence, reverse=True)
-        
-        return hotspots, binary
-
-
-    def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
-        """Apply thermal colormap and draw clean bounding boxes on frame."""
-        # Apply INFERNO colormap (purple->orange->yellow) — matches reference image
-        if len(frame.shape) == 2:
-            annotated = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
-        else:
-            annotated = frame.copy()
-        
-        # Only annotate high-confidence detections
-        strong = [h for h in hotspots if hasattr(h, 'track_id') and h.confidence >= 0.60]
-        
-        # Loop to annotate each strong detection
-        for h in strong:
-            # Add padding to make box bigger/looser
-            pad = 8
-            h_img, w_img = annotated.shape[:2]
-            
-            x = max(0, h.x - pad)
-            y = max(0, h.y - pad)
-            w = min(w_img - x, h.width + 2*pad)
-            height = min(h_img - y, h.height + 2*pad)
-            
-            # Green boxes (High Visibility)
-            color = (0, 255, 0)
-            
-            # Thicker rectangle (2px)
-            cv2.rectangle(annotated, (x, y), (x + w, y + height), color, 2)
-            
-            # Calculate Liveness Score
-            # 1. Proximity to 34°C (skin)
-            ideal_temp = 34.0
-            diff = abs(h.estimated_temp - ideal_temp)
-            temp_score = max(0, 100 - (diff * 4))
-            
-            # 2. Shape Score (Top-down view)
-            # 0.7 - 0.9 is ideal for a head
-            shape_factor = 1.0
-            if h.circularity > 0.6:
-                shape_factor = 1.2
-            
-            liveness = min(100, temp_score * shape_factor)
-            
-            # Label with Temp and Life Score
-            label = f"{h.estimated_temp:.0f}C | Life: {int(liveness)}%"
-            
-            # Draw label background for readability
-            (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-            cv2.rectangle(annotated, (x, y - text_h - 4), (x + text_w, y), (0,0,0), -1)
-            
-            cv2.putText(annotated, label, (x, y - 4), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
-        
-        # Minimal status bar (bottom-left, small)
-        info = f"Targets: {len(strong)}"
-        cv2.putText(annotated, info, (8, annotated.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
-        
-        return annotated
 
 
 @dataclass 
@@ -327,7 +172,7 @@ class WaveshareSource:
     def get_detect_frame(self, display_frame: np.ndarray) -> np.ndarray:
         """Downscale display frame for fast detection processing."""
         return cv2.resize(display_frame, (self.DETECT_WIDTH, self.DETECT_HEIGHT),
-                         interpolation=cv2.INTER_AREA)
+                          interpolation=cv2.INTER_AREA)
     
     def is_available(self) -> bool:
         return self._available
@@ -417,11 +262,13 @@ class ThermalDetector:
         # Binary threshold
         _, binary = cv2.threshold(blurred, thresh_val, 255, cv2.THRESH_BINARY)
         
-        # Morphological cleanup (5x5 kernel to merge fragmented blobs)
-        kernel = np.ones((5, 5), np.uint8)
+        # Morphological cleanup
+        # DRONE VIEW OPTIMIZATION:
+        # Use smaller kernel for open/close to preserve small details
+        # DO NOT DILATE heavily, or heads close together will merge into one blob.
+        kernel = np.ones((3, 3), np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)   # Remove noise
-        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # Fill gaps
-        binary = cv2.morphologyEx(binary, cv2.MORPH_DILATE, kernel) # Merge nearby blobs
+        # binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # Fill gaps (Optional, maybe skip for heads)
         
         # Find contours
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -433,6 +280,12 @@ class ThermalDetector:
             if area >= self.min_area:
                 x, y, w, h = cv2.boundingRect(cnt)
                 
+                # Calculate Circularity (Top-down head detection metrics)
+                perimeter = cv2.arcLength(cnt, True)
+                circularity = 0.0
+                if perimeter > 0:
+                    circularity = 4 * np.pi * area / (perimeter * perimeter)
+                
                 # Get max intensity in region
                 mask = np.zeros(gray.shape, dtype=np.uint8)
                 cv2.drawContours(mask, [cnt], -1, 255, -1)
@@ -441,10 +294,19 @@ class ThermalDetector:
                 # Estimate temperature
                 estimated_temp = intensity_to_temperature(max_intensity)
                 
-                # Confidence based on temperature differential
+                # Confidence based on temperature AND circularity
+                # Perfect circle = 1.0. Square = 0.78.
+                # Heads are usually 0.6 - 0.9.
                 temp_diff = estimated_temp - HUMAN_TEMP_THRESHOLD_C
+                
+                # Base confidence from temp
                 confidence = min(0.95, 0.5 + (temp_diff / 15.0) * 0.45)
-                confidence = max(0.1, confidence)
+                
+                # Boost for circular shapes (Top down view)
+                if circularity > 0.6:
+                    confidence += 0.1
+                
+                confidence = max(0.1, min(1.0, confidence))
                 
                 hotspots.append(Hotspot(
                     x=int(x), y=int(y),
@@ -452,7 +314,8 @@ class ThermalDetector:
                     area=float(area),
                     max_intensity=max_intensity,
                     estimated_temp=estimated_temp,
-                    confidence=confidence
+                    confidence=confidence,
+                    circularity=circularity
                 ))
         
         # Sort by confidence
@@ -618,11 +481,19 @@ class ThermalFramePipeline:
             # Thicker rectangle (2px)
             cv2.rectangle(annotated, (x, y), (x + w, y + height), color, 2)
             
-            # Calculate Liveness Score based on proximity to 34°C (skin temp)
-            # 34°C is ideal. +/- 10°C reduces score.
+            # Calculate Liveness Score
+            # 1. Proximity to 34°C (skin)
             ideal_temp = 34.0
             diff = abs(h.estimated_temp - ideal_temp)
-            liveness = max(0, min(100, 100 - (diff * 4)))
+            temp_score = max(0, 100 - (diff * 4))
+            
+            # 2. Shape Score (Top-down view)
+            # 0.7 - 0.9 is ideal for a head
+            shape_factor = 1.0
+            if h.circularity > 0.6:
+                shape_factor = 1.2
+            
+            liveness = min(100, temp_score * shape_factor)
             
             # Label with Temp and Life Score
             label = f"{h.estimated_temp:.0f}C | Life: {int(liveness)}%"
