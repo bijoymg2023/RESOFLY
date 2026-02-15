@@ -498,198 +498,209 @@ class ThermalFramePipeline:
         Get next frame, detect hotspots, track objects, trigger alerts for NEW IDs.
         Detection runs on smaller frame for speed; boxes scaled up for display.
         """
-        frame = self.source.get_frame()
-        if frame is None:
-            return None
-        
-        self.frame_number += 1
-        self.current_frame = frame.copy()
-        timestamp = datetime.utcnow()
-        
-        # 1. Detect hotspots on SMALLER frame for speed
-        if hasattr(self.source, 'get_detect_frame'):
-            detect_frame = self.source.get_detect_frame(frame)
-            scale_x = frame.shape[1] / detect_frame.shape[1]
-            scale_y = frame.shape[0] / detect_frame.shape[0]
-        else:
-            detect_frame = frame
-            scale_x = scale_y = 1.0
-        
-        raw_hotspots, binary = self.detector.process(detect_frame)
-        
-        # Scale hotspot coordinates back to display resolution
-        if scale_x != 1.0:
-            for h in raw_hotspots:
-                h.x = int(h.x * scale_x)
-                h.y = int(h.y * scale_y)
-                h.width = int(h.width * scale_x)
-                h.height = int(h.height * scale_y)
-        
-        # 2. Prepare bounding boxes for tracker
-        rects = []
-        for h in raw_hotspots:
-            if h.confidence >= 0.70:
-                rects.append((h.x, h.y, h.width, h.height))
-        
-        # 3. Update Tracker
-        objects = self.tracker.update(rects)
-        
-        # 4. Match tracked objects back to hotspots (with SMOOTHING & PERSISTENCE)
-        tracked_hotspots = []
-        new_alerts = []
-        
-        # Ensure memory exists
-        if not hasattr(self, 'track_memory'):
-            self.track_memory = {}
+        try:
+            frame = self.source.get_frame()
+            if frame is None:
+                return None
             
-        active_ids = set()
-
-        for (object_id, centroid) in objects.items():
-            active_ids.add(object_id)
+            self.frame_number += 1
+            self.current_frame = frame.copy()
+            timestamp = datetime.utcnow()
             
-            # Find the hotspot that matches this centroid (closest)
-            best_match = None
-            min_dist = float('inf')
-            
-            for h in raw_hotspots:
-                cx = h.x + h.width // 2
-                cy = h.y + h.height // 2
-                dist = np.sqrt((cx - centroid[0])**2 + (cy - centroid[1])**2)
-                
-                if dist < 120:  # Threshold to associate
-                    if dist < min_dist:
-                        min_dist = dist
-                        best_match = h
-            
-            # --- SMOOTHING LOGIC ---
-            last_state = self.track_memory.get(object_id)
-            
-            if best_match:
-                # LIVE DETECTION
-                h = best_match
-                h.is_ghost = False  # Flag as LIVE
-                
-                if last_state:
-                    # Smooth the box: 65% new, 35% old (Faster Response)
-                    alpha = 0.65
-                    h.x = int(last_state['x'] * (1-alpha) + h.x * alpha)
-                    h.y = int(last_state['y'] * (1-alpha) + h.y * alpha)
-                    h.width = int(last_state['w'] * (1-alpha) + h.width * alpha)
-                    h.height = int(last_state['h'] * (1-alpha) + h.height * alpha)
-                
-                # Update memory
-                self.track_memory[object_id] = {
-                    'x': h.x, 'y': h.y, 'w': h.width, 'h': h.height,
-                    'hotspot_data': h 
-                }
+            # 1. Detect hotspots on SMALLER frame for speed
+            if hasattr(self.source, 'get_detect_frame'):
+                detect_frame = self.source.get_detect_frame(frame)
+                scale_x = frame.shape[1] / detect_frame.shape[1]
+                scale_y = frame.shape[0] / detect_frame.shape[0]
             else:
-                # GHOST DETECTION (Gap Filling)
-                if last_state:
-                    h = last_state['hotspot_data']
-                    h.is_ghost = True  # Flag as GHOST
-                    # Use last known dimensions
-                    h.x = last_state['x']
-                    h.y = last_state['y']
-                    h.width = last_state['w']
-                    h.height = last_state['h']
+                detect_frame = frame
+                scale_x = scale_y = 1.0
+            
+            raw_hotspots, binary = self.detector.process(detect_frame)
+            
+            # Scale hotspot coordinates back to display resolution
+            if scale_x != 1.0:
+                for h in raw_hotspots:
+                    h.x = int(h.x * scale_x)
+                    h.y = int(h.y * scale_y)
+                    h.width = int(h.width * scale_x)
+                    h.height = int(h.height * scale_y)
+            
+            # 2. Prepare bounding boxes for tracker
+            rects = []
+            for h in raw_hotspots:
+                if h.confidence >= 0.70:
+                    rects.append((h.x, h.y, h.width, h.height))
+            
+            # 3. Update Tracker
+            objects = self.tracker.update(rects)
+            
+            # 4. Match tracked objects back to hotspots (with SMOOTHING & PERSISTENCE)
+            tracked_hotspots = []
+            new_alerts = []
+            
+            # Ensure memory exists
+            if not hasattr(self, 'track_memory'):
+                self.track_memory = {}
+                
+            active_ids = set()
+
+            for (object_id, centroid) in objects.items():
+                active_ids.add(object_id)
+                
+                # Find the hotspot that matches this centroid (closest)
+                best_match = None
+                min_dist = float('inf')
+                
+                for h in raw_hotspots:
+                    cx = h.x + h.width // 2
+                    cy = h.y + h.height // 2
+                    dist = np.sqrt((cx - centroid[0])**2 + (cy - centroid[1])**2)
+                    
+                    if dist < 120:  # Threshold to associate
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_match = h
+                
+                # --- SMOOTHING LOGIC ---
+                last_state = self.track_memory.get(object_id)
+                
+                if best_match:
+                    # LIVE DETECTION
+                    h = best_match
+                    h.is_ghost = False  # Flag as LIVE
+                    
+                    if last_state:
+                        # Smooth the box: 65% new, 35% old (Faster Response)
+                        alpha = 0.65
+                        h.x = int(last_state['x'] * (1-alpha) + h.x * alpha)
+                        h.y = int(last_state['y'] * (1-alpha) + h.y * alpha)
+                        h.width = int(last_state['w'] * (1-alpha) + h.width * alpha)
+                        h.height = int(last_state['h'] * (1-alpha) + h.height * alpha)
+                    
+                    # Update memory
+                    self.track_memory[object_id] = {
+                        'x': h.x, 'y': h.y, 'w': h.width, 'h': h.height,
+                        'hotspot_data': h 
+                    }
                 else:
-                    continue 
+                    # GHOST DETECTION (Gap Filling)
+                    if last_state:
+                        h = last_state['hotspot_data']
+                        h.is_ghost = True  # Flag as GHOST
+                        # Use last known dimensions
+                        h.x = last_state['x']
+                        h.y = last_state['y']
+                        h.width = last_state['w']
+                        h.height = last_state['h']
+                    else:
+                        continue 
 
-            h.track_id = object_id
-            
-            # --- PROBATION CHECK (Anti-Spam) ---
-            persistence = self.tracker.persistence.get(object_id, 0)
-            is_confirmed = persistence >= 8
-            h.is_confirmed = is_confirmed
-            tracked_hotspots.append(h)
-            
-            # Trigger Alert IF:
-            if is_confirmed and object_id not in self.alerted_ids:
-                now = time.time()
+                h.track_id = object_id
                 
-                # Check Global Cooldown (8 seconds silence)
-                last_global = getattr(self, 'global_last_alert', 0)
-                if (now - last_global) < 8.0:
-                    continue
+                # --- PROBATION CHECK (Anti-Spam) ---
+                persistence = self.tracker.persistence.get(object_id, 0)
+                is_confirmed = persistence >= 8
+                h.is_confirmed = is_confirmed
+                tracked_hotspots.append(h)
+                
+                # Trigger Alert IF:
+                if is_confirmed and object_id not in self.alerted_ids:
+                    now = time.time()
                     
-                # Check Spatial Duplication (Did we just alert here?)
-                last_coords = getattr(self, 'last_alert_coords', None)
-                if last_coords:
-                    lx, ly = last_coords
-                    dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
-                    if dist < 150:
-                        self.alerted_ids[object_id] = True
+                    # Check Global Cooldown (8 seconds silence)
+                    last_global = getattr(self, 'global_last_alert', 0)
+                    if (now - last_global) < 8.0:
                         continue
+                        
+                    # Check Spatial Duplication (Did we just alert here?)
+                    last_coords = getattr(self, 'last_alert_coords', None)
+                    if last_coords:
+                        lx, ly = last_coords
+                        dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
+                        if dist < 150:
+                            self.alerted_ids[object_id] = True
+                            continue
 
-                # FIRE ALERT
-                self.alerted_ids[object_id] = True
-                self.global_last_alert = now
-                self.last_alert_coords = (h.x, h.y)
-                new_alerts.append(h)
-                self.alert_count += 1
-        
-        # --- GHOST KILLER (Fix Nested Boxes) ---
-        # If a Ghost Box overlaps with a Live Box, it means it was merged.
-        # We must kill the Ghost to prevent it from showing up inside the new box.
-        
-        final_list = []
-        live_boxes = [h for h in tracked_hotspots if not getattr(h, 'is_ghost', False)]
-        
-        for h in tracked_hotspots:
-            if getattr(h, 'is_ghost', False):
-                # This is a Ghost. Check if it's inside a Live Box.
-                killed = False
-                for live in live_boxes:
-                    # Check Intersection
-                    ix = min(h.x + h.width, live.x + live.width) - max(h.x, live.x)
-                    iy = min(h.y + h.height, live.y + live.height) - max(h.y, live.y)
+                    # FIRE ALERT
+                    self.alerted_ids[object_id] = True
+                    self.global_last_alert = now
+                    self.last_alert_coords = (h.x, h.y)
+                    new_alerts.append(h)
+                    self.alert_count += 1
+            
+            # --- GHOST KILLER (Fix Nested Boxes) ---
+            # If a Ghost Box overlaps with a Live Box, it means it was merged.
+            # We must kill the Ghost to prevent it from showing up inside the new box.
+            
+            final_list = []
+            live_boxes = [h for h in tracked_hotspots if not getattr(h, 'is_ghost', False)]
+            
+            for h in tracked_hotspots:
+                if getattr(h, 'is_ghost', False):
+                    # This is a Ghost. Check if it's inside a Live Box.
+                    killed = False
+                    for live in live_boxes:
+                        # Check Intersection
+                        ix = min(h.x + h.width, live.x + live.width) - max(h.x, live.x)
+                        iy = min(h.y + h.height, live.y + live.height) - max(h.y, live.y)
+                        
+                        # If significant overlap, kill it
+                        if ix > 0 and iy > 0:
+                            killed = True
+                            # Force remove from tracker memory
+                            self.tracker.deregister(h.track_id)
+                            # SAFE POP
+                            self.track_memory.pop(h.track_id, None)
+                            break
                     
-                    # If significant overlap, kill it
-                    if ix > 0 and iy > 0:
-                        killed = True
-                        # Force remove from tracker memory
-                        self.tracker.deregister(h.track_id)
-                        if h.track_id in self.track_memory:
-                            del self.track_memory[h.track_id]
-                        break
-                
-                if not killed:
+                    if not killed:
+                        final_list.append(h)
+                else:
                     final_list.append(h)
-            else:
-                final_list.append(h)
 
-        
-        # --- GARBAGE COLLECTION ---
-        # Cleanup alert IDs
-        for alerted_id in list(self.alerted_ids.keys()):
-            if alerted_id not in active_ids:
-                del self.alerted_ids[alerted_id]
-        
-        # Cleanup track memory
-        for tid in list(self.track_memory.keys()):
-            if tid not in active_ids:
-                del self.track_memory[tid]
-        
-        self.current_hotspots = tracked_hotspots
-        
-        self.current_hotspots = tracked_hotspots
-        
-        # 5. Trigger Alerts (only for CONFIRMED objects)
-        if new_alerts:
-            self.detection_count += 1
             
-            event = DetectionEvent(
-                hotspots=new_alerts,
-                timestamp=timestamp,
-                frame_number=self.frame_number,
-                total_count=len(tracked_hotspots)
-            )
+            # --- GARBAGE COLLECTION ---
+            # Cleanup alert IDs
+            active_ids = {h.track_id for h in final_list}
+            for alerted_id in list(self.alerted_ids.keys()):
+                if alerted_id not in active_ids:
+                    self.alerted_ids.pop(alerted_id, None)
             
-            if self.on_detection:
-                self.on_detection(event)
+            # Cleanup track memory
+            for tid in list(self.track_memory.keys()):
+                if tid not in active_ids:
+                    self.track_memory.pop(tid, None)
+            
+            self.current_hotspots = final_list
+            
+            # 5. Trigger Alerts (only for CONFIRMED objects)
+            if new_alerts:
+                self.detection_count += 1
+                
+                event = DetectionEvent(
+                    hotspots=new_alerts,
+                    timestamp=timestamp,
+                    frame_number=self.frame_number,
+                    total_count=len(tracked_hotspots)
+                )
+                
+                if self.on_detection:
+                    self.on_detection(event)
+            
+            # Annotate frame
+            return self._annotate(frame, self.current_hotspots)
         
-        # Annotate frame
-        return self._annotate(frame, self.current_hotspots)
+        except Exception as e:
+            # SAFETY FALLBACK: If anything crashes, return empty frame
+            # This prevents the stream from dying (black screen)
+            print(f"[ERROR] Thermal Pipeline Crash: {e}")
+            if 'frame' in locals() and frame is not None:
+                try:
+                    return self._annotate(frame, [])
+                except:
+                    return frame
+            return None
     
     def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
         """Apply thermal colormap and draw clean bounding boxes on frame."""
