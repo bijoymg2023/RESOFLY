@@ -146,11 +146,6 @@ class WaveshareSource:
                 frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
             self._prev_frame = frame.copy()
             
-            # --- NEW: Despeckle (Median Blur) ---
-            # Removes "salt and pepper" noise (hot/cold pixels)
-            # Essential before CLAHE amplifies them.
-            frame = cv2.medianBlur(frame, 3)
-            
             # 3. Gamma Correction (Brighten shadows / mid-tones)
             # Gamma < 1.0 = lighter, Gamma > 1.0 = darker (Wait, standard gamma is inv)
             # actually for thermal, we want to expand the 'warm' range.
@@ -179,10 +174,13 @@ class WaveshareSource:
             # Use LANCZOS4 (High quality) instead of Cubic
             mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_LANCZOS4)
             
+            # --- NEW LOCATION: Despeckle (Median Blur) ---
+            # Run on 320x240 image so we don't kill small details!
+            mid_frame = cv2.medianBlur(mid_frame, 3)
+
             # AGGRESSIVE Blur to melt the sensor grid
-            # 80px -> 320px means 1 sensor pixel is 4x4 screen pixels.
-            # Blur radius of 7 covers ~1.5 sensor pixels, blending them fully.
-            mid_frame = cv2.GaussianBlur(mid_frame, (7, 7), 0)
+            # Reduced to 5x5 (crisper than 7x7)
+            mid_frame = cv2.GaussianBlur(mid_frame, (5, 5), 0)
             
             # Stage 2: 2x Upscale (320 -> 640)
             upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
