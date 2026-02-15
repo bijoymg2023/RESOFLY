@@ -31,6 +31,7 @@ from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, selec
 import thermal_pipeline
 from datetime import datetime, timedelta, timezone
 import json
+import wifi_gps
 
 # IST Timezone (UTC + 5:30)
 IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
@@ -151,6 +152,7 @@ class GPSData(BaseModel):
     speed: float = 0.0
     heading: float = 0.0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
+    source: str = "none"
 
 class SystemStatus(BaseModel):
     cpu_usage: float
@@ -417,40 +419,78 @@ async def create_test_alert(db: AsyncSession = Depends(get_db)):
 
 import gps_real
 
+class UnifiedGPSReader:
+    def __init__(self, hardware_reader, wifi_gps_module):
+        self.hardware = hardware_reader
+        self.wifi = wifi_gps_module
+    
+    def start(self):
+        if self.hardware:
+            self.hardware.start()
+            
+    def get_data(self):
+        # 1. Try Hardware GPS first
+        if self.hardware:
+            hw_data = self.hardware.get_data()
+            if hw_data.get("latitude") and hw_data["latitude"] != 0.0:
+                hw_data["source"] = "hardware"
+                return hw_data
+        
+        # 2. Fallback to Wi-Fi Geolocation
+        if self.wifi:
+            wifi_data = self.wifi.get_location()
+            if wifi_data.get("latitude") and wifi_data["latitude"] != 0.0:
+                wifi_data["source"] = "network"
+                return wifi_data
+                
+        # 3. Last Resort
+        return {
+            "latitude": 0.0, "longitude": 0.0, "altitude": 0.0,
+            "accuracy": 0.0, "speed": 0.0, "heading": 0.0,
+            "timestamp": datetime.utcnow(), "source": "none"
+        }
+
 # Initialize real GPS reader (Adjust port if using UART vs USB)
 # Common ports: /dev/ttyUSB0, /dev/ttyACM0, /dev/serial0
-gps_reader = None
+# Initialize GPS infrastructure
+hw_gps = None
 possible_gps_ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyAMA0', '/dev/serial0']
 
 for port in possible_gps_ports:
     try:
         if os.path.exists(port):
             print(f"Attempting GPS on {port}...")
-            gps_reader = gps_real.GPSReader(port=port) 
-            gps_reader.start()
-            print(f"GPS Module Initialized on {port}")
+            hw_gps = gps_real.GPSReader(port=port) 
+            # hw_gps.start() - Handled by manager
+            print(f"GPS Hardware detected on {port}")
             break
     except Exception as e:
-        print(f"Warning: GPS Init Failed on {port}: {e}")
+        print(f"Warning: GPS Probe Failed on {port}: {e}")
 
-if not gps_reader:
-    print("Warning: No GPS module found. Location data will be 0.0")
+# Create Unified GPS Manager
+gps_reader = UnifiedGPSReader(
+    hardware_reader=hw_gps,
+    wifi_gps_module=wifi_gps.WifiGPS()
+)
+gps_reader.start()
+
+if not hw_gps:
+    print("Warning: No GPS hardware found. Using Network GPS fallback.")
+else:
+    print("GPS Hardware detected and initialized.")
 
 @api_router.get("/gps", response_model=GPSData)
 async def get_gps(current_user: UserDB = Depends(get_current_user)):
-    if gps_reader:
-         data = gps_reader.get_data()
-         # Ensure timestamp is datetime
-         if isinstance(data.get("timestamp"), str):
-             # basic fallback if parsing failed
-             data["timestamp"] = get_ist_time()
-         return GPSData(**data)
-         
-    # Fallback if no GPS hardware found (return zeros instead of mock)
-    return GPSData(
-        latitude=0.0, longitude=0.0, altitude=0.0, 
-        accuracy=0.0, speed=0.0, heading=0.0
-    )
+    data = gps_reader.get_data()
+    # Ensure timestamp is datetime
+    if isinstance(data.get("timestamp"), str):
+        try:
+            from dateutil.parser import parse
+            data["timestamp"] = parse(data["timestamp"])
+        except:
+            data["timestamp"] = datetime.utcnow()
+            
+    return GPSData(**data)
 
 def get_pi_temperature():
     try:

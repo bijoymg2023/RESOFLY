@@ -23,8 +23,9 @@ interface GPSData {
   accuracy: number;
   timestamp: Date;
   speed: number;
-  climb: number; // using 'climb' as heading/climb often come together or as fallback
+  climb: number;
   heading?: number;
+  source?: 'hardware' | 'network' | 'none';
 }
 
 export const GPSCoordinateBox = () => {
@@ -81,21 +82,31 @@ export const GPSCoordinateBox = () => {
     return `${Math.floor(diff / 3600)}h ago`;
   };
 
+  const getSourceDisplay = () => {
+    if (!gpsData || !gpsData.source || gpsData.source === 'none') return 'SEARCHING';
+    return gpsData.source === 'hardware' ? 'HARDWARE' : 'NETWORK';
+  };
+
+  const getSourceIcon = () => {
+    if (gpsData?.source === 'network') return <Navigation className="w-4 h-4 text-cyan-500" />;
+    return <Satellite className="w-4 h-4 text-emerald-500" />;
+  };
+
   return (
     <>
       <Card className="h-full bg-card/40 backdrop-blur-sm border-border dark:border-white/10 overflow-hidden flex flex-col shadow-lg">
         {/* Header - Matching Signal Tracker Style */}
         <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0 border-b border-white/10 bg-black/60">
-          <div className="flex items-center space-x-2 text-muted-foreground">
-            <Navigation className="w-4 h-4" />
-            <CardTitle className="text-xs font-bold uppercase tracking-widest">Global Positioning</CardTitle>
+          <div className="flex items-center space-x-2">
+            {getSourceIcon()}
+            <CardTitle className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60">POSITION_LOCK</CardTitle>
           </div>
           <Badge
             variant="outline"
-            className={`text-[10px] h-5 border-white/10 bg-white/5 ${gpsData ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-muted-foreground'
+            className={`text-[9px] h-5 px-2 border-white/10 font-bold tracking-widest ${gpsData?.latitude !== 0 ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-muted-foreground'
               }`}
           >
-            {gpsData ? (isMobile ? 'LOCK' : 'LOCKED') : 'SEARCHING'}
+            {getSourceDisplay()}
           </Badge>
         </CardHeader>
 
