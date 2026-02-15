@@ -85,61 +85,18 @@ def get_bluetooth_devices():
                 devices.append(current_dev)
 
             return _deduplicate(devices)
-                if "dev_found" in line:
-                    if current_dev and 'mac' in current_dev:
-                        devices.append(current_dev)
-                    current_dev = {}
-                    
-                    mac_match = re.search(r"dev_found:\s+([0-9A-F:]{17})", line, re.I)
-                    rssi_match = re.search(r"rssi\s+(-?\d+)", line, re.I)
-                    
-                    if mac_match: current_dev['mac'] = mac_match.group(1)
-                    if rssi_match: current_dev['rssi'] = int(rssi_match.group(1))
-                        
-                elif "name" in line and current_dev:
-                    name_match = re.search(r"name\s+(.*)", line, re.I)
-                    if name_match: current_dev['name'] = name_match.group(1)
-            
-            if current_dev and 'mac' in current_dev:
-                devices.append(current_dev)
 
-            return _deduplicate(devices)
         except subprocess.CalledProcessError as e:
-            if e.returncode == 124: 
-                # Timeout is expected! It means scan ran for 7s.
-                output = e.output.decode("utf-8", errors="ignore")
-                
-                # Copy-paste parsing logic here or refactor
-                lines = output.split('\n')
-                current_dev = {}
-                devices = []
-                
-                log_debug(f"Scan complete (Timeout). Found {len(lines)} lines.")
-
-                for line in lines:
-                    line = line.strip()
-                    if "dev_found" in line:
-                        if current_dev and 'mac' in current_dev:
-                            devices.append(current_dev)
-                        current_dev = {}
-                        
-                        mac_match = re.search(r"dev_found:\s+([0-9A-F:]{17})", line, re.I)
-                        rssi_match = re.search(r"rssi\s+(-?\d+)", line, re.I)
-                        
-                        if mac_match: current_dev['mac'] = mac_match.group(1)
-                        if rssi_match: current_dev['rssi'] = int(rssi_match.group(1))
-                            
-                    elif "name" in line and current_dev:
-                        name_match = re.search(r"name\s+(.*)", line, re.I)
-                        if name_match: current_dev['name'] = name_match.group(1)
-                
-                if current_dev and 'mac' in current_dev:
-                    devices.append(current_dev)
-
-                return _deduplicate(devices)
-            
-            print(f"Scan process error (Code {e.returncode}): {e}")
+            # Shell script error (should be rare as script handles errors)
+            log_debug(f"Scan script failed (Code {e.returncode}): {e}")
+            # Try to read output anyway if available
+            if e.output:
+                log_debug(f"Script output before fail: {e.output.decode('utf-8', errors='ignore')}")
             return []
+
+    except Exception as e:
+        log_debug(f"Bluetooth scan CRITICAL error: {e}")
+        return []
 
     except Exception as e:
         print(f"Bluetooth scan error: {e}")
