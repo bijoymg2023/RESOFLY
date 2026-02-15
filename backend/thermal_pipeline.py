@@ -415,10 +415,10 @@ class ThermalDetector:
                 unmerged = []
                 for other in hotspots:
                     # Check Overlap / Proximity (The "Magnet" Logic)
-                    # We inflate the boxes by 40px to see if they are "close enough" to merge.
-                    # This bridges the gap between Head and Torso caused by clothes.
+                    # We inflate the boxes by 6px (Reduced from 25px)
+                    # This bridges the gap without grabbing background noise
                     
-                    param_inflate = 25
+                    param_inflate = 6
                     
                     # Box A (Base)
                     ax1, ay1 = base.x - param_inflate, base.y - param_inflate
