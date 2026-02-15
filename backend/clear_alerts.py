@@ -1,12 +1,25 @@
 import sqlite3
 import os
 
-DB_PATH = "./thermo_vision.db"
+POSSIBLE_PATHS = [
+    "./thermo_vision.db",
+    "./backend/thermo_vision.db",
+    "../thermo_vision.db"
+]
 
 def clear_alerts():
-    if not os.path.exists(DB_PATH):
-        print(f"Database not found at {DB_PATH}")
+    db_path = None
+    for p in POSSIBLE_PATHS:
+        if os.path.exists(p):
+            db_path = p
+            break
+            
+    if not db_path:
+        print(f"Database not found in: {POSSIBLE_PATHS}")
         return
+        
+    print(f"Found database at: {db_path}")
+    DB_PATH = db_path
 
     try:
         conn = sqlite3.connect(DB_PATH)
