@@ -13,105 +13,75 @@ def get_bluetooth_devices():
     """
     Scans for Bluetooth LE devices using 'btmgmt find' on Linux (Pi).
     Returns a list of dicts: [{'mac': 'XX:XX...', 'name': 'Device', 'rssi': -80}]
-    
-    On non-Linux systems, returns mock data for testing.
     """
-    
     try:
-        # 1. Find the path to btmgmt
-        btmgmt_path = shutil.which("btmgmt") or "/usr/bin/btmgmt"
-        if not os.path.exists(btmgmt_path):
-             btmgmt_path = "/usr/sbin/btmgmt"
-        
-        log_debug(f"Using btmgmt path: {btmgmt_path}")
+        # 1. Determine Script Path
+        script_path = os.path.join(os.path.dirname(__file__), "scan_helper.sh")
+        if not os.path.exists(script_path):
+             log_debug(f"Scan helper missing at: {script_path}")
+             return []
 
-        # 2. Check if we are on Linux
-        log_debug(f"Starting 7s Bluetooth LE scan (via scan_helper.sh)...")
+        # 2. Make executable (just in case)
         try:
-            # Delegate complexity to shell script
-            script_path = os.path.join(os.path.dirname(__file__), "scan_helper.sh")
-            # Make sure it's executable
             os.chmod(script_path, 0o755)
-            
-            # Run scan helper (handles sudo/root/path internally)
-            # Use 'sudo' only if not root, handled by caller or script? 
-            # Actually, script just runs commands. If we are user, we need sudo.
-            is_root = (os.geteuid() == 0)
-            # 4. Run the scan (Match verify_sensors.py logic exactly)
-            cmd = ["bash", script_path]
-            if not is_root:
-                cmd.insert(0, "sudo")
-            
-            log_debug(f"Executing: {' '.join(cmd)}")
-            
-            # Use run() instead of check_output() to capture output even on errors/timeout
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-            
-            output = result.stdout
-            if not output:
-                 # Check stderr if stdout is empty
-                 log_debug(f"Warning: Empty stdout. Stderr: {result.stderr}")
-            
-            lines = output.split('\n')
-            current_dev = {}
-            devices = []
-            
-            log_debug(f"Scan complete. Output length: {len(output)} chars.")
-            # Log content for debugging "58 chars" issue
-            if len(output) < 200:
-                log_debug(f"DEBUG OUTPUT CONTENT: {output}")
+        except:
+            pass
 
-            for line in lines:
-                line = line.strip()
+        # 3. Construct Command (Identical to verification script)
+        cmd = ["bash", script_path]
+        if os.geteuid() != 0:
+            cmd.insert(0, "sudo")
+        
+        log_debug(f"Executing: {' '.join(cmd)}")
+        
+        # 4. Run Scan (No shell=True, capturing output)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        
+        output = result.stdout
+        if not output:
+             log_debug(f"Warning: Empty stdout. Stderr: {result.stderr}")
+             return []
+        
+        lines = output.split('\n')
+        current_dev = {}
+        devices = []
+        
+        log_debug(f"Scan complete. Output length: {len(output)} chars.")
+
+        for line in lines:
+            line = line.strip()
+            
+            # Format 1: btmgmt find
+            if "dev_found" in line:
+                if current_dev and 'mac' in current_dev:
+                    devices.append(current_dev)
+                current_dev = {}
                 
-                # Format 1: btmgmt find
-                # dev_found: 64:45:B8:AE:78:CA type LE Random rssi -31 flags 0x0000
-                if "dev_found" in line:
-                    if current_dev and 'mac' in current_dev:
-                        devices.append(current_dev)
-                    current_dev = {}
-                    
-                    mac_match = re.search(r"dev_found:\s+([0-9A-F:]{17})", line, re.I)
-                    rssi_match = re.search(r"rssi\s+(-?\d+)", line, re.I)
-                    
-                    if mac_match: current_dev['mac'] = mac_match.group(1)
-                    if rssi_match: current_dev['rssi'] = int(rssi_match.group(1))
-                        
-                elif "name" in line and current_dev:
-                    name_match = re.search(r"name\s+(.*)", line, re.I)
-                    if name_match: current_dev['name'] = name_match.group(1)
+                mac_match = re.search(r"dev_found:\s+([0-9A-F:]{17})", line, re.I)
+                rssi_match = re.search(r"rssi\s+(-?\d+)", line, re.I)
                 
-                # Format 2: bluetoothctl devices (Fallback)
-                # Device 64:45:B8:AE:78:CA iPhone
-                elif line.startswith("Device"):
-                    parts = line.split(" ", 2)
-                    if len(parts) >= 2:
-                        mac = parts[1]
-                        name = parts[2] if len(parts) > 2 else "Unknown"
-                        # bluetoothctl devices doesn't show RSSI easily without interactive scan
-                        # but scan_helper runs 'scan on' first so it populates cache.
-                        # RSSI might be missing, default to -99
-                        devices.append({"mac": mac, "name": name, "rssi": -99})
+                if mac_match: current_dev['mac'] = mac_match.group(1)
+                if rssi_match: current_dev['rssi'] = int(rssi_match.group(1))
+                    
+            elif "name" in line and current_dev:
+                name_match = re.search(r"name\s+(.*)", line, re.I)
+                if name_match: current_dev['name'] = name_match.group(1)
+            
+            # Format 2: bluetoothctl devices (Fallback)
+            elif line.startswith("Device"):
+                parts = line.split(" ", 2)
+                if len(parts) >= 2:
+                    mac = parts[1]
+                    name = parts[2] if len(parts) > 2 else "Unknown"
+                    devices.append({"mac": mac, "name": name, "rssi": -99})
 
-            if current_dev and 'mac' in current_dev:
-                devices.append(current_dev)
+        if current_dev and 'mac' in current_dev:
+            devices.append(current_dev)
 
-            return _deduplicate(devices)
-
-        except subprocess.CalledProcessError as e:
-            # Shell script error (should be rare as script handles errors)
-            log_debug(f"Scan script failed (Code {e.returncode}): {e}")
-            # Try to read output anyway if available
-            if e.output:
-                log_debug(f"Script output before fail: {e.output.decode('utf-8', errors='ignore')}")
-            return []
+        return _deduplicate(devices)
 
     except Exception as e:
         log_debug(f"Bluetooth scan CRITICAL error: {e}")
-        return []
-
-    except Exception as e:
-        print(f"Bluetooth scan error: {e}")
         return []
 
 def _deduplicate(devices):
