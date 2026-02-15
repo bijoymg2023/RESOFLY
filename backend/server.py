@@ -767,8 +767,8 @@ async def startup():
                 message='ResoFly Backend started successfully.',
                 timestamp=datetime.utcnow(),
                 acknowledged=False,
-                lat=12.9716,  # Default Bangalore
-                lon=77.5946,
+                lat=0.0,
+                lon=0.0,
                 confidence=1.0,
                 max_temp=0.0
             )
