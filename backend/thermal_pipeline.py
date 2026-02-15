@@ -170,19 +170,23 @@ class WaveshareSource:
             # Stage 1: 4x Upscale (80 -> 320)
             mid_w = self.OUTPUT_WIDTH // 2
             mid_h = self.OUTPUT_HEIGHT // 2
-            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_CUBIC)
             
-            # Blur to hide sensor grid artifacts
-            mid_frame = cv2.GaussianBlur(mid_frame, (3, 3), 0)
+            # Use LANCZOS4 (High quality) instead of Cubic
+            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_LANCZOS4)
+            
+            # AGGRESSIVE Blur to melt the sensor grid
+            # 80px -> 320px means 1 sensor pixel is 4x4 screen pixels.
+            # Blur radius of 7 covers ~1.5 sensor pixels, blending them fully.
+            mid_frame = cv2.GaussianBlur(mid_frame, (7, 7), 0)
             
             # Stage 2: 2x Upscale (320 -> 640)
             upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                   interpolation=cv2.INTER_CUBIC)
             
             # 6. Gentle Sharpening (Don't over-sharpen pixels)
-            # Radius 2.0, Strength 1.5 (More natural)
+            # Reduced strength to 1.0 (Subtle)
             gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-            upscaled = cv2.addWeighted(upscaled, 2.5, gaussian_blur, -1.5, 0)
+            upscaled = cv2.addWeighted(upscaled, 2.0, gaussian_blur, -1.0, 0)
             
             # 7. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
