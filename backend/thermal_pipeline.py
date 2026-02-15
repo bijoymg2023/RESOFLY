@@ -613,8 +613,8 @@ class ThermalFramePipeline:
 
                 # --- SIZE FILTER ---
                 # Ignore very small boxes (e.g. distant noise, birds)
-                # 20x20 = 400 pixels
-                if h.width * h.height < 400:
+                # 35x35 = 1225 pixels (Close range humans only)
+                if h.width * h.height < 1200:
                     continue
 
                 # --- SHAPE CHANGE DETECTION (Fall/Posture) ---
