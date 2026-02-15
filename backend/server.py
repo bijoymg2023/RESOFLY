@@ -27,8 +27,14 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer
 import thermal_pipeline
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import json
+
+# IST Timezone (UTC + 5:30)
+IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
+
+def get_ist_time():
+    return datetime.now(IST_OFFSET)
 
 # Setup
 ROOT_DIR = Path(__file__).parent
