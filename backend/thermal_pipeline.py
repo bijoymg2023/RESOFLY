@@ -512,9 +512,8 @@ async def generate_mjpeg_stream(pipeline: ThermalFramePipeline, fps: float = 8):
         frame = pipeline.process_next()
         
         if frame is not None:
-            # JPEG 85 = best quality/size ratio. 100 is 3x larger with
-            # no visible difference, and causes stream buffering/freezing.
-            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            # JPEG 80 = sweet spot for thermal clarity without huge lag
+            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
             last_jpeg = jpeg
         
         if last_jpeg is not None:
