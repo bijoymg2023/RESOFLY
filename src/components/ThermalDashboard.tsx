@@ -162,21 +162,20 @@ const ThermalDashboard = () => {
               </div>
             </div>
 
-            {/* UNIFIED 3x2 DIAGNOSTIC GRID */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+            {/* 2x3 UNIFIED GRID - 6 Larger Diagnostic Modules */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
 
-              {/* Box 1: Global Positioning */}
-              <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
+              {/* Row 1 */}
+              <div className="h-[450px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
                 <GPSCoordinateBox />
               </div>
 
-              {/* Box 2: Signal Tracker */}
-              <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
+              <div className="h-[450px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
                 <SignalTracker />
               </div>
 
-              {/* Box 3: System Diagnostics */}
-              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm h-[350px] flex flex-col justify-center">
+              {/* Row 2 */}
+              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm h-[450px] flex flex-col justify-center">
                 <CardContent className="p-6 h-full flex items-center">
                   <div className="w-full">
                     <SystemStatusContent />
@@ -184,18 +183,16 @@ const ThermalDashboard = () => {
                 </CardContent>
               </Card>
 
-              {/* Box 4: Tactical Map */}
-              <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
+              <div className="h-[450px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
                 <IncidentMap />
               </div>
 
-              {/* Box 5: Event Log */}
-              <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
+              {/* Row 3 */}
+              <div className="h-[450px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
                 <AlertBox />
               </div>
 
-              {/* Box 6: Active Threats */}
-              <div className="h-[350px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
+              <div className="h-[450px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
                 <AlertsDetectionBox />
               </div>
             </div>
