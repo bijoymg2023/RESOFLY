@@ -146,6 +146,11 @@ class WaveshareSource:
                 frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
             self._prev_frame = frame.copy()
             
+            # --- NEW: Despeckle (Median Blur) ---
+            # Removes "salt and pepper" noise (hot/cold pixels)
+            # Essential before CLAHE amplifies them.
+            frame = cv2.medianBlur(frame, 3)
+            
             # 3. Gamma Correction (Brighten shadows / mid-tones)
             # Gamma < 1.0 = lighter, Gamma > 1.0 = darker (Wait, standard gamma is inv)
             # actually for thermal, we want to expand the 'warm' range.
