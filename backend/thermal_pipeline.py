@@ -497,11 +497,19 @@ class ThermalFramePipeline:
         # 3. Update Tracker
         objects = self.tracker.update(rects)
         
-        # 4. Match tracked objects back to hotspots
+        # 4. Match tracked objects back to hotspots (with SMOOTHING & PERSISTENCE)
         tracked_hotspots = []
         new_alerts = []
         
+        # Ensure memory exists
+        if not hasattr(self, 'track_memory'):
+            self.track_memory = {}
+            
+        active_ids = set()
+
         for (object_id, centroid) in objects.items():
+            active_ids.add(object_id)
+            
             # Find the hotspot that matches this centroid (closest)
             best_match = None
             min_dist = float('inf')
@@ -516,35 +524,71 @@ class ThermalFramePipeline:
                         min_dist = dist
                         best_match = h
             
+            # --- SMOOTHING LOGIC ---
+            # Retrieve last known state
+            last_state = self.track_memory.get(object_id)
+            
             if best_match:
-                # Assign ID to hotspot
+                # We have a live detection
                 h = best_match
-                h.track_id = object_id
                 
-                # --- PROBATION CHECK (Anti-Spam) ---
-                # Default probation was 5. We increase to 8 to be sure it's a person.
-                persistence = self.tracker.persistence.get(object_id, 0)
-                is_confirmed = persistence >= 8
+                if last_state:
+                    # Smooth the box: 60% old, 40% new (High stability)
+                    alpha = 0.4
+                    h.x = int(last_state['x'] * (1-alpha) + h.x * alpha)
+                    h.y = int(last_state['y'] * (1-alpha) + h.y * alpha)
+                    h.width = int(last_state['w'] * (1-alpha) + h.width * alpha)
+                    h.height = int(last_state['h'] * (1-alpha) + h.height * alpha)
                 
-                h.is_confirmed = is_confirmed
-                tracked_hotspots.append(h)
-                
-                # Trigger Alert IF:
-                # 1. Object IS CONFIRMED (Passed probation)
-                # 2. We have NOT alerted on this ID yet (Infinite Cooldown)
-                if is_confirmed and object_id not in self.alerted_ids:
-                    # Mark as alerted immediately to prevent duplicates
-                    self.alerted_ids[object_id] = True 
-                    new_alerts.append(h)
-                    self.alert_count += 1
+                # Update memory
+                self.track_memory[object_id] = {
+                    'x': h.x, 'y': h.y, 'w': h.width, 'h': h.height,
+                    'hotspot_data': h 
+                }
+            else:
+                # NO live detection (Gap Filling)
+                # Use memory if available
+                if last_state:
+                    h = last_state['hotspot_data']
+                    # Use last known dimensions, but CentroidTracker's current position
+                    # CentroidTracker updates position even without detection (if predicted) or holds it
+                    # Here we just use the last smooth rect to prevent jumping
+                    h.x = last_state['x']
+                    h.y = last_state['y']
+                    h.width = last_state['w']
+                    h.height = last_state['h']
+                else:
+                    continue # Should not happen unless tracker has ghost id with no history
+
+            h.track_id = object_id
+            
+            # --- PROBATION CHECK (Anti-Spam) ---
+            # Default probation was 5. We increase to 8 to be sure it's a person.
+            persistence = self.tracker.persistence.get(object_id, 0)
+            is_confirmed = persistence >= 8
+            
+            h.is_confirmed = is_confirmed
+            tracked_hotspots.append(h)
+            
+            # Trigger Alert IF:
+            # 1. Object IS CONFIRMED (Passed probation)
+            # 2. We have NOT alerted on this ID yet (Infinite Cooldown)
+            if is_confirmed and object_id not in self.alerted_ids:
+                # Mark as alerted immediately to prevent duplicates
+                self.alerted_ids[object_id] = True 
+                new_alerts.append(h)
+                self.alert_count += 1
         
         # --- GARBAGE COLLECTION ---
-        # If an allowed ID is no longer in the tracker, we forget it.
-        # This allows them to trigger a new alert if they leave and come back.
-        active_ids = set(objects.keys())
+        # Cleanup alert IDs
         for alerted_id in list(self.alerted_ids.keys()):
             if alerted_id not in active_ids:
                 del self.alerted_ids[alerted_id]
+        
+        # Cleanup track memory
+        for tid in list(self.track_memory.keys()):
+            if tid not in active_ids:
+                del self.track_memory[tid]
         
         self.current_hotspots = tracked_hotspots
         
