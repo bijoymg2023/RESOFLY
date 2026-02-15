@@ -521,25 +521,32 @@ class ThermalFramePipeline:
                 h = best_match
                 h.track_id = object_id
                 
-                # --- PROBATION CHECK ---
-                # Should we trust this object yet?
-                # Check persistence count from tracker
+                # --- PROBATION CHECK (Anti-Spam) ---
+                # Default probation was 5. We increase to 8 to be sure it's a person.
                 persistence = self.tracker.persistence.get(object_id, 0)
-                is_confirmed = persistence >= self.tracker.probation_frames
+                is_confirmed = persistence >= 8
                 
                 h.is_confirmed = is_confirmed
                 tracked_hotspots.append(h)
                 
                 # Trigger Alert IF:
-                # 1. New Alert Interval passed
-                # 2. Object IS CONFIRMED (Passed probation)
-                now = time.time()
-                last_alert = self.alerted_ids.get(object_id, 0.0)
-                
-                if is_confirmed and (now - last_alert) > 5.0:
-                    self.alerted_ids[object_id] = now
+                # 1. Object IS CONFIRMED (Passed probation)
+                # 2. We have NOT alerted on this ID yet (Infinite Cooldown)
+                if is_confirmed and object_id not in self.alerted_ids:
+                    # Mark as alerted immediately to prevent duplicates
+                    self.alerted_ids[object_id] = True 
                     new_alerts.append(h)
                     self.alert_count += 1
+        
+        # --- GARBAGE COLLECTION ---
+        # If an allowed ID is no longer in the tracker, we forget it.
+        # This allows them to trigger a new alert if they leave and come back.
+        active_ids = set(objects.keys())
+        for alerted_id in list(self.alerted_ids.keys()):
+            if alerted_id not in active_ids:
+                del self.alerted_ids[alerted_id]
+        
+        self.current_hotspots = tracked_hotspots
         
         self.current_hotspots = tracked_hotspots
         
