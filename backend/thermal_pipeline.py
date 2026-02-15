@@ -194,7 +194,8 @@ class WaveshareSource:
                 mid_u8 = cv2.medianBlur(mid_u8, 3)
                 
                 # 2. Soften (Melt the grid)
-                mid_u8 = cv2.GaussianBlur(mid_u8, (3, 3), 0)
+                # (5, 5) kernel provides better smoothing for the 4x4 pixel blocks
+                mid_u8 = cv2.GaussianBlur(mid_u8, (5, 5), 0)
                 
                 mid_frame = mid_u8.astype(np.float32)
                 
@@ -202,10 +203,10 @@ class WaveshareSource:
                 upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                       interpolation=cv2.INTER_CUBIC)
                 
-                # 6. Definition Boost (Strong Sharpening)
-                # Since we used Gaussian blur, we need to sharpen generously to pop the edges back.
+                # 6. Definition Boost (Standard Sharpening)
+                # Strength 2.0: Crisp edges without highlighting pixelation
                 gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-                upscaled = cv2.addWeighted(upscaled, 2.5, gaussian_blur, -1.5, 0)
+                upscaled = cv2.addWeighted(upscaled, 2.0, gaussian_blur, -1.0, 0)
                 
                 # 7. Convert back to uint8
                 upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
