@@ -37,7 +37,10 @@ class Hotspot:
     estimated_temp: float  # Estimated temperature in °C
     confidence: float
     circularity: float = 0.0  # 1.0 = perfect circle (Head from top view)
-    track_id: Optional[int] = None  # Persistent object ID from tracker
+    convexity: float = 0.0    # 1.0 = convex (Human), <0.8 = jagged (Noise)
+    inertia: float = 0.0      # 1.0 = circle, 0.0 = line
+    track_id: Optional[int] = None
+    is_confirmed: bool = False # Passed probation check?
 
 
 @dataclass 
@@ -280,31 +283,49 @@ class ThermalDetector:
             if area >= self.min_area:
                 x, y, w, h = cv2.boundingRect(cnt)
                 
-                # Calculate Circularity (Top-down head detection metrics)
+                # --- Advanced Shape Analysis ---
+                
+                # 1. Circularity like before (Head detection)
                 perimeter = cv2.arcLength(cnt, True)
                 circularity = 0.0
                 if perimeter > 0:
                     circularity = 4 * np.pi * area / (perimeter * perimeter)
                 
+                # 2. Convexity (Is it a smooth blob or a jagged mess?)
+                # Hull = "Rubber band" around the shape
+                hull = cv2.convexHull(cnt)
+                hull_area = cv2.contourArea(hull)
+                convexity = float(area) / hull_area if hull_area > 0 else 0.0
+                
+                # 3. Inertia (Is it elongated?)
+                # Fit an ellipse
+                inertia = 0.0
+                if len(cnt) >= 5: # Need 5 points for ellipse
+                    (e_center, (e_w, e_h), angle) = cv2.fitEllipse(cnt)
+                    major_axis = max(e_w, e_h)
+                    minor_axis = min(e_w, e_h)
+                    if major_axis > 0:
+                        inertia = minor_axis / major_axis
+                
+                # --- Temperature & Confidence ---
+                
                 # Get max intensity in region
                 mask = np.zeros(gray.shape, dtype=np.uint8)
                 cv2.drawContours(mask, [cnt], -1, 255, -1)
                 max_intensity = float(np.max(gray[mask == 255]))
-                
-                # Estimate temperature
                 estimated_temp = intensity_to_temperature(max_intensity)
                 
-                # Confidence based on temperature AND circularity
-                # Perfect circle = 1.0. Square = 0.78.
-                # Heads are usually 0.6 - 0.9.
+                # Scoring Logic
                 temp_diff = estimated_temp - HUMAN_TEMP_THRESHOLD_C
-                
-                # Base confidence from temp
                 confidence = min(0.95, 0.5 + (temp_diff / 15.0) * 0.45)
                 
-                # Boost for circular shapes (Top down view)
-                if circularity > 0.6:
-                    confidence += 0.1
+                # Boost for good shapes
+                if circularity > 0.6: confidence += 0.1
+                if convexity > 0.9:   confidence += 0.1  # Solid blob
+                if inertia > 0.5:     confidence += 0.05 # Not a thin line
+                
+                # Penalize jagged noise
+                if convexity < 0.7:   confidence -= 0.2
                 
                 confidence = max(0.1, min(1.0, confidence))
                 
@@ -315,7 +336,9 @@ class ThermalDetector:
                     max_intensity=max_intensity,
                     estimated_temp=estimated_temp,
                     confidence=confidence,
-                    circularity=circularity
+                    circularity=circularity,
+                    convexity=convexity,
+                    inertia=inertia
                 ))
         
         # Sort by confidence
