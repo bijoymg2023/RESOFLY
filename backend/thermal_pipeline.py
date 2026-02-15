@@ -533,7 +533,8 @@ class ThermalFramePipeline:
             # 2. Prepare bounding boxes for tracker
             rects = []
             for h in raw_hotspots:
-                if h.confidence >= 0.70:
+                # Lower threshold to ensure we don't lose tracking during fluctuations
+                if h.confidence >= 0.40: 
                     rects.append((h.x, h.y, h.width, h.height))
             
             # 3. Update Tracker
