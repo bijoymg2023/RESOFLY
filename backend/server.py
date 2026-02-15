@@ -825,7 +825,7 @@ async def startup():
                 if gps_data.get('latitude') and gps_data.get('latitude') != 0.0:
                     lat, lon = gps_data['latitude'], gps_data['longitude']
             
-            # Create alert in database - schedule on the running event loop
+            # Create alert in database - schedule on the running event loop SAFELY
             async def save_and_broadcast():
                 try:
                     async with AsyncSessionLocal() as db:
@@ -871,14 +871,12 @@ async def startup():
                             await ws_manager.broadcast(alert_data)
                         
                         await db.commit()
+                        print(f"[ALERT] Saved {len(event.hotspots)} detections to DB", flush=True)
                     
                     print(f"[THERMAL] ✓ {len(event.hotspots)} alerts sent for frame {event.frame_number}")
                 except Exception as e:
                     print(f"[THERMAL] Error in save_and_broadcast: {e}")
             
-            # Schedule on the running event loop (don't create a new one)
-            try:
-                loop = asyncio.get_running_loop()
                 loop.create_task(save_and_broadcast())
             except RuntimeError:
                 # No running loop (shouldn't happen in FastAPI context)
