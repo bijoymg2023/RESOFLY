@@ -61,6 +61,7 @@ def get_bluetooth_devices():
             devices = []
             
             log_debug(f"Scan complete. Found {len(lines)} lines of output.")
+            log_debug(f"DEBUG OUTPUT: {output[:500]}...") # Log first 500 chars
 
             for line in lines:
                 line = line.strip()

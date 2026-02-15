@@ -38,12 +38,11 @@ const SignalTracker = () => {
         }
     };
 
-    // Auto-scan on mount
+    // Auto-scan on mount and every 10s
     useEffect(() => {
         scan();
-        // Optional: Interval scanning?
-        // const interval = setInterval(scan, 10000);
-        // return () => clearInterval(interval);
+        const interval = setInterval(scan, 10000);
+        return () => clearInterval(interval);
     }, []);
 
     // tracker animation
