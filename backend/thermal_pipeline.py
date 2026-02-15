@@ -162,16 +162,27 @@ class WaveshareSource:
             clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
             frame = clahe.apply(frame)
             
-            # 5. Float32 upscale to display resolution
-            # CUBIC is sharper than Linear.
+            # 5. Multi-Stage Upscaling (Smooth & Organic)
+            # Direct 8x makes pixels look like lego blocks. 
+            # We step up 4x, blur the grid, then step up 2x.
             fframe = frame.astype(np.float32)
-            upscaled = cv2.resize(fframe, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT),
+            
+            # Stage 1: 4x Upscale (80 -> 320)
+            mid_w = self.OUTPUT_WIDTH // 2
+            mid_h = self.OUTPUT_HEIGHT // 2
+            mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_CUBIC)
+            
+            # Blur to hide sensor grid artifacts
+            mid_frame = cv2.GaussianBlur(mid_frame, (3, 3), 0)
+            
+            # Stage 2: 2x Upscale (320 -> 640)
+            upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                   interpolation=cv2.INTER_CUBIC)
             
-            # 6. Sharpening (Unsharp Mask)
-            # Radius 2.0, Strength 3.0 (Very sharp)
-            gaussian_3 = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-            upscaled = cv2.addWeighted(upscaled, 3.0, gaussian_3, -2.0, 0)
+            # 6. Gentle Sharpening (Don't over-sharpen pixels)
+            # Radius 2.0, Strength 1.5 (More natural)
+            gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
+            upscaled = cv2.addWeighted(upscaled, 2.5, gaussian_blur, -1.5, 0)
             
             # 7. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
