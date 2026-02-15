@@ -489,6 +489,10 @@ class ThermalFramePipeline:
         # Dict[int, float] -> {track_id: last_alert_timestamp}
         self.alerted_ids: dict = {}
         
+        # Rate Limiting
+        self.global_last_alert = 0.0
+        self.last_alert_coords = None
+        
         # Stats
         self.detection_count = 0
         self.alert_count = 0
@@ -609,16 +613,17 @@ class ThermalFramePipeline:
                     now = time.time()
                     
                     # Check Global Cooldown (8 seconds silence)
-                    last_global = getattr(self, 'global_last_alert', 0)
-                    if (now - last_global) < 8.0:
+                    # Use predefined variable (initialized in __init__)
+                    # Force strict check
+                    if (now - self.global_last_alert) < 8.0:
                         continue
                         
                     # Check Spatial Duplication (Did we just alert here?)
-                    last_coords = getattr(self, 'last_alert_coords', None)
-                    if last_coords:
-                        lx, ly = last_coords
+                    if self.last_alert_coords:
+                        lx, ly = self.last_alert_coords
                         dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
                         if dist < 150:
+                            # Mark as alerted to stop checking, but don't send event
                             self.alerted_ids[object_id] = True
                             continue
 
