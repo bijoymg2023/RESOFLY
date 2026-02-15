@@ -605,6 +605,32 @@ class ThermalFramePipeline:
                     else:
                         continue 
 
+                # --- SIZE FILTER ---
+                # Ignore very small boxes (e.g. distant noise, birds)
+                # 20x20 = 400 pixels
+                if h.width * h.height < 400:
+                    continue
+
+                # --- SHAPE CHANGE DETECTION (Fall/Posture) ---
+                current_ar = h.width / h.height if h.height > 0 else 0
+                last_ar = 0.0
+                
+                if last_state:
+                    last_ar = last_state.get('ar', current_ar)
+                    
+                    # Check for significant shape change (> 0.5)
+                    # e.g. 0.5 (Standing) -> 2.0 (Lying down) = delta 1.5
+                    if abs(current_ar - last_ar) > 0.5 and h.is_confirmed:
+                        print(f"[DEBUG] SHAPE CHANGE ID {object_id}: AR {last_ar:.2f} -> {current_ar:.2f}", flush=True)
+                        # RESET alert timer for this ID to allow IMMEDIATE re-alert
+                        # We set it to 0 so the "30s cooldown" check below passes.
+                        # Note: Global 8s cooldown will still prevent spam storms.
+                        self.alerted_ids[object_id] = 0
+
+                # Update memory with new Aspect Ratio
+                if object_id in self.track_memory:
+                     self.track_memory[object_id]['ar'] = current_ar
+
                 h.track_id = object_id
                 
                 # --- PROBATION CHECK (Anti-Spam) ---
