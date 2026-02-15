@@ -1,7 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Bluetooth, RefreshCw, Smartphone, Signal, Search, X } from 'lucide-react';
+import {
+    Search,
+    RefreshCw,
+    Bluetooth,
+    Signal,
+    Smartphone,
+    X,
+    Target,
+    Radar,
+    SignalHigh,
+    Cpu,
+    SignalZero
+} from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +29,7 @@ const SignalTracker = () => {
     const [devices, setDevices] = useState<SignalDevice[]>([]);
     const [scanning, setScanning] = useState(false);
     const [target, setTarget] = useState<SignalDevice | null>(null);
-    const [mockRssi, setMockRssi] = useState<number | null>(null); // For smooth animation
+    const [mockRssi, setMockRssi] = useState<number | null>(null);
 
     const scan = async () => {
         setScanning(true);
@@ -26,18 +38,14 @@ const SignalTracker = () => {
             if (res.ok) {
                 const data = await res.json();
                 setDevices(data);
-            } else {
-                toast.error("Scan failed.");
             }
         } catch (e) {
             console.error(e);
-            toast.error("Signal scan error.");
         } finally {
             setScanning(false);
         }
     };
 
-    // Auto-scan on mount and every 10s
     useEffect(() => {
         scan();
         const interval = setInterval(scan, 10000);
@@ -45,147 +53,172 @@ const SignalTracker = () => {
     }, []);
 
     const calculateDistance = (rssi: number) => {
-        // Updated to match your math: tx = -40, n = 2.0
-        const d = Math.pow(10, (-40 - rssi) / (10 * 2.0));
+        // Precise formula: tx = -40, n = 2.0
+        const d = Math.pow(10, (-40 - rssi) / (20.0));
         return d.toFixed(1);
     };
 
-    // tracker animation
     useEffect(() => {
         if (!target) {
             setMockRssi(null);
             return;
         }
-
-        // Simulate slight fluctuation
         const interval = setInterval(() => {
             const base = target.rssi;
-            const noise = Math.random() * 4 - 2;
+            const noise = Math.random() * 2 - 1;
             setMockRssi(prev => {
                 const current = prev ?? base;
                 return current + (base + noise - current) * 0.1;
             });
         }, 100);
-
         return () => clearInterval(interval);
     }, [target]);
 
     const getSignalColor = (rssi: number) => {
-        if (rssi > -55) return "text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]"; // Strong
-        if (rssi > -70) return "text-cyan-500"; // Medium
-        if (rssi > -85) return "text-yellow-500"; // Weak
-        return "text-red-500"; // Very Weak
+        if (rssi > -50) return "text-emerald-400 drop-shadow-[0_0_10px_rgba(52,211,153,0.6)]";
+        if (rssi > -65) return "text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]";
+        if (rssi > -80) return "text-amber-400";
+        return "text-rose-500";
     };
 
     return (
-        <Card className="h-full bg-card/40 backdrop-blur-sm border-border dark:border-white/10 overflow-hidden flex flex-col shadow-lg">
-            <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0 border-b border-white/10 bg-black/60">
-                <div className="flex items-center space-x-2 text-muted-foreground">
-                    <Search className="w-4 h-4" />
-                    <CardTitle className="text-xs font-bold uppercase tracking-widest">Signal Tracker</CardTitle>
+        <Card className="h-full bg-black/40 backdrop-blur-md border-white/5 overflow-hidden flex flex-col shadow-2xl relative">
+            {/* Background Glitch / Scanning Effect */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-cyan-500/20 animate-[scanline_3s_linear_infinite] pointer-events-none z-50" />
+
+            <CardHeader className="py-2.5 px-4 flex flex-row items-center justify-between space-y-0 border-b border-white/10 bg-gradient-to-r from-black/80 to-black/40 backdrop-blur-xl">
+                <div className="flex items-center space-x-3">
+                    <div className="relative">
+                        <Radar className={`w-4 h-4 text-cyan-400 ${scanning ? 'animate-pulse' : ''}`} />
+                        {scanning && <div className="absolute -inset-1 bg-cyan-400/20 blur-sm rounded-full animate-ping" />}
+                    </div>
+                    <CardTitle className="text-[10px] font-black uppercase tracking-[0.2em] text-white/90">Signal Tracker</CardTitle>
                 </div>
-                <div className="flex items-center space-x-1">
-                    <div className={`w-2 h-2 rounded-full ${scanning ? 'bg-cyan-500 animate-pulse' : 'bg-muted'}`} />
-                    <Badge variant="outline" className="text-[10px] h-5 border-white/10 bg-white/5">
-                        {scanning ? 'SCANNING' : 'IDLE'}
+
+                <div className="flex items-center space-x-2">
+                    <Badge variant="outline" className={`text-[9px] h-5 border-white/10 ${scanning ? 'bg-cyan-500/10 text-cyan-400' : 'bg-white/5 text-white/40'}`}>
+                        {scanning ? 'LINK ACTIVE' : 'STANDBY'}
                     </Badge>
                     <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                        className="h-7 w-7 rounded-full bg-white/5 hover:bg-white/10 border border-white/5"
                         onClick={scan}
                         disabled={scanning}
                     >
-                        <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-3.5 h-3.5 text-cyan-400 ${scanning ? 'animate-spin' : ''}`} />
                     </Button>
-                    {target && (
-                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-300 hover:bg-red-900/20" onClick={() => setTarget(null)}>
-                            <X className="w-3.5 h-3.5" />
-                        </Button>
-                    )}
                 </div>
             </CardHeader>
 
-            <CardContent className="p-0 flex-1 flex flex-col relative group">
-                <div className="flex-1 min-h-[160px] bg-black/80 relative overflow-hidden flex items-center justify-center border-b border-white/10">
-                    <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[size:20px_20px]" />
+            <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+                {/* Visualizer Area */}
+                <div className="h-44 bg-zinc-950 flex flex-col items-center justify-center relative overflow-hidden border-b border-white/5">
+                    {/* Retro Grid */}
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.1)_0,transparent_70%)] opacity-50" />
+                    <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:16px_16px]" />
 
-                    {scanning && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                            <div className="w-[200%] h-[200%] bg-[conic-gradient(from_0deg,transparent_0deg,transparent_300deg,rgba(6,182,212,0.1)_360deg)] animate-[spin_4s_linear_infinite]" />
-                        </div>
-                    )}
-
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-                        <div className="w-32 h-32 rounded-full border border-cyan-500" />
-                        <div className="w-48 h-48 rounded-full border border-cyan-500" />
-                        <div className="w-64 h-64 rounded-full border border-cyan-500" />
+                    {/* Animated Radar Sweep */}
+                    <div className="absolute w-[300px] h-[300px] pointer-events-none opacity-40">
+                        <div className="absolute inset-0 rounded-full border border-cyan-500/20" />
+                        <div className="absolute inset-8 rounded-full border border-cyan-500/15" />
+                        <div className="absolute inset-16 rounded-full border border-cyan-500/10" />
+                        {scanning && <div className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0deg,transparent_320deg,rgba(6,182,212,0.3)_360deg)] animate-[spin_4s_linear_infinite] rounded-full" />}
                     </div>
 
                     {target ? (
-                        <div className="relative z-10 text-center animate-in fade-in zoom-in duration-300">
-                            <div className="relative mb-2">
-                                <div className="absolute -inset-4 bg-cyan-500/20 blur-xl rounded-full animate-pulse" />
-                                {target.type === 'wifi' ? (
-                                    <Signal className="w-12 h-12 mx-auto text-cyan-400 relative z-10" />
-                                ) : (
-                                    <Smartphone className="w-12 h-12 mx-auto text-cyan-400 relative z-10" />
-                                )}
+                        <div className="relative z-10 flex flex-col items-center animate-in fade-in zoom-in-95 duration-500">
+                            {/* Target Icon with Glow */}
+                            <div className="relative mb-3">
+                                <div className="absolute inset-0 bg-cyan-400/30 blur-2xl rounded-full animate-pulse" />
+                                <div className="relative p-3 bg-cyan-950/40 rounded-xl border border-cyan-500/50 backdrop-blur-xl">
+                                    {target.type === 'wifi' ? <SignalHigh className="w-8 h-8 text-cyan-400" /> : <Bluetooth className="w-8 h-8 text-blue-400" />}
+                                </div>
                             </div>
 
-                            <div className={`text-5xl font-black font-mono tracking-tighter transition-colors duration-300 ${getSignalColor(mockRssi || -100)}`}>
+                            {/* Distance Metric - Primary */}
+                            <div className={`text-6xl font-black font-mono tracking-tighter tabular-nums flex items-baseline ${getSignalColor(mockRssi || -100)}`}>
                                 {calculateDistance(mockRssi || target.rssi)}
-                                <span className="text-sm font-normal text-muted-foreground ml-1">meters</span>
+                                <span className="text-xl font-bold ml-1 text-white/40 tracking-normal italic">m</span>
                             </div>
 
-                            <div className="flex flex-col items-center mt-1">
-                                <div className="text-[10px] text-cyan-500/70 font-mono">{target.mac} ({mockRssi ? Math.round(mockRssi) : target.rssi} dBm)</div>
+                            <div className="mt-1 space-y-0.5 text-center">
+                                <div className="text-[9px] font-bold text-white tracking-widest uppercase flex items-center justify-center space-x-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse" />
+                                    <span>Target Locked</span>
+                                </div>
+                                <div className="text-[8px] font-mono text-white/30 truncate max-w-[150px]">
+                                    {target.mac} • {target.name}
+                                </div>
                             </div>
 
-                            <div className="mt-2 inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white font-mono tracking-wider border border-white/10">
-                                TARGET LOCKED ({target.type?.toUpperCase()})
+                            {/* Tech Badges */}
+                            <div className="absolute top-0 right-4 flex flex-col space-y-1 opacity-60">
+                                <div className="text-[8px] font-mono text-cyan-500">TX_PWR: -40dB</div>
+                                <div className="text-[8px] font-mono text-cyan-500">RSSI: {Math.round(mockRssi || target.rssi)}dBm</div>
                             </div>
                         </div>
                     ) : (
-                        <div className="text-center space-y-2 opacity-30 z-10">
-                            <Signal className="w-12 h-12 mx-auto" />
-                            <div className="text-[10px] uppercase tracking-widest">{scanning ? 'SCANNING...' : 'SYSTEM IDLE'}</div>
-                            {scanning && <div className="text-[9px] font-mono text-cyan-500 animate-pulse">ACQUIRING TARGETS</div>}
+                        <div className="relative z-10 text-center opacity-40">
+                            <Cpu className="w-10 h-10 mx-auto text-cyan-500/50 mb-2" />
+                            <div className="text-[9px] font-black uppercase tracking-[0.3em] text-white">Searching Network...</div>
                         </div>
                     )}
                 </div>
 
-                <div className="flex-1 bg-black/90 p-2 overflow-y-auto custom-scrollbar font-mono text-[10px]">
-                    <div className="flex justify-between items-center mb-2 px-1 opacity-50 border-b border-white/10 pb-1">
-                        <span>DETECTED SIGNALS</span>
-                        <span>{devices.length} FOUND</span>
+                {/* Signals Table */}
+                <div className="flex-1 overflow-auto custom-scrollbar bg-black/20">
+                    <div className="grid grid-cols-[1fr_80px_60px] px-4 py-2 text-[9px] font-black uppercase text-white/30 tracking-widest border-b border-white/5 sticky top-0 bg-zinc-950/80 backdrop-blur-md z-10">
+                        <span>Identifier</span>
+                        <span className="text-center">Signal</span>
+                        <span className="text-right">Dist</span>
                     </div>
 
-                    <div className="space-y-1">
+                    <div className="p-1.5 space-y-1">
                         {devices.map((device, i) => (
                             <div
                                 key={i}
-                                className={`flex justify-between items-center p-1.5 hover:bg-white/5 rounded cursor-pointer group transition-colors border border-transparent ${target?.mac === device.mac ? 'bg-cyan-900/20 border-cyan-500/50' : 'border-b border-white/5 last:border-0'}`}
+                                className={`group grid grid-cols-[1fr_80px_60px] items-center px-2 py-2 rounded-lg cursor-pointer transition-all duration-300 relative border ${target?.mac === device.mac ? 'bg-cyan-500/10 border-cyan-500/30' : 'bg-white/[0.02] border-transparent hover:bg-white/[0.05] hover:border-white/5'}`}
                                 onClick={() => setTarget(device)}
                             >
-                                <div className="flex items-center space-x-2">
-                                    {device.type === 'wifi' ? <Signal className="w-3 h-3 text-cyan-500" /> : <Bluetooth className="w-3 h-3 text-blue-500" />}
-                                    <span className={`font-bold truncate max-w-[100px] ${target?.mac === device.mac ? 'text-cyan-400' : 'text-muted-foreground group-hover:text-white'}`}>
-                                        {device.name || 'Unknown Device'}
-                                    </span>
+                                <div className="flex items-center space-x-3 overflow-hidden">
+                                    <div className="relative">
+                                        <div className={`w-1.5 h-1.5 rounded-full ${device.type === 'wifi' ? 'bg-cyan-500' : 'bg-blue-500'}`} />
+                                        {target?.mac === device.mac && <div className="absolute inset-0 bg-cyan-500 blur-sm rounded-full animate-ping" />}
+                                    </div>
+                                    <div className="flex flex-col min-w-0">
+                                        <span className="text-[10px] font-bold text-white group-hover:text-cyan-400 transition-colors truncate">
+                                            {device.name || 'Unknown'}
+                                        </span>
+                                        <span className="text-[8px] font-mono text-white/30 truncate">{device.mac}</span>
+                                    </div>
                                 </div>
-                                <div className="flex items-center space-x-3 text-muted-foreground group-hover:text-white transition-colors">
-                                    <span className="opacity-50 hidden md:inline">{device.mac}</span>
-                                    <span className={`w-16 text-right font-bold ${getSignalColor(device.rssi)}`}>
-                                        {calculateDistance(device.rssi)}m
+
+                                <div className="flex flex-col items-center">
+                                    <div className={`text-[10px] font-black tabular-nums ${getSignalColor(device.rssi)}`}>
+                                        {device.rssi}<span className="text-[8px] opacity-40 ml-0.5">dB</span>
+                                    </div>
+                                    <div className="w-12 h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
+                                        <div
+                                            className={`h-full ${getSignalColor(device.rssi).split(' ')[0].replace('text-', 'bg-')}`}
+                                            style={{ width: `${Math.min(100, Math.max(0, (device.rssi + 100) * 1.5))}%` }}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="text-right">
+                                    <span className="text-[11px] font-black text-white tabular-nums group-hover:scale-110 transition-transform inline-block">
+                                        {calculateDistance(device.rssi)}
+                                        <span className="text-[8px] font-bold text-white/30 ml-0.5">m</span>
                                     </span>
                                 </div>
                             </div>
                         ))}
 
                         {devices.length === 0 && !scanning && (
-                            <div className="text-center py-6 text-muted-foreground/50">
-                                NO SIGNAL
+                            <div className="flex flex-col items-center justify-center py-12 opacity-20">
+                                <SignalZero className="w-8 h-8 mb-2" />
+                                <div className="text-[9px] font-bold uppercase tracking-widest">No Active Signals</div>
                             </div>
                         )}
                     </div>
