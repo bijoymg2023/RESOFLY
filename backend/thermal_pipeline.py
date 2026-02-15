@@ -701,7 +701,7 @@ class ThermalFramePipeline:
                 
                 event = DetectionEvent(
                     hotspots=new_alerts,
-                    timestamp=timestamp,
+                    timestamp=datetime.fromtimestamp(now),
                     frame_number=self.frame_number,
                     total_count=len(tracked_hotspots)
                 )
