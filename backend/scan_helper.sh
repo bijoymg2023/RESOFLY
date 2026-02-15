@@ -9,11 +9,21 @@ scan_btmgmt() {
     # Ensure power is on
     btmgmt power on >/dev/null 2>&1
     
-    # Run find with timeout
-    # expected output format:
-    # dev_found: 64:45:B8:AE:78:CA type LE Random rssi -31 flags 0x0000 
-    # name 0x09 'iPhone'
-    timeout 7s btmgmt find
+    # Start find in background with line buffering
+    # We pipe to 'cat' to ensure it's treated as a stream
+    stdbuf -oL btmgmt find > /tmp/bt_scan.log 2>&1 &
+    SCAN_PID=$!
+    
+    # Wait for scan duration
+    sleep 7
+    
+    # Kill the scan
+    kill $SCAN_PID >/dev/null 2>&1
+    btmgmt stop-find >/dev/null 2>&1
+    
+    # Output the captured log
+    cat /tmp/bt_scan.log
+    rm /tmp/bt_scan.log
 }
 
 # Function to parse bluetoothctl output (Fallback)

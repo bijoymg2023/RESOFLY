@@ -1,8 +1,10 @@
-
 import sys
 import time
 import os
 import subprocess
+import shutil
+import re
+from datetime import datetime
 
 # --- VENV AUTO-SWITCH ---
 # Check if running in a venv (sys.prefix != sys.base_prefix)
@@ -19,6 +21,10 @@ if sys.prefix == sys.base_prefix:
             print(f"-> Switching to virtual environment: {python_bin}")
             # Re-execute with venv python
             os.execv(python_bin, [python_bin] + sys.argv)
+
+# Helper for debug logging
+def log_debug(message):
+    print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {message}")
 
 print("========================================")
 print("   RESOFLY SENSOR VERIFICATION TOOL     ")
@@ -49,6 +55,14 @@ try:
              print(f"Exit Code: {result.returncode}")
              print(f"STDOUT:\n{result.stdout}")
              print(f"STDERR:\n{result.stderr}")
+
+             # Add more debug logging for Bluetooth output content
+             log_debug(f"Bluetooth scan_helper.sh stdout length: {len(result.stdout)} chars.")
+             log_debug(f"Bluetooth scan_helper.sh stderr length: {len(result.stderr)} chars.")
+             if result.stdout:
+                 log_debug(f"DEBUG BLUETOOTH STDOUT (RAW):\n{result.stdout.strip()}")
+             if result.stderr:
+                 log_debug(f"DEBUG BLUETOOTH STDERR (RAW):\n{result.stderr.strip()}")
              
              if not result.stdout.strip():
                  print("WARNING: Output was empty! This explains 'IDLE' dashboard.")
