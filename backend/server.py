@@ -817,6 +817,7 @@ async def startup():
 
         # Detection callback - creates alerts and broadcasts via WebSocket
         def on_detection_event(event: thermal_pipeline.DetectionEvent):
+            print(f"[DEBUG] on_detection_event CALLED! Frame: {event.frame_number}, Hotspots: {len(event.hotspots)}", flush=True)
             """Handle detection event - save to DB and broadcast."""
             # Get GPS (Default to 0.0 if no lock)
             lat = 0.0
