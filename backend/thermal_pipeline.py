@@ -480,7 +480,10 @@ class ThermalFramePipeline:
         # min_area=25 on 160x124 detect frame (approx 100 pixels on 640x480)
         # This allows detecting people much further away (small heat blobs)
         self.detector = ThermalDetector(adaptive=True, min_area=25)
-        self.tracker = CentroidTracker(max_disappeared=50, max_distance=120)
+        self.detector = ThermalDetector(adaptive=True, min_area=25)
+        # Increased max_distance to 100 to handle fast movement/falls without losing ID
+        self.tracker = CentroidTracker(max_disappeared=50, max_distance=100)
+        self.on_detection = on_detection
         self.on_detection = on_detection
         
         self.frame_number = 0
@@ -650,24 +653,17 @@ class ThermalFramePipeline:
                 last_id_alert = self.alerted_ids.get(object_id, 0)
                 now = time.time()
                 
-                if is_confirmed and (now - last_id_alert) > 30.0:
+                last_id_alert = self.alerted_ids.get(object_id, 0)
+                now = time.time()
+                
+                # Check 1: Per-ID Cooldown (5 Minutes - 300s)
+                # If we alerted on this person recently, DO NOT alert again.
+                if is_confirmed and (now - last_id_alert) > 300.0:
                     
-                    # Check Global Cooldown (8 seconds silence)
+                    # Check 2: Global Cooldown (8 seconds silence)
                     if (now - self.global_last_alert) < 8.0:
                         print(f"[DEBUG] Global Cooldown Active. Time since last: {now - self.global_last_alert:.1f}s", flush=True)
                         continue
-                        
-                    # Check Spatial Duplication (Did we just alert here RECENTLY?)
-                    # Only check if last alert was < 15 seconds ago
-                    # This fixes "User left and came back but got no alert"
-                    if self.last_alert_coords and (now - self.global_last_alert) < 15.0:
-                        lx, ly = self.last_alert_coords
-                        dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
-                        if dist < 100: # Reduced radius
-                             # Update timestamp to prevent immediate re-check
-                            print(f"[DEBUG] Spatial Duplicate. Dist: {dist:.1f}", flush=True)
-                            self.alerted_ids[object_id] = now
-                            continue
 
                     # FIRE ALERT
                     print(f"[DEBUG] TRIGGERING ALERT for ID {object_id}!", flush=True)
