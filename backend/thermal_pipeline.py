@@ -593,10 +593,33 @@ class ThermalFramePipeline:
             
             # Trigger Alert IF:
             # 1. Object IS CONFIRMED (Passed probation)
-            # 2. We have NOT alerted on this ID yet (Infinite Cooldown)
+            # 2. We have NOT alerted on this ID yet (Infinite Cooldown PER ID)
+            # 3. GLOBAL RATE LIMIT: Don't spam multiple alerts in 8 seconds
+            # 4. SPATIAL CHECK: Don't alert if new ID is in same spot as last alert
+            
             if is_confirmed and object_id not in self.alerted_ids:
-                # Mark as alerted immediately to prevent duplicates
-                self.alerted_ids[object_id] = True 
+                now = time.time()
+                
+                # Check Global Cooldown (8 seconds silence)
+                last_global = getattr(self, 'global_last_alert', 0)
+                if (now - last_global) < 8.0:
+                    continue
+                    
+                # Check Spatial Duplication (Did we just alert here?)
+                last_coords = getattr(self, 'last_alert_coords', None)
+                if last_coords:
+                    lx, ly = last_coords
+                    dist = ((h.x - lx)**2 + (h.y - ly)**2)**0.5
+                    if dist < 150: # If within 150px of last alert, it's the same guy
+                        # Mark as alerted to stop checking, but don't send event
+                        self.alerted_ids[object_id] = True
+                        continue
+
+                # FIRE ALERT
+                self.alerted_ids[object_id] = True
+                self.global_last_alert = now
+                self.last_alert_coords = (h.x, h.y)
+                
                 new_alerts.append(h)
                 self.alert_count += 1
         
