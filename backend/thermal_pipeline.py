@@ -632,9 +632,6 @@ class ThermalFramePipeline:
                              # Update timestamp to prevent immediate re-check
                             self.alerted_ids[object_id] = now
                             continue
-                             # Update timestamp to prevent immediate re-check
-                            self.alerted_ids[object_id] = now
-                            continue
 
                     # FIRE ALERT
                     self.alerted_ids[object_id] = now
