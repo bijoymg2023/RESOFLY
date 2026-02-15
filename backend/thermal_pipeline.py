@@ -538,7 +538,7 @@ class ThermalFramePipeline:
             rects = []
             for h in raw_hotspots:
                 # Lower threshold to ensure we don't lose tracking during fluctuations
-                if h.confidence >= 0.40: 
+                if h.confidence >= 0.65: 
                     rects.append((h.x, h.y, h.width, h.height))
             
             # 3. Update Tracker
@@ -580,8 +580,8 @@ class ThermalFramePipeline:
                     h.is_ghost = False  # Flag as LIVE
                     
                     if last_state:
-                        # Smooth the box: 65% new, 35% old (Faster Response)
-                        alpha = 0.65
+                        # Smooth the box: 40% new, 60% old (Smoother)
+                        alpha = 0.40
                         h.x = int(last_state['x'] * (1-alpha) + h.x * alpha)
                         h.y = int(last_state['y'] * (1-alpha) + h.y * alpha)
                         h.width = int(last_state['w'] * (1-alpha) + h.width * alpha)
@@ -609,7 +609,7 @@ class ThermalFramePipeline:
                 
                 # --- PROBATION CHECK (Anti-Spam) ---
                 persistence = self.tracker.persistence.get(object_id, 0)
-                is_confirmed = persistence >= 2 # Was 8 - Lowered for testing
+                is_confirmed = persistence >= 8
                 print(f"[DEBUG] ID: {object_id}, Persistence: {persistence}, Confirmed: {is_confirmed}", flush=True)
                 h.is_confirmed = is_confirmed
                 tracked_hotspots.append(h)
