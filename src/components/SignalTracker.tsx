@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +20,7 @@ const SignalTracker = () => {
     const [scanning, setScanning] = useState(false);
     const [target, setTarget] = useState<SignalDevice | null>(null);
     const [smoothedRssi, setSmoothedRssi] = useState<number | null>(null);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
 
     const scan = useCallback(async () => {
         setScanning(true);
@@ -83,7 +84,6 @@ const SignalTracker = () => {
             const raw = target.rssi;
             setSmoothedRssi(prev => {
                 const current = prev ?? raw;
-                // Alpha 0.05: Fast response, but cinematic fluidity
                 const next = current + (raw - current) * 0.05;
                 return Math.abs(next - current) < 0.001 ? raw : next;
             });
@@ -99,12 +99,19 @@ const SignalTracker = () => {
         return "text-rose-500";
     };
 
-    return (
-        <Card className="h-full bg-zinc-950/90 border-white/5 overflow-hidden flex flex-col shadow-2xl relative select-none group font-sans">
-            {/* Unified Scanline Overlay */}
-            <div className="absolute inset-0 pointer-events-none opacity-[0.02] bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.5)_50%),linear-gradient(90deg,rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[size:100%_2px,32px_100%]" />
+    // Auto-scroll to top when target is engaged to show HUD
+    useEffect(() => {
+        if (target && scrollContainerRef.current) {
+            scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [target?.mac]);
 
-            <CardHeader className="py-3 px-5 flex flex-row items-center justify-between space-y-0 border-b border-white/5 bg-black/40 backdrop-blur-md z-30">
+    return (
+        <Card className="h-full bg-zinc-950/95 border-white/5 overflow-hidden flex flex-col shadow-2xl relative select-none font-sans">
+            {/* Unified Scanline Overlay - Global to the box */}
+            <div className="absolute inset-0 pointer-events-none opacity-[0.02] bg-[linear-gradient(transparent_50%,rgba(0,0,0,0.5)_50%),linear-gradient(90deg,rgba(0,255,255,0.05)_1px,transparent_1px)] bg-[size:100%_2px,32px_100%] z-50" />
+
+            <CardHeader className="py-3 px-5 flex flex-row items-center justify-between space-y-0 border-b border-white/5 bg-black/40 backdrop-blur-md z-40">
                 <div className="flex items-center space-x-3">
                     <Activity className={`w-4 h-4 text-cyan-500 ${scanning ? 'animate-pulse' : ''}`} />
                     <CardTitle className="text-[11px] font-black uppercase tracking-[0.45em] text-white/60">SIGNAL TRACKER</CardTitle>
@@ -117,17 +124,20 @@ const SignalTracker = () => {
                 </div>
             </CardHeader>
 
-            <CardContent className="p-0 flex-1 flex flex-col overflow-hidden relative z-10">
-                {/* ONE UNIFIED BOX - Collapsible HUD Integrated Seamleassly */}
+            {/* UNIFIED SCROLLABLE BOX */}
+            <CardContent
+                ref={scrollContainerRef}
+                className="p-0 flex-1 overflow-auto custom-scrollbar relative z-10 scroll-smooth bg-black/5"
+            >
+                {/* HUD Section - Integrated at the top of scroll flow */}
                 <div
-                    className={`transition-all duration-700 ease-out relative overflow-hidden bg-black/20 ${target ? 'h-48' : 'h-0 opacity-0'}`}
+                    className={`transition-all duration-700 ease-out relative overflow-hidden bg-gradient-to-b from-cyan-500/[0.03] to-transparent ${target ? 'h-52 opacity-100' : 'h-0 opacity-0'}`}
                 >
-                    {/* Integrated HUD UI (No internal dividers) */}
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.08)_0,transparent_75%)]" />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.06)_0,transparent_75%)]" />
 
-                    <div className="absolute top-4 left-6 flex items-center space-x-2 px-2 py-0.5 bg-cyan-500/5 rounded border border-cyan-500/20">
+                    <div className="absolute top-4 left-6 flex items-center space-x-2 px-2 py-0.5 bg-cyan-500/5 rounded border border-cyan-500/20 z-20">
                         <Target className="w-2.5 h-2.5 text-cyan-500" />
-                        <span className="text-[8px] font-black text-white/30 uppercase tracking-widest">Target Engaged</span>
+                        <span className="text-[8px] font-black text-white/40 uppercase tracking-widest">Target Engaged</span>
                     </div>
 
                     <button
@@ -138,7 +148,7 @@ const SignalTracker = () => {
                     </button>
 
                     {target && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center pt-2">
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pt-4">
                             <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-500">
                                 <div className={`text-6xl font-black font-mono tracking-tighter tabular-nums flex items-baseline leading-none drop-shadow-[0_0_20px_rgba(34,211,238,0.2)] ${getSignalColor(smoothedRssi || target.rssi)}`}>
                                     {calculateDistance(smoothedRssi || target.rssi)}
@@ -154,19 +164,19 @@ const SignalTracker = () => {
                     )}
                 </div>
 
-                {/* LIST SECTION - Seamleassly joined to above */}
-                <div className="flex-1 overflow-auto custom-scrollbar bg-black/10">
-                    <div className="grid grid-cols-[1fr_60px_70px] px-6 py-3 text-[9px] font-black uppercase text-white/15 tracking-[0.3em] border-b border-white/5 sticky top-0 bg-zinc-950/80 backdrop-blur-xl z-20">
+                {/* LIST SECTION - Continues below HUD in same scroll area */}
+                <div className="min-h-full">
+                    <div className="grid grid-cols-[1fr_60px_70px] px-6 py-3 text-[9px] font-black uppercase text-white/20 tracking-[0.3em] border-b border-white/5 sticky top-0 bg-zinc-950/90 backdrop-blur-xl z-30">
                         <span>Identity</span>
                         <span className="text-center">Energy</span>
                         <span className="text-right">Distance</span>
                     </div>
 
-                    <div className="px-3 py-1.5 space-y-0.5">
+                    <div className="px-3 py-2 space-y-0.5 pb-8">
                         {devices.map((device) => (
                             <div
                                 key={device.mac}
-                                className={`group grid grid-cols-[1fr_60px_70px] items-center px-3 py-2.5 rounded transition-all duration-300 ${target?.mac === device.mac ? 'bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.05)]' : 'bg-transparent hover:bg-white/[0.03]'}`}
+                                className={`group grid grid-cols-[1fr_60px_70px] items-center px-3 py-2.5 rounded transition-all duration-300 ${target?.mac === device.mac ? 'bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.05)] border border-cyan-500/10' : 'bg-transparent border border-transparent hover:bg-white/[0.03]'}`}
                                 onClick={() => setTarget(device)}
                             >
                                 <div className="flex items-center space-x-4">
@@ -200,24 +210,30 @@ const SignalTracker = () => {
                                 </div>
                             </div>
                         ))}
-                    </div>
-                </div>
 
-                {/* FOOTER - INTEGRATED */}
-                <div className="py-2.5 px-6 bg-black/40 border-t border-white/5 flex items-center justify-between text-[7px] font-mono text-white/20 uppercase tracking-[0.3em]">
-                    <div className="flex items-center space-x-5">
-                        <div className="flex items-center space-x-1.5">
-                            <Gauge className="w-2.5 h-2.5 text-cyan-500/30" />
-                            <span>Adaptive_Ref: -56.5</span>
-                        </div>
-                        <div className="flex items-center space-x-1.5">
-                            <Shield className="w-2.5 h-2.5 text-emerald-500/30" />
-                            <span>Precision_Lock: Ready</span>
-                        </div>
+                        {devices.length === 0 && !scanning && (
+                            <div className="py-20 text-center opacity-20">
+                                <Radar className="w-10 h-10 mx-auto mb-2" />
+                            </div>
+                        )}
                     </div>
-                    <div className="text-white/10 font-black">ST.V6_CORE</div>
                 </div>
             </CardContent>
+
+            {/* INTEGRATED FOOTER */}
+            <div className="py-2.5 px-6 bg-zinc-950 border-t border-white/5 flex items-center justify-between text-[7px] font-mono text-white/20 uppercase tracking-[0.3em] z-40">
+                <div className="flex items-center space-x-5">
+                    <div className="flex items-center space-x-1.5">
+                        <Gauge className="w-2.5 h-2.5 text-cyan-500/30" />
+                        <span>Adaptive_Ref: -56.5</span>
+                    </div>
+                    <div className="flex items-center space-x-1.5">
+                        <Shield className="w-2.5 h-2.5 text-emerald-500/30" />
+                        <span>Precision_Lock: Ready</span>
+                    </div>
+                </div>
+                <div className="text-white/10 font-black">ST.V7_UNIFIED</div>
+            </div>
         </Card>
     );
 };
