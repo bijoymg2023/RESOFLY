@@ -399,26 +399,47 @@ class ThermalDetector:
         # Sort by confidence (Highest first)
         hotspots.sort(key=lambda h: h.confidence, reverse=True)
         
-        # --- Dynamic Satellite Suppression (NMS) ---
-        # "Merge hands into body"
-        # Radius depends on the size of the person.
-        final_hotspots = []
-        while hotspots:
-            best = hotspots.pop(0)
-            final_hotspots.append(best)
-            
-            # Dynamic Radius: If it's a big person (close), radius is big.
-            # If it's a small person (far), radius is small (min 60px).
-            # 1.5x width covers outstretched arms roughly.
-            suppression_radius = max(60, best.width * 1.5, best.height * 1.5)
-            
-            # Filter out remaining hotspots
-            hotspots = [
-                h for h in hotspots 
-                if ((h.x - best.x)**2 + (h.y - best.y)**2)**0.5 > suppression_radius
-            ]
+        # --- Aggressive Merging (Union) ---
+        # "Magnet" Logic: If boxes are close, fuse them into one big box.
+        # This prevents 1 person being 3 boxes (Head, Body, Hand).
         
-        return final_hotspots, binary
+        merged_hotspots = []
+        while hotspots:
+            # Take the first box
+            base = hotspots.pop(0)
+            
+            # Keep merging until no more neighbors found
+            changed = True
+            while changed:
+                changed = False
+                unmerged = []
+                for other in hotspots:
+                    # Check distance between centers
+                    # If close (< 80px), MERGE THEM
+                    dist = ((base.x - other.x)**2 + (base.y - other.y)**2)**0.5
+                    if dist < 80:  # Union Range (Aggressive)
+                        # Create Union Box
+                        x1 = min(base.x, other.x)
+                        y1 = min(base.y, other.y)
+                        x2 = max(base.x + base.width, other.x + other.width)
+                        y2 = max(base.y + base.height, other.y + other.height)
+                        
+                        base.x = x1
+                        base.y = y1
+                        base.width = x2 - x1
+                        base.height = y2 - y1
+                        
+                        # Take max confidence/temp
+                        base.confidence = max(base.confidence, other.confidence)
+                        base.estimated_temp = max(base.estimated_temp, other.estimated_temp)
+                        changed = True
+                    else:
+                        unmerged.append(other)
+                hotspots = unmerged
+            
+            merged_hotspots.append(base)
+            
+        return merged_hotspots, binary
 
 
 # ============ UNIFIED FRAME PIPELINE ============
@@ -533,8 +554,8 @@ class ThermalFramePipeline:
                 h = best_match
                 
                 if last_state:
-                    # Smooth the box: 60% old, 40% new (High stability)
-                    alpha = 0.4
+                    # Smooth the box: 65% new, 35% old (Faster Response)
+                    alpha = 0.65
                     h.x = int(last_state['x'] * (1-alpha) + h.x * alpha)
                     h.y = int(last_state['y'] * (1-alpha) + h.y * alpha)
                     h.width = int(last_state['w'] * (1-alpha) + h.width * alpha)
