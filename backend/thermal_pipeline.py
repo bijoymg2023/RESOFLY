@@ -138,6 +138,10 @@ class WaveshareSource:
             
             # --- Best possible quality pipeline for 80x62 sensor ---
             
+            # --- LIVE SENSOR ANALYSIS ---
+            if self.frame_count % 30 == 0:
+                logger.info(f"LIVE FRAME {self.frame_count}: Shape={frame.shape}, Range=[{np.min(frame)}-{np.max(frame)}]")
+
             try:
                 # 1. Normalize to full 0-255 range
                 frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
@@ -168,28 +172,28 @@ class WaveshareSource:
                 # We step up 4x, blur the grid, then step up 2x.
                 fframe = frame.astype(np.float32)
                 
-                # Stage 1: 2x Upscale (80 -> 160) - "Early Filter" Strategy
-                # Processing 20k pixels instead of 80k pixels = 4x Speedup
-                small_w = self.OUTPUT_WIDTH // 4 
-                small_h = self.OUTPUT_HEIGHT // 4
+                # Stage 1: 4x Upscale (80 -> 320) - Back to "Medium Res" for detail
+                # 160px was too blurry. 320px is the sweet spot.
+                mid_w = self.OUTPUT_WIDTH // 2
+                mid_h = self.OUTPUT_HEIGHT // 2
                 
-                # Use CUBIC for the first step
-                small_frame = cv2.resize(fframe, (small_w, small_h), interpolation=cv2.INTER_CUBIC)
+                # Use CUBIC (Fast & Good)
+                mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_CUBIC)
                 
-                # --- "Silky" Smoothing (Early Stage) ---
-                # d=5, sigma=75 on 160px image is very effective and INSTANT.
-                small_u8 = np.clip(small_frame, 0, 255).astype(np.uint8)
-                small_u8 = cv2.bilateralFilter(small_u8, 5, 75, 75)
-                small_frame = small_u8.astype(np.float32)
+                # --- "Silky" Smoothing ---
+                # d=5, sigma=75 on 320px is fast enough and keeps detail.
+                mid_u8 = np.clip(mid_frame, 0, 255).astype(np.uint8)
+                mid_u8 = cv2.bilateralFilter(mid_u8, 5, 75, 75)
+                mid_frame = mid_u8.astype(np.float32)
                 
-                # Stage 2: 4x Upscale (160 -> 640) - "Big Jump"
-                upscaled = cv2.resize(small_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
+                # Stage 2: 2x Upscale (320 -> 640)
+                upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                       interpolation=cv2.INTER_CUBIC)
                 
                 # 6. Definition Boost (Light Sharpening)
-                # Strength 0.8: Crisp but not grainy.
+                # Strength 1.5: Make it pop.
                 gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-                upscaled = cv2.addWeighted(upscaled, 1.8, gaussian_blur, -0.8, 0)
+                upscaled = cv2.addWeighted(upscaled, 2.5, gaussian_blur, -1.5, 0)
                 
                 # 7. Convert back to uint8
                 upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
