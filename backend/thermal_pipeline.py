@@ -530,6 +530,10 @@ class ThermalFramePipeline:
                     h.width = int(h.width * scale_x)
                     h.height = int(h.height * scale_y)
             
+            # Add debug prints to trace raw hotspot detection.
+            if self.frame_number % 30 == 0:
+                print(f"[DEBUG] Frame {self.frame_number}: Found {len(raw_hotspots)} raw hotspots. Tracker has {len(self.tracker.objects)} objects.", flush=True)
+
             # 2. Prepare bounding boxes for tracker
             rects = []
             for h in raw_hotspots:
