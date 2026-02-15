@@ -604,7 +604,8 @@ class ThermalFramePipeline:
                 
                 # --- PROBATION CHECK (Anti-Spam) ---
                 persistence = self.tracker.persistence.get(object_id, 0)
-                is_confirmed = persistence >= 8
+                is_confirmed = persistence >= 2 # Was 8 - Lowered for testing
+                print(f"[DEBUG] ID: {object_id}, Persistence: {persistence}, Confirmed: {is_confirmed}", flush=True)
                 h.is_confirmed = is_confirmed
                 tracked_hotspots.append(h)
                 
