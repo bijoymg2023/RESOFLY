@@ -138,60 +138,76 @@ class WaveshareSource:
             
             # --- Best possible quality pipeline for 80x62 sensor ---
             
-            # 1. Normalize to full 0-255 range
-            frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+            try:
+                # 1. Normalize to full 0-255 range
+                frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+                
+                # 2. Temporal smoothing: blend with previous frame
+                if self._prev_frame is not None:
+                    frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
+                self._prev_frame = frame.copy()
+                
+                # 3. Gamma Correction (Brighten shadows / mid-tones)
+                # Gamma < 1.0 = lighter, Gamma > 1.0 = darker (Wait, standard gamma is inv)
+                # actually for thermal, we want to expand the 'warm' range.
+                # Let's use a look-up table for speed.
+                gamma = 1.5
+                invGamma = 1.0 / gamma
+                table = np.array([((i / 255.0) ** invGamma) * 255
+                    for i in np.arange(0, 256)]).astype("uint8")
+                frame = cv2.LUT(frame, table)
+                
+                # 4. Strong Contrast Enhancement (CLAHE)
+                # Clip limit 4.0 makes it very high contrast (Military style)
+                # Grid 8x8 is good for 80x62 sensor
+                clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+                frame = clahe.apply(frame)
+                
+                # 5. Multi-Stage Upscaling (Smooth & Organic)
+                # Direct 8x makes pixels look like lego blocks. 
+                # We step up 4x, blur the grid, then step up 2x.
+                fframe = frame.astype(np.float32)
+                
+                # Stage 1: 2x Upscale (80 -> 160) - "Early Filter" Strategy
+                # Processing 20k pixels instead of 80k pixels = 4x Speedup
+                small_w = self.OUTPUT_WIDTH // 4 
+                small_h = self.OUTPUT_HEIGHT // 4
+                
+                # Use CUBIC for the first step
+                small_frame = cv2.resize(fframe, (small_w, small_h), interpolation=cv2.INTER_CUBIC)
+                
+                # --- "Silky" Smoothing (Early Stage) ---
+                # d=5, sigma=75 on 160px image is very effective and INSTANT.
+                small_u8 = np.clip(small_frame, 0, 255).astype(np.uint8)
+                small_u8 = cv2.bilateralFilter(small_u8, 5, 75, 75)
+                small_frame = small_u8.astype(np.float32)
+                
+                # Stage 2: 4x Upscale (160 -> 640) - "Big Jump"
+                upscaled = cv2.resize(small_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
+                                      interpolation=cv2.INTER_CUBIC)
+                
+                # 6. Definition Boost (Light Sharpening)
+                # Strength 0.8: Crisp but not grainy.
+                gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
+                upscaled = cv2.addWeighted(upscaled, 1.8, gaussian_blur, -0.8, 0)
+                
+                # 7. Convert back to uint8
+                upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
+                
+                # 7. Convert back to uint8
+                upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
+                
+                return upscaled
             
-            # 2. Temporal smoothing: blend with previous frame
-            if self._prev_frame is not None:
-                frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
-            self._prev_frame = frame.copy()
-            
-            # 3. Gamma Correction (Brighten shadows / mid-tones)
-            # Gamma < 1.0 = lighter, Gamma > 1.0 = darker (Wait, standard gamma is inv)
-            # actually for thermal, we want to expand the 'warm' range.
-            # Let's use a look-up table for speed.
-            gamma = 1.5
-            invGamma = 1.0 / gamma
-            table = np.array([((i / 255.0) ** invGamma) * 255
-                for i in np.arange(0, 256)]).astype("uint8")
-            frame = cv2.LUT(frame, table)
-            
-            # 4. Strong Contrast Enhancement (CLAHE)
-            # Clip limit 4.0 makes it very high contrast (Military style)
-            # Grid 8x8 is good for 80x62 sensor
-            clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
-            frame = clahe.apply(frame)
-            
-            # Stage 1: 2x Upscale (80 -> 160) - "Early Filter" Strategy
-            # Processing 20k pixels instead of 80k pixels = 4x Speedup
-            small_w = self.OUTPUT_WIDTH // 4 
-            small_h = self.OUTPUT_HEIGHT // 4
-            
-            # Use CUBIC for the first step
-            small_frame = cv2.resize(fframe, (small_w, small_h), interpolation=cv2.INTER_CUBIC)
-            
-            # --- "Silky" Smoothing (Early Stage) ---
-            # d=5, sigma=75 on 160px image is very effective and INSTANT.
-            small_u8 = np.clip(small_frame, 0, 255).astype(np.uint8)
-            small_u8 = cv2.bilateralFilter(small_u8, 5, 75, 75)
-            small_frame = small_u8.astype(np.float32)
-            
-            # Stage 2: 4x Upscale (160 -> 640) - "Big Jump"
-            upscaled = cv2.resize(small_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
-                                  interpolation=cv2.INTER_CUBIC)
-            
-            # 6. Definition Boost (Light Sharpening)
-            # Strength 0.8: Crisp but not grainy.
-            gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-            upscaled = cv2.addWeighted(upscaled, 1.8, gaussian_blur, -0.8, 0)
-            
-            # 7. Convert back to uint8
-            upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
-            
-            # 7. Convert back to uint8
-            upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
-            
-            return upscaled
+            except Exception as e:
+                logger.error(f"PIPELINE CRASH START: {e}")
+                import traceback
+                traceback.print_exc()
+                logger.error("PIPELINE CRASH END")
+                # Return a visual error frame so stream stays online
+                err_frame = np.zeros((self.OUTPUT_HEIGHT, self.OUTPUT_WIDTH), dtype=np.uint8)
+                cv2.putText(err_frame, "PIPELINE ERROR", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,), 2)
+                return err_frame
         return None
     
     def get_detect_frame(self, display_frame: np.ndarray) -> np.ndarray:
