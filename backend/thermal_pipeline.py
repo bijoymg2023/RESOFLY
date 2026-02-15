@@ -174,22 +174,26 @@ class WaveshareSource:
             # Use LANCZOS4 (High quality) instead of Cubic
             mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_LANCZOS4)
             
-            # --- NEW LOCATION: Despeckle (Median Blur) ---
-            # Run on 320x240 image so we don't kill small details!
-            mid_frame = cv2.medianBlur(mid_frame, 3)
-
-            # AGGRESSIVE Blur to melt the sensor grid
-            # Reduced to 5x5 (crisper than 7x7)
-            mid_frame = cv2.GaussianBlur(mid_frame, (5, 5), 0)
+            # --- "Beauty Mode" Smoothing (Bilateral Filter) ---
+            # Smoothens flat areas (noise) but keeps edges sharp.
+            # d=9: Neighborhood diameter
+            # sigmaColor=75: Mix pixels if color is close (smooths gradients)
+            # sigmaSpace=75: Mix pixels if close in space
+            # Note: Converted to uint8 temporarily for bilateral filter (it requires it)
+            mid_u8 = np.clip(mid_frame, 0, 255).astype(np.uint8)
+            mid_u8 = cv2.bilateralFilter(mid_u8, 9, 75, 75)
+            mid_frame = mid_u8.astype(np.float32)
             
             # Stage 2: 2x Upscale (320 -> 640)
             upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
                                   interpolation=cv2.INTER_CUBIC)
             
-            # 6. Gentle Sharpening (Don't over-sharpen pixels)
-            # Reduced strength to 1.0 (Subtle)
-            gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-            upscaled = cv2.addWeighted(upscaled, 2.0, gaussian_blur, -1.0, 0)
+            # 6. Minimal Polish (No Sharpening)
+            # We skip unsharp mask because it effectively undoes the smoothing.
+            # Just light contrast touch-up if needed, but CLAHE covered it.
+            
+            # 7. Convert back to uint8
+            upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
             
             # 7. Convert back to uint8
             upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
