@@ -37,14 +37,16 @@ def get_bluetooth_devices():
         # 3. Ensure Bluetooth is powered on
         log_debug("Ensuring Bluetooth is Powered ON...")
         try:
-            subprocess.run(f"{btmgmt_path} power on", shell=True, timeout=3, capture_output=True)
+            # Requires sudo on Pi
+            subprocess.run(f"sudo {btmgmt_path} power on", shell=True, timeout=3, capture_output=True)
         except Exception as pe:
             log_debug(f"Power on attempt error: {pe}")
 
         # 4. Run the scan
-        log_debug("Starting 7s Bluetooth LE scan...")
+        log_debug("Starting 7s Bluetooth LE scan (with sudo)...")
         try:
-            cmd = f"timeout 7s {btmgmt_path} find"
+            # Requires sudo to access HCI device
+            cmd = f"sudo timeout 7s {btmgmt_path} find"
             output = subprocess.check_output(cmd, shell=True).decode("utf-8", errors="ignore")
             
             lines = output.split('\n')
