@@ -107,6 +107,7 @@ class AlertType(str, Enum):
     info = 'info'
     success = 'success'
     life = 'life'
+    LIFE = 'LIFE'
 
 class AlertBase(BaseModel):
     type: AlertType
