@@ -123,9 +123,9 @@ class RpicamCamera(BaseCamera):
     """
     Pi Camera using rpicam-vid subprocess for continuous video streaming.
     Outputs MJPEG directly to stdout for high performance.
-    Uses asyncio.Event for zero-latency frame signaling.
+    Use asyncio.Event for zero-latency frame signaling.
     """
-    def __init__(self, resolution=(640, 480), framerate=30):
+    def __init__(self, resolution=(1024, 768), framerate=20):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -140,7 +140,7 @@ class RpicamCamera(BaseCamera):
         import shutil
         if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (Smooth Stream, Low BW)")
+            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (v1.3 Optimized)")
             
             # Start video streaming thread
             self.thread = threading.Thread(target=self._stream_loop, daemon=True)
