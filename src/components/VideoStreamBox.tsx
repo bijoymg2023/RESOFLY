@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -25,20 +25,48 @@ type VideoType = 'RGB' | 'Thermal' | 'Overlay';
 type ThermalMode = 'live' | 'gallery';
 
 /**
- * RGBStreamView - Native MJPEG stream for maximum FPS
- * Uses the browser's built-in MJPEG decoder which is far faster
- * than manual frame polling (no per-frame HTTP overhead).
+ * StreamView — Self-cleaning MJPEG stream component.
+ *
+ * CRITICAL: On unmount this sets img.src = "" which aborts the
+ * underlying HTTP chunked-transfer connection. Without this,
+ * switching tabs leaves zombie MJPEG connections alive causing
+ * overlapping frames and resource leaks.
  */
-const RGBStreamView = () => {
+const StreamView = ({ src, label }: { src: string; label: string }) => {
+  const imgRef = useRef<HTMLImageElement>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [hasError, setHasError] = useState(false);
+
+  // Cleanup: abort MJPEG connection on unmount
+  useEffect(() => {
+    return () => {
+      if (imgRef.current) {
+        imgRef.current.src = ''; // Kill HTTP connection
+      }
+    };
+  }, []);
+
+  const retry = useCallback(() => {
+    setHasError(false);
+    setIsConnected(false);
+    // Force re-fetch by appending cache-buster
+    if (imgRef.current) {
+      imgRef.current.src = '';
+      setTimeout(() => {
+        if (imgRef.current) {
+          imgRef.current.src = `${src}?t=${Date.now()}`;
+        }
+      }, 100);
+    }
+  }, [src]);
 
   return (
     <div className="relative w-full h-full bg-black">
       {!hasError ? (
         <img
-          src="/api/stream/rgb"
-          alt="Live RGB Feed"
+          ref={imgRef}
+          src={src}
+          alt={`Live ${label} Feed`}
           className="w-full h-full object-contain"
           onLoad={() => setIsConnected(true)}
           onError={() => { setHasError(true); setIsConnected(false); }}
@@ -47,8 +75,9 @@ const RGBStreamView = () => {
         <div className="flex flex-col items-center justify-center h-full text-white/40 font-mono">
           <AlertCircle className="w-12 h-12 mb-3 text-red-500/50" />
           <p className="text-xs tracking-widest text-red-400">STREAM OFFLINE</p>
+          <p className="text-[10px] mt-2 text-white/30">Check {label.toLowerCase()} camera connection</p>
           <button
-            onClick={() => setHasError(false)}
+            onClick={retry}
             className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
           >
             Retry
@@ -60,7 +89,7 @@ const RGBStreamView = () => {
       <div className="absolute top-4 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
         <div className={`w-2 h-2 rounded-full animate-pulse ${isConnected ? 'bg-green-500' : 'bg-yellow-500'}`} />
         <span className={`font-mono text-[9px] ${isConnected ? 'text-green-400' : 'text-yellow-400'}`}>
-          {isConnected ? 'LIVE' : 'CONNECTING'}
+          {isConnected ? `LIVE ${label}` : 'CONNECTING'}
         </span>
       </div>
     </div>
@@ -75,10 +104,8 @@ export const VideoStreamBox = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
-  const [streamError, setStreamError] = useState(false);
   const { token } = useAuth();
   const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
 
   // Live Waveshare thermal MJPEG stream from backend pipeline
   const THERMAL_STREAM_URL = `/thermal/`;
@@ -87,15 +114,6 @@ export const VideoStreamBox = () => {
   useEffect(() => {
     fetchGallery();
   }, [token]);
-
-  // Handle stream errors
-  const handleStreamError = () => {
-    setStreamError(true);
-  };
-
-  const handleStreamLoad = () => {
-    setStreamError(false);
-  };
 
   const fetchGallery = async () => {
     try {
@@ -242,38 +260,8 @@ export const VideoStreamBox = () => {
             <>
               {/* LIVE STREAM MODE */}
               {thermalMode === 'live' ? (
-                <>
-                  {streamError ? (
-                    <div className="text-white/30 font-mono flex flex-col items-center z-10">
-                      <AlertCircle className="w-16 h-16 mb-4 text-red-500/50" />
-                      <p className="tracking-widest text-xs text-red-400">STREAM OFFLINE</p>
-                      <p className="text-[10px] mt-2 text-white/30">Check thermal camera connection</p>
-                      <button
-                        onClick={() => setStreamError(false)}
-                        className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
-                      >
-                        Retry Connection
-                      </button>
-                    </div>
-                  ) : (
-                    <img
-                      ref={imgRef}
-                      src={THERMAL_STREAM_URL}
-                      alt="Live Thermal Feed"
-                      onLoad={handleStreamLoad}
-                      onError={handleStreamError}
-                      className="w-full h-full object-contain"
-                    />
-                  )}
-
-                  {/* Live Indicator */}
-                  {!streamError && (
-                    <div className="absolute top-20 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                      <span className="font-mono text-[9px] text-green-400">LIVE THERMAL</span>
-                    </div>
-                  )}
-                </>
+                /* key forces full remount → kills old MJPEG connection */
+                <StreamView key="thermal-live" src={THERMAL_STREAM_URL} label="THERMAL" />
               ) : (
                 /* GALLERY MODE */
                 <>
@@ -334,8 +322,8 @@ export const VideoStreamBox = () => {
               )}
             </>
           ) : activeType === 'RGB' ? (
-            /* RGB Camera Stream from Pi Camera - Rapid Frame Polling */
-            <RGBStreamView />
+            /* RGB Camera Stream — key forces clean remount on switch */
+            <StreamView key="rgb-live" src="/api/stream/rgb" label="OPTICAL" />
           ) : (
             /* Offline / Placeholder for Fusion */
             <div className="flex flex-col items-center justify-center h-full w-full bg-black relative overflow-hidden">

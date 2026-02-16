@@ -42,6 +42,7 @@ def get_ist_time():
 # Global Signal Cache (Zero-Lag)
 signal_cache = []
 signal_cache_lock = None # Initialized in startup()
+server_boot_time = None  # Set in startup() — used to filter alerts to current session
 
 # Setup
 ROOT_DIR = Path(__file__).parent
@@ -264,7 +265,16 @@ async def read_users_me(current_user: UserDB = Depends(get_current_user)):
 
 @api_router.get("/alerts", response_model=List[Alert])
 async def get_alerts(db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    result = await db.execute(select(AlertDB).order_by(AlertDB.timestamp.desc()).limit(50))
+    # Only return alerts from the current server session (prevents stale alerts on refresh)
+    if server_boot_time:
+        result = await db.execute(
+            select(AlertDB)
+            .where(AlertDB.timestamp >= server_boot_time)
+            .order_by(AlertDB.timestamp.desc())
+            .limit(50)
+        )
+    else:
+        result = await db.execute(select(AlertDB).order_by(AlertDB.timestamp.desc()).limit(50))
     return result.scalars().all()
 
 @api_router.post("/alerts", response_model=Alert)
@@ -788,10 +798,29 @@ async def thermal_stream():
         }
     )
 
+# --------------------------
+# RGB Camera MJPEG Stream
+# --------------------------
+@app.get("/api/stream/rgb")
+async def rgb_stream():
+    """MJPEG stream from Pi RGB Camera."""
+    return StreamingResponse(
+        camera.generate_rgb_stream(),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
 # Startup
 @app.on_event("startup")
 async def startup():
-    global signal_cache_lock
+    global signal_cache_lock, server_boot_time
+    server_boot_time = get_ist_time()  # Record boot time for session-only alerts
     signal_cache_lock = asyncio.Lock()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -816,26 +845,8 @@ async def startup():
     except Exception as e:
         print(f"Warning: Could not setup admin user: {e}", flush=True)
     
-    # 2. Log System Startup (separate try block, optional)
-    try:
-        async with AsyncSessionLocal() as db:
-            startup_alert = AlertDB(
-                id=str(uuid.uuid4()),
-                type='info',
-                title='System Online',
-                message='ResoFly Backend started successfully.',
-                timestamp=get_ist_time(),
-                acknowledged=False,
-                lat=0.0,
-                lon=0.0,
-                confidence=1.0,
-                max_temp=0.0
-            )
-            db.add(startup_alert)
-            await db.commit()
-            print("Startup alert logged", flush=True)
-    except Exception as e:
-        print(f"Warning: Could not log startup alert: {e}", flush=True)
+    # 2. Startup logged (no DB alert to keep alert box clean on refresh)
+    print(f"[BOOT] Server started at {server_boot_time.isoformat()}", flush=True)
             
     # 3. Initialize Multi-Sensor Fusion Pipeline (Mk-V)
     # Priority: Live Waveshare HAT > Dataset video fallback

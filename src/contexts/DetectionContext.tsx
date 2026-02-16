@@ -107,11 +107,8 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, []);
 
     useEffect(() => {
-        // Initial fetch
-        refreshAlerts();
-
-        // Polling loop (fallback for REST sync)
-        const interval = setInterval(refreshAlerts, 5000); // Reduced frequency since we have WebSocket
+        // NO initial fetch — start with a clean, empty alert box.
+        // Alerts appear ONLY via live WebSocket events from the current session.
 
         // WebSocket connection for instant alerts
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -180,11 +177,10 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         connectWebSocket();
 
         return () => {
-            clearInterval(interval);
             if (reconnectTimer) clearTimeout(reconnectTimer);
             ws?.close();
         };
-    }, [refreshAlerts]);
+    }, []);
 
     return (
         <DetectionContext.Provider value={{ alerts, activeAlerts, selectedAlert, ackAlert, focusAlert, clearSelection }}>
