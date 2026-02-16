@@ -750,9 +750,11 @@ async def thermal_stream():
     no_signal_bytes = no_signal_jpeg.tobytes()
     
     async def generate():
+        loop = asyncio.get_running_loop()
         while True:
-            # Process frame: detect + annotate (synchronized)
-            frame = thermal_frame_pipeline.process_next()
+            # Move heavy CV2/detection logic to a background thread
+            # This prevents the thermal processing from "freezing" the rest of the app
+            frame = await loop.run_in_executor(None, thermal_frame_pipeline.process_next)
             
             if frame is not None:
                 _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
@@ -768,8 +770,9 @@ async def thermal_stream():
                 b'\r\n'
             )
             
-            # Target ~8 FPS (Waveshare HAT is ~5 FPS, no need to poll faster)
-            await asyncio.sleep(1/8)
+            # Match sensor rate (Waveshare is ~5-6 FPS)
+            # Polling faster just wastes CPU.
+            await asyncio.sleep(1/6)
     
     return StreamingResponse(
         generate(),

@@ -125,7 +125,7 @@ class RpicamCamera(BaseCamera):
     Outputs MJPEG directly to stdout for high performance.
     Use asyncio.Event for zero-latency frame signaling.
     """
-    def __init__(self, resolution=(800, 600), framerate=20):
+    def __init__(self, resolution=(640, 480), framerate=15):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -140,7 +140,7 @@ class RpicamCamera(BaseCamera):
         import shutil
         if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (v1.5 Balanced)")
+            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (v1.6 Stability)")
             
             # Start video streaming thread
             self.thread = threading.Thread(target=self._stream_loop, daemon=True)
@@ -163,7 +163,6 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # rpicam-vid MJPEG to stdout
-                # 1024x768 @ 30fps, quality 65 (better speed/bandwidth balance)
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -171,7 +170,7 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "65",
+                    "--quality", "60",
                     "--exposure", "sport",
                     "--denoise", "off",
                     "--inline",            
@@ -180,7 +179,6 @@ class RpicamCamera(BaseCamera):
                     "-o", "-"
                 ]
                 
-                # bufsize=0 for unbuffered output
                 self.process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
@@ -188,48 +186,45 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print(f"rpicam-vid stream started ({self.resolution[0]}x{self.resolution[1]} @ {self.framerate}fps)")
+                print(f"rpicam-vid stable stream started ({self.resolution[0]}x{self.resolution[1]} @ {self.framerate}fps)")
                 
-                # Read MJPEG frames from stdout
-                buffer = b''
+                # Buffer management
+                buffer = bytearray()
                 while self.running and self.process.poll() is None:
-                    # Read 128KB chunks — faster for 5MP/High-res frames
-                    chunk = self.process.stdout.read(131072)
+                    # Smaller chunks for lower latency and better parsing
+                    chunk = self.process.stdout.read(65536)
                     if not chunk:
                         break
                     
-                    buffer += chunk
+                    buffer.extend(chunk)
                     
-                    # GREEDY FRAME PARSING:
-                    # Find the LAST complete frame and discard everything before it.
-                    last_frame_end = buffer.rfind(b'\xff\xd9')
-                    
-                    if last_frame_end != -1:
-                        packet_end = last_frame_end + 2
-                        frame_start = buffer.rfind(b'\xff\xd8', 0, last_frame_end)
+                    # Find JPEG markers
+                    while True:
+                        start = buffer.find(b'\xff\xd8')
+                        end = buffer.find(b'\xff\xd9', start)
                         
-                        if frame_start != -1:
-                            new_frame = buffer[frame_start:packet_end]
+                        if start != -1 and end != -1:
+                            # We have a full frame
+                            jpg_frame = buffer[start:end+2]
                             
                             with self.lock:
-                                self.frame = new_frame
+                                self.frame = bytes(jpg_frame)
                             
-                            # Signal waiting consumers that a new frame is ready
                             self._signal_new_frame()
                             
-                            # Keep only data after this frame
-                            buffer = buffer[packet_end:]
+                            # Remove processed frame (and any junk before it)
+                            del buffer[:end+2]
                         else:
-                            if len(buffer) > 500000:
-                                buffer = b''
+                            # Not enough data for a full frame yet
+                            break
                     
-                    # Safety valve
+                    # Safety valve (prevent memory leak if markers aren't found)
                     if len(buffer) > 1000000:
-                        buffer = b''
+                        buffer = bytearray()
                 
             except Exception as e:
                 print(f"RpicamCamera stream error: {e}")
-                time.sleep(1)
+                time.sleep(2)
             finally:
                 if self.process:
                     try:
@@ -238,7 +233,7 @@ class RpicamCamera(BaseCamera):
                     except:
                         pass
                     self.process = None
-                time.sleep(0.5)
+                time.sleep(1.0)
 
     
     async def get_frame(self):
