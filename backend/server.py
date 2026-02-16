@@ -756,8 +756,8 @@ async def thermal_stream():
                 frame_bytes +
                 b'\r\n'
             )
-            # Poll fast — skip frames are free so we want minimum latency
-            await asyncio.sleep(0.03)
+            # Poll very fast (50Hz) to minimize latency added by stream
+            await asyncio.sleep(0.02)
 
     return StreamingResponse(
         generate(),
