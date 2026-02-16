@@ -125,7 +125,7 @@ class RpicamCamera(BaseCamera):
     Outputs MJPEG directly to stdout for high performance.
     Use asyncio.Event for zero-latency frame signaling.
     """
-    def __init__(self, resolution=(1024, 768), framerate=20):
+    def __init__(self, resolution=(1024, 768), framerate=30):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -140,7 +140,7 @@ class RpicamCamera(BaseCamera):
         import shutil
         if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (v1.3 Optimized)")
+            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (v1.4 Ultra-Smooth)")
             
             # Start video streaming thread
             self.thread = threading.Thread(target=self._stream_loop, daemon=True)
@@ -163,7 +163,7 @@ class RpicamCamera(BaseCamera):
         while self.running and self.available:
             try:
                 # rpicam-vid MJPEG to stdout
-                # 1280x720 @ 30fps, quality 70 for sharp image, denoise off for speed
+                # 1024x768 @ 30fps, quality 65 (better speed/bandwidth balance)
                 cmd = [
                     "rpicam-vid",
                     "-t", "0",
@@ -171,7 +171,7 @@ class RpicamCamera(BaseCamera):
                     "--height", str(self.resolution[1]),
                     "--framerate", str(self.framerate),
                     "--codec", "mjpeg",
-                    "--quality", "70",
+                    "--quality", "65",
                     "--exposure", "sport",
                     "--denoise", "off",
                     "--inline",            
@@ -188,13 +188,13 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print("rpicam-vid stream started (smooth 720p mode)")
+                print(f"rpicam-vid stream started ({self.resolution[0]}x{self.resolution[1]} @ {self.framerate}fps)")
                 
                 # Read MJPEG frames from stdout
                 buffer = b''
                 while self.running and self.process.poll() is None:
-                    # Read 32KB chunks — matches typical JPEG frame size
-                    chunk = self.process.stdout.read(32768)
+                    # Read 128KB chunks — faster for 5MP/High-res frames
+                    chunk = self.process.stdout.read(131072)
                     if not chunk:
                         break
                     
