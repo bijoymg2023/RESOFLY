@@ -208,11 +208,11 @@ class FusionPipeline:
         self._current_jpeg: Optional[bytes] = None
         self._capture_thread: Optional[threading.Thread] = None
         self._running = False
-        self._target_fps = 8  # Stream a bit faster than sensor (interpolate)
+        self._target_fps = 10  # Target ~10 FPS output
 
         # Skip-frame detection: run full detect pipeline every N frames,
         # reuse cached detections + just re-annotate on skip frames.
-        self._detect_interval = 2  # detect every 2nd frame
+        self._detect_interval = 3  # detect every 3rd frame
         self._cached_tracked: dict = {}
         self._loop_frame = 0
 
