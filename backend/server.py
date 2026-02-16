@@ -29,7 +29,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer
 import thermal_pipeline
-import fusion_pipeline
 from datetime import datetime, timedelta, timezone
 import json
 import wifi_gps
@@ -42,7 +41,6 @@ def get_ist_time():
 # Global Signal Cache (Zero-Lag)
 signal_cache = []
 signal_cache_lock = None # Initialized in startup()
-server_boot_time = None  # Set in startup() — used to filter alerts to current session
 
 # Setup
 ROOT_DIR = Path(__file__).parent
@@ -265,10 +263,8 @@ async def read_users_me(current_user: UserDB = Depends(get_current_user)):
 
 @api_router.get("/alerts", response_model=List[Alert])
 async def get_alerts(db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    # Dashboard uses WebSocket-only for real-time alerts.
-    # Return empty list to prevent old alerts from appearing on page load.
-    # Historical alerts are still in DB and can be queried via /api/alerts/history if needed.
-    return []
+    result = await db.execute(select(AlertDB).order_by(AlertDB.timestamp.desc()).limit(50))
+    return result.scalars().all()
 
 @api_router.post("/alerts", response_model=Alert)
 async def create_alert(input: AlertCreate, db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
@@ -737,48 +733,50 @@ async def websocket_alerts(websocket: WebSocket):
 @app.get("/thermal/")
 async def thermal_stream():
     """
-    MJPEG stream — reads pre-encoded JPEG from background capture thread.
-    Multiple clients can connect; they all read the same cached frame.
-    No SPI access, no detection processing happens here.
+    MJPEG stream with synchronized detection.
+    Each frame is processed for detection before being streamed.
+    Alerts are generated at the exact moment signatures are visible.
     """
     if thermal_frame_pipeline is None:
+        # Return placeholder if no pipeline
         async def placeholder():
             yield b'--frame\r\nContent-Type: text/plain\r\n\r\nNo thermal source available\r\n'
         return StreamingResponse(placeholder(), media_type="multipart/x-mixed-replace; boundary=frame")
-
+    
+    # Pre-generate a "no signal" placeholder frame
+    no_signal = np.zeros((496, 640, 3), dtype=np.uint8)
+    cv2.putText(no_signal, "THERMAL", (180, 220), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 180, 255), 3)
+    cv2.putText(no_signal, "Waiting for sensor data...", (140, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 1)
+    _, no_signal_jpeg = cv2.imencode('.jpg', no_signal, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    no_signal_bytes = no_signal_jpeg.tobytes()
+    
     async def generate():
+        loop = asyncio.get_running_loop()
         while True:
-            # Thread-safe read of latest JPEG (no camera/SPI access)
-            frame_bytes = thermal_frame_pipeline.get_jpeg()
+            # Move heavy CV2/detection logic to a background thread
+            # This prevents the thermal processing from "freezing" the rest of the app
+            frame = await loop.run_in_executor(None, thermal_frame_pipeline.process_next)
+            
+            if frame is not None:
+                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                frame_bytes = jpeg.tobytes()
+            else:
+                # Send placeholder so browser doesn't show blank
+                frame_bytes = no_signal_bytes
+            
             yield (
                 b'--frame\r\n'
                 b'Content-Type: image/jpeg\r\n\r\n' +
                 frame_bytes +
                 b'\r\n'
             )
-            # Poll very fast (50Hz) to minimize latency added by stream
-            await asyncio.sleep(0.02)
-
+            
+            # Match sensor rate (Waveshare is ~5-6 FPS)
+            # Polling faster just wastes CPU.
+            await asyncio.sleep(0.2)
+    
     return StreamingResponse(
         generate(),
-        media_type="multipart/x-mixed-replace; boundary=frame",
-        headers={
-            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
-
-# --------------------------
-# RGB Camera MJPEG Stream
-# --------------------------
-@app.get("/api/stream/rgb")
-async def rgb_stream():
-    """MJPEG stream from Pi RGB Camera."""
-    return StreamingResponse(
-        camera.generate_rgb_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={
             "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
@@ -792,8 +790,7 @@ async def rgb_stream():
 # Startup
 @app.on_event("startup")
 async def startup():
-    global signal_cache_lock, server_boot_time
-    server_boot_time = get_ist_time()  # Record boot time for session-only alerts
+    global signal_cache_lock
     signal_cache_lock = asyncio.Lock()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -818,46 +815,52 @@ async def startup():
     except Exception as e:
         print(f"Warning: Could not setup admin user: {e}", flush=True)
     
-    # 2. Startup logged (no DB alert to keep alert box clean on refresh)
-    print(f"[BOOT] Server started at {server_boot_time.isoformat()}", flush=True)
+    # 2. Log System Startup (separate try block, optional)
+    try:
+        async with AsyncSessionLocal() as db:
+            startup_alert = AlertDB(
+                id=str(uuid.uuid4()),
+                type='info',
+                title='System Online',
+                message='ResoFly Backend started successfully.',
+                timestamp=get_ist_time(),
+                acknowledged=False,
+                lat=0.0,
+                lon=0.0,
+                confidence=1.0,
+                max_temp=0.0
+            )
+            db.add(startup_alert)
+            await db.commit()
+            print("Startup alert logged", flush=True)
+    except Exception as e:
+        print(f"Warning: Could not log startup alert: {e}", flush=True)
             
-    # 3. Initialize Multi-Sensor Fusion Pipeline (Mk-V)
+    # 3. Initialize Synchronized Thermal Pipeline
     # Priority: Live Waveshare HAT > Dataset video fallback
     source = None
     
     # Try Waveshare Thermal HAT first
     try:
-        waveshare_source = fusion_pipeline.WaveshareSource()
+        waveshare_source = thermal_pipeline.WaveshareSource()
         if waveshare_source.is_available():
             source = waveshare_source
-            print("[FUSION] ✓ Waveshare 80x62 Thermal HAT detected — using LIVE feed", flush=True)
+            print("[THERMAL] ✓ Waveshare 80x62 Thermal HAT detected — using LIVE feed", flush=True)
         else:
-            print("[FUSION] Waveshare HAT not available, checking dataset fallback...", flush=True)
+            print("[THERMAL] Waveshare HAT not available, checking dataset fallback...", flush=True)
     except Exception as e:
         import traceback
-        print(f"[FUSION] Waveshare init error: {e}", flush=True)
+        print(f"[THERMAL] Waveshare init error: {e}", flush=True)
         traceback.print_exc()
     
     # Fallback to dataset video
     if source is None:
         dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
-        print(f"[FUSION] Looking for dataset at: {dataset_video}", flush=True)
-        print(f"[FUSION] Dataset exists: {dataset_video.exists()}", flush=True)
+        print(f"[THERMAL] Looking for dataset at: {dataset_video}", flush=True)
+        print(f"[THERMAL] Dataset exists: {dataset_video.exists()}", flush=True)
         if dataset_video.exists():
-            source = fusion_pipeline.VideoSource(str(dataset_video))
-            print("[FUSION] Using dataset video as thermal source", flush=True)
-    
-    # Get RGB camera for sensor fusion
-    rgb_cam = None
-    try:
-        rgb_cam = camera.get_rgb_camera()
-        if rgb_cam and rgb_cam.is_available():
-            print("[FUSION] ✓ Pi RGB Camera detected — sensor fusion ENABLED", flush=True)
-        else:
-            rgb_cam = None
-            print("[FUSION] No RGB camera — running thermal-only mode", flush=True)
-    except Exception as e:
-        print(f"[FUSION] RGB camera init error: {e}", flush=True)
+            source = thermal_pipeline.VideoSource(str(dataset_video))
+            print("[THERMAL] Using dataset video as thermal source", flush=True)
     
     if source is not None:
         
@@ -865,34 +868,38 @@ async def startup():
         main_loop = asyncio.get_running_loop()
 
         # Detection callback - creates alerts and broadcasts via WebSocket
-        def on_detection_event(event: fusion_pipeline.DetectionEvent):
-            print(f"[FUSION] ALERT! Frame: {event.frame_number}, Detections: {len(event.hotspots)}", flush=True)
+        def on_detection_event(event: thermal_pipeline.DetectionEvent):
+            print(f"[DEBUG] on_detection_event CALLED! Frame: {event.frame_number}, Hotspots: {len(event.hotspots)}", flush=True)
             """Handle detection event - save to DB and broadcast."""
+            # Get GPS (Default to 0.0 if no lock)
             lat = 0.0
             lon = 0.0
             
             if gps_reader:
                 gps_data = gps_reader.get_data()
+                # Check if we have a valid fix (non-zero)
                 if gps_data.get('latitude') and gps_data.get('latitude') != 0.0:
                     lat, lon = gps_data['latitude'], gps_data['longitude']
             
+            # Create alert in database - schedule on the running event loop SAFELY
             async def save_and_broadcast():
                 try:
                     async with AsyncSessionLocal() as db:
                         for hotspot in event.hotspots:
+                            # Use track_id if available, else standard index
                             obj_id = hotspot.track_id if hotspot.track_id is not None else 0
                             
+                            # Unique GPS offset based on ID (consistent position for same ID)
                             person_lat = lat + ((obj_id % 10) * 0.0005)
                             person_lon = lon + ((obj_id % 10) * 0.0003)
                             
                             alert_id = str(uuid.uuid4())
-                            validation = getattr(hotspot, 'validation_type', 'THERMAL_ONLY')
                             
                             alert = AlertDB(
                                 id=alert_id,
                                 type='LIFE',
-                                title=f'LIFEFORM #{obj_id} [{validation}]',
-                                message=f"Target ID:{obj_id} | {hotspot.estimated_temp:.0f}°C | {int(hotspot.confidence*100)}% | {validation}",
+                                title=f'PERSON #{obj_id} DETECTED',
+                                message=f"New target tracked (ID: {obj_id}, {hotspot.estimated_temp:.0f}°C, {int(hotspot.confidence*100)}%)",
                                 timestamp=event.timestamp,
                                 acknowledged=False,
                                 lat=person_lat,
@@ -902,11 +909,11 @@ async def startup():
                             )
                             db.add(alert)
                             
+                            # Broadcast each alert via WebSocket
                             alert_data = {
                                 "id": alert_id,
-                                "type": "LIFEFORM_DETECTED",
-                                "title": f"LIFEFORM #{obj_id}",
-                                "validation": validation,
+                                "type": "LIFE",
+                                "title": f"PERSON #{obj_id}",
                                 "confidence": hotspot.confidence,
                                 "max_temp": hotspot.estimated_temp,
                                 "estimated_temp": hotspot.estimated_temp,
@@ -920,11 +927,13 @@ async def startup():
                             await ws_manager.broadcast(alert_data)
                         
                         await db.commit()
-                        print(f"[FUSION] ✓ {len(event.hotspots)} alerts saved & broadcast", flush=True)
+                        print(f"[ALERT] Saved {len(event.hotspots)} detections to DB", flush=True)
                     
+                    print(f"[THERMAL] ✓ {len(event.hotspots)} alerts sent for frame {event.frame_number}")
                 except Exception as e:
-                    print(f"[FUSION] Error in save_and_broadcast: {e}")
+                    print(f"[THERMAL] Error in save_and_broadcast: {e}")
             
+            # Schedule on the main loop from the thermal thread
             try:
                 if main_loop.is_running():
                     asyncio.run_coroutine_threadsafe(save_and_broadcast(), main_loop)
@@ -933,35 +942,20 @@ async def startup():
             except Exception as e:
                  print(f"[ERROR] Could not schedule alert task: {e}", flush=True)
         
-        # Create the multi-sensor fusion pipeline
+        # Create the unified pipeline
         global thermal_frame_pipeline
-        thermal_frame_pipeline = fusion_pipeline.FusionPipeline(
-            thermal_source=source,
-            rgb_camera=rgb_cam,
-            on_detection=on_detection_event,
-            require_rgb_validation=False,  # Alert on thermal-only too (fallback)
+        thermal_frame_pipeline = thermal_pipeline.ThermalFramePipeline(
+            source=source,
+            on_detection=on_detection_event
         )
-        mode = "FUSION (Thermal+RGB)" if rgb_cam else "THERMAL-ONLY"
-        print(f"[FUSION] ✓ Pipeline initialized — Mode: {mode}", flush=True)
-
-        # Start the single background capture thread
-        thermal_frame_pipeline.start()
-        print(f"[FUSION] ✓ Capture thread started (single writer architecture)", flush=True)
+        print("[THERMAL] Synchronized pipeline initialized", flush=True)
     else:
-        print("[FUSION] No thermal source available (no HAT, no dataset), detection disabled", flush=True)
+        print("[THERMAL] No thermal source available (no HAT, no dataset), detection disabled", flush=True)
         thermal_frame_pipeline = None
 
     # 4. Start background monitor loops
     asyncio.create_task(background_monitor())
     asyncio.create_task(signal_monitor_loop())
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Clean up the capture thread on server shutdown."""
-    global thermal_frame_pipeline
-    if thermal_frame_pipeline is not None:
-        thermal_frame_pipeline.stop()
-        print("[FUSION] Capture thread stopped (shutdown)", flush=True)
 
 async def signal_monitor_loop():
     """Continuous background scanning for signals (Zero-Lag Architecture)."""
