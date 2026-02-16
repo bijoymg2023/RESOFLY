@@ -207,12 +207,17 @@ class FusionPipeline:
         self._jpeg_lock = threading.Lock()
         self._current_jpeg: Optional[bytes] = None
         self._capture_thread: Optional[threading.Thread] = None
+        self._reader_thread: Optional[threading.Thread] = None
         self._running = False
-        self._target_fps = 12  # Skip frames are free, so push higher
 
-        # Skip-frame detection: run full detect pipeline every N frames.
-        # Skip frames reuse the LAST ENCODED JPEG (zero CPU cost).
-        self._detect_interval = 3  # detect every 3rd frame
+        # Camera reader → processor bridge
+        self._raw_lock = threading.Lock()
+        self._latest_raw: Optional[np.ndarray] = None
+        self._raw_seq = 0           # increments on each new camera frame
+        self._last_processed_seq = 0  # last seq the processor consumed
+
+        # Detection cadence
+        self._detect_interval = 3
         self._cached_tracked: dict = {}
         self._cached_raw_frame: Optional[np.ndarray] = None
         self._loop_frame = 0
@@ -228,26 +233,36 @@ class FusionPipeline:
         self._placeholder_jpeg: bytes = placeholder.tobytes()
 
     # ------------------------------------------------------------------
-    # Background capture thread
+    # Background threads
     # ------------------------------------------------------------------
     def start(self):
-        """Start the background capture thread (single writer)."""
+        """Start camera reader + frame processor threads."""
         if self._running:
             return
         self._running = True
+
+        # Thread 1: reads SPI camera at hardware rate (~5 FPS)
+        self._reader_thread = threading.Thread(
+            target=self._camera_reader, daemon=True, name="thermal-reader"
+        )
+        self._reader_thread.start()
+
+        # Thread 2: processes frames (colormap + detect + encode)
         self._capture_thread = threading.Thread(
-            target=self._capture_loop, daemon=True, name="thermal-capture"
+            target=self._capture_loop, daemon=True, name="thermal-process"
         )
         self._capture_thread.start()
-        logger.info("FusionPipeline: capture thread started")
+        logger.info("FusionPipeline: reader + processor threads started")
 
     def stop(self):
-        """Stop the background capture thread."""
+        """Stop both threads."""
         self._running = False
-        if self._capture_thread and self._capture_thread.is_alive():
-            self._capture_thread.join(timeout=3.0)
+        for t in (self._reader_thread, self._capture_thread):
+            if t and t.is_alive():
+                t.join(timeout=3.0)
+        self._reader_thread = None
         self._capture_thread = None
-        logger.info("FusionPipeline: capture thread stopped")
+        logger.info("FusionPipeline: threads stopped")
 
     @property
     def is_running(self) -> bool:
@@ -261,33 +276,65 @@ class FusionPipeline:
         with self._jpeg_lock:
             return self._current_jpeg or self._placeholder_jpeg
 
-    def _capture_loop(self):
+    # ------------------------------------------------------------------
+    # Thread 1: Camera reader (blocks on SPI, that's fine)
+    # ------------------------------------------------------------------
+    def _camera_reader(self):
         """
-        Single-writer loop.  ALWAYS reads a fresh frame from the camera
-        (keeps SPI drained, no stale data, no glitching).
-        Runs full detect+track only every _detect_interval frames.
-        Non-detect frames just: colormap + cached boxes + JPEG encode.
-        Camera read (~200ms) IS the natural FPS limiter.
+        Tight loop: read camera → cache raw frame.
+        Blocks on SPI data_ready (~200ms) — that's expected.
+        The processor thread picks up frames without waiting.
         """
-        logger.info(f"Capture loop started (detect every {self._detect_interval} frames)")
-
+        logger.info("Camera reader thread started")
         while self._running:
             try:
+                raw = self.thermal_source.get_frame()
+                if raw is not None:
+                    with self._raw_lock:
+                        self._latest_raw = raw
+                        self._raw_seq += 1
+            except Exception as e:
+                logger.error(f"Camera reader error: {e}")
+                time.sleep(0.1)
+
+    # ------------------------------------------------------------------
+    # Thread 2: Frame processor (never blocks on SPI)
+    # ------------------------------------------------------------------
+    def _capture_loop(self):
+        """
+        Picks up the latest raw frame from the reader thread,
+        applies colormap + cached boxes + JPEG encode.
+        Runs detection every _detect_interval new frames.
+        Never blocks on SPI — processes frames the instant they're ready.
+        """
+        logger.info(f"Processor thread started (detect every {self._detect_interval} frames)")
+
+        while self._running:
+            # Grab latest raw frame (non-blocking)
+            with self._raw_lock:
+                raw = self._latest_raw
+                seq = self._raw_seq
+
+            if raw is None or seq == self._last_processed_seq:
+                # No new frame from camera yet — brief sleep, reuse last JPEG
+                time.sleep(0.01)
+                continue
+
+            self._last_processed_seq = seq
+
+            try:
                 self._loop_frame += 1
+                self._cached_raw_frame = raw
+                self.frame_number += 1
                 run_detect = (self._loop_frame % self._detect_interval == 0)
 
                 if run_detect:
-                    # Full pipeline: read + detect + track + annotate
-                    frame = self.process_next()
+                    # Full pipeline (uses self.thermal_source.get_frame()
+                    #   internally — override with cached raw)
+                    frame = self._process_with_frame(raw)
                 else:
-                    # Light frame: read camera + colormap + cached boxes
-                    raw = self.thermal_source.get_frame()
-                    if raw is not None:
-                        self._cached_raw_frame = raw
-                        self.frame_number += 1
-                        frame = self._annotate(raw, self._cached_tracked)
-                    else:
-                        frame = None
+                    # Light: colormap + cached boxes only
+                    frame = self._annotate(raw, self._cached_tracked)
 
                 if frame is not None:
                     _, jpeg = cv2.imencode(
@@ -299,7 +346,7 @@ class FusionPipeline:
                     with self._jpeg_lock:
                         self._current_jpeg = self._placeholder_jpeg
             except Exception as e:
-                logger.error(f"Capture loop error: {e}", exc_info=True)
+                logger.error(f"Processor error: {e}", exc_info=True)
                 time.sleep(0.05)
 
     def _fast_frame(self) -> Optional[np.ndarray]:
@@ -318,24 +365,12 @@ class FusionPipeline:
             return None
 
     # ------------------------------------------------------------------
-    def process_next(self) -> Optional[np.ndarray]:
+    def _process_with_frame(self, full_frame: np.ndarray) -> Optional[np.ndarray]:
         """
-        Single iteration: acquire → detect → fuse → track → alert → annotate.
-
-        Returns
-        -------
-        np.ndarray or None
-            Annotated BGR frame ready for MJPEG encoding.
+        Run full detect → fuse → track → alert → annotate pipeline
+        on a PRE-READ raw frame (no SPI access).
         """
         try:
-            # 1. Thermal frame
-            full_frame = self.thermal_source.get_frame()
-            if full_frame is None:
-                return None
-
-            # Cache raw frame for skip-frame reuse
-            self._cached_raw_frame = full_frame
-            self.frame_number += 1
             now = time.time()
 
             # 2. Thermal detection (on downscaled frame)
@@ -433,6 +468,15 @@ class FusionPipeline:
         except Exception as e:
             logger.error(f"FusionPipeline error: {e}", exc_info=True)
             return None
+
+    def process_next(self) -> Optional[np.ndarray]:
+        """Backward-compat: read camera + run full pipeline."""
+        full_frame = self.thermal_source.get_frame()
+        if full_frame is None:
+            return None
+        self._cached_raw_frame = full_frame
+        self.frame_number += 1
+        return self._process_with_frame(full_frame)
 
     # ------------------------------------------------------------------
     def _grab_rgb_frame(self) -> Optional[np.ndarray]:
