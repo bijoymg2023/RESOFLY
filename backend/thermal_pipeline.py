@@ -447,9 +447,16 @@ class ThermalFramePipeline:
             # Draw Box
             cv2.rectangle(display, (h.x, h.y), (h.x + h.width, h.y + h.height), color, thick)
             
-            # Draw Label
-            label = f"#{h.track_id} {h.estimated_temp:.0f}C"
-            cv2.putText(display, label, (h.x, h.y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+            # --- Draw Label (Reference Style: Filled Header) ---
+            label = f"{int(h.estimated_temp)}C | Life: {int(h.confidence * 100)}%"
+            (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+            
+            # Filled header background
+            cv2.rectangle(display, (h.x, h.y - h_text - 6), (h.x + w_text + 4, h.y), color, -1)
+            
+            # Text (Black on colored background)
+            cv2.putText(display, label, (h.x + 2, h.y - 4), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
             
         # Status Bar
         count = sum(1 for h in hotspots if h.is_confirmed)

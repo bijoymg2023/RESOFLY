@@ -21,7 +21,6 @@ Install pysenxor:
 
 import numpy as np
 import time
-import threading
 import logging
 
 logger = logging.getLogger(__name__)
@@ -37,9 +36,9 @@ MI48_I2C_CHANNEL = 1
 MI48_SPI_BUS = 0
 MI48_SPI_CE = 0
 MI48_SPI_MODE = 0b00
-MI48_SPI_SPEED_HZ = 20000000  # 20 MHz (Faster SPI)
+MI48_SPI_SPEED_HZ = 10000000  # 10 MHz (Safe/Stable speed)
 MI48_SPI_XFER_SIZE = 160      # 1 row = 80 pixels x 2 bytes
-MI48_SPI_CS_DELAY = 0.0001    # 100us delay (Reduced from 500us)
+MI48_SPI_CS_DELAY = 0.0005    # 500us delay
 
 # GPIO pins (BCM numbering)
 PIN_DATA_READY = "BCM24"
@@ -65,9 +64,6 @@ class WaveshareThermal:
         # Error tracking for auto-reset
         self.consecutive_errors = 0
         self.last_reset_time = 0
-
-        # Thread-safe SPI access
-        self._spi_lock = threading.Lock()
 
         self._init_hardware()
 
@@ -158,7 +154,7 @@ class WaveshareThermal:
             )
 
             # Configure camera
-            self.mi48.set_fps(20)  # User requested faster/smoother (20 FPS)
+            self.mi48.set_fps(5)  # 5 FPS for stable operation
 
             # Enable noise filters if firmware supports it
             try:
@@ -217,28 +213,27 @@ class WaveshareThermal:
             return None, None
 
         try:
-            with self._spi_lock:
-                # Wait for DATA_READY signal
-                if hasattr(self.mi48, 'data_ready') and self.mi48.data_ready is not None:
-                    self.mi48.data_ready.wait_for_active(timeout=1.0)
-                else:
-                    # Fallback: poll status register
-                    for _ in range(100):
-                        status = self.mi48.get_status()
-                        if status & 0x10:  # DATA_READY bit
-                            break
-                        time.sleep(0.01)
+            # Wait for DATA_READY signal
+            if hasattr(self.mi48, 'data_ready') and self.mi48.data_ready is not None:
+                self.mi48.data_ready.wait_for_active(timeout=1.0)
+            else:
+                # Fallback: poll status register
+                for _ in range(100):
+                    status = self.mi48.get_status()
+                    if status & 0x10:  # DATA_READY bit
+                        break
+                    time.sleep(0.01)
 
-                # Assert chip select, read frame, deassert
-                if self.spi_cs:
-                    self.spi_cs.on()
-                    time.sleep(MI48_SPI_CS_DELAY)
+            # Assert chip select, read frame, deassert
+            if self.spi_cs:
+                self.spi_cs.on()
+                time.sleep(MI48_SPI_CS_DELAY)
 
-                data, header = self.mi48.read()
+            data, header = self.mi48.read()
 
-                if self.spi_cs:
-                    time.sleep(MI48_SPI_CS_DELAY)
-                    self.spi_cs.off()
+            if self.spi_cs:
+                time.sleep(MI48_SPI_CS_DELAY)
+                self.spi_cs.off()
 
             if data is None:
                 return None, None
@@ -281,7 +276,13 @@ class WaveshareThermal:
                 if self.consecutive_errors >= 5:
                     self._reset_camera()
                     
-                # Return last good frame to prevent black flicker
+                # GHOST LAG FIX:
+                # If we have too many bad frames (>2), stop showing the old one.
+                # It's better to show nothing (or a black frame) than a "frozen" ghost.
+                if self.consecutive_errors > 2:
+                    return None
+                    
+                # Return last good frame (briefly) to prevent micro-flicker
                 return self.last_frame if self.last_frame is not None else None
             
             # Reset error counter on good frame
@@ -313,12 +314,14 @@ class WaveshareThermal:
                     pattern[y, x] = int((x / FRAME_WIDTH) * 200 + (y / FRAME_HEIGHT) * 55)
             return pattern
 
-        # Dynamic range normalization
-        scene_min = max(self.min_temp, float(np.percentile(temp_frame, 5)))
-        scene_max = min(self.max_temp, float(np.percentile(temp_frame, 99)))
-
-        if scene_max <= scene_min:
-            scene_max = scene_min + 1.0
+        # ABSOLUTE TEMPERATURE SCALING (Fixes "Fake Heat" / Auto-Gain issues)
+        # We lock the range to 15C - 45C.
+        # <15C = 0 (Black/Blue)
+        # >45C = 255 (White/Yellow)
+        # This makes detection thresholds STABLE.
+        
+        scene_min = self.min_temp # 15.0
+        scene_max = self.max_temp # 45.0
 
         normalized = (temp_frame - scene_min) / (scene_max - scene_min)
         normalized = np.clip(normalized, 0, 1)
