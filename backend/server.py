@@ -756,9 +756,8 @@ async def thermal_stream():
                 frame_bytes +
                 b'\r\n'
             )
-            # Poll faster than capture rate so we never add extra latency.
-            # Capture loop runs at ~10 FPS; this polls at ~20 FPS.
-            await asyncio.sleep(0.05)
+            # Poll fast — skip frames are free so we want minimum latency
+            await asyncio.sleep(0.03)
 
     return StreamingResponse(
         generate(),

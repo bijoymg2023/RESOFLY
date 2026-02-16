@@ -208,11 +208,11 @@ class FusionPipeline:
         self._current_jpeg: Optional[bytes] = None
         self._capture_thread: Optional[threading.Thread] = None
         self._running = False
-        self._target_fps = 10  # Target ~10 FPS output
+        self._target_fps = 12  # Skip frames are free, so push higher
 
-        # Skip-frame detection: run full detect pipeline every N frames,
-        # reuse cached detections + just re-annotate on skip frames.
-        self._detect_interval = 3  # detect every 3rd frame
+        # Skip-frame detection: run full detect pipeline every N frames.
+        # Skip frames reuse the LAST ENCODED JPEG (zero CPU cost).
+        self._detect_interval = 4  # detect every 4th frame
         self._cached_tracked: dict = {}
         self._cached_raw_frame: Optional[np.ndarray] = None
         self._loop_frame = 0
@@ -280,19 +280,17 @@ class FusionPipeline:
                 if run_detect:
                     # Full pipeline: capture + detect + track + annotate
                     frame = self.process_next()
-                else:
-                    # Cheap frame: capture + annotate with cached tracks
-                    frame = self._fast_frame()
-
-                if frame is not None:
-                    _, jpeg = cv2.imencode(
-                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 55]
-                    )
-                    with self._jpeg_lock:
-                        self._current_jpeg = jpeg.tobytes()
-                else:
-                    with self._jpeg_lock:
-                        self._current_jpeg = self._placeholder_jpeg
+                    if frame is not None:
+                        _, jpeg = cv2.imencode(
+                            '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 45]
+                        )
+                        with self._jpeg_lock:
+                            self._current_jpeg = jpeg.tobytes()
+                    else:
+                        with self._jpeg_lock:
+                            self._current_jpeg = self._placeholder_jpeg
+                # else: skip frame — reuse whatever JPEG we already have
+                #       (zero CPU cost, no encode, no colormap, no annotate)
             except Exception as e:
                 logger.error(f"Capture loop error: {e}", exc_info=True)
 
