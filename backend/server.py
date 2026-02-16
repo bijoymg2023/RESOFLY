@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer
 import thermal_pipeline
+import fusion_pipeline
 from datetime import datetime, timedelta, timezone
 import json
 import wifi_gps
@@ -836,31 +837,43 @@ async def startup():
     except Exception as e:
         print(f"Warning: Could not log startup alert: {e}", flush=True)
             
-    # 3. Initialize Synchronized Thermal Pipeline
+    # 3. Initialize Multi-Sensor Fusion Pipeline (Mk-V)
     # Priority: Live Waveshare HAT > Dataset video fallback
     source = None
     
     # Try Waveshare Thermal HAT first
     try:
-        waveshare_source = thermal_pipeline.WaveshareSource()
+        waveshare_source = fusion_pipeline.WaveshareSource()
         if waveshare_source.is_available():
             source = waveshare_source
-            print("[THERMAL] ✓ Waveshare 80x62 Thermal HAT detected — using LIVE feed", flush=True)
+            print("[FUSION] ✓ Waveshare 80x62 Thermal HAT detected — using LIVE feed", flush=True)
         else:
-            print("[THERMAL] Waveshare HAT not available, checking dataset fallback...", flush=True)
+            print("[FUSION] Waveshare HAT not available, checking dataset fallback...", flush=True)
     except Exception as e:
         import traceback
-        print(f"[THERMAL] Waveshare init error: {e}", flush=True)
+        print(f"[FUSION] Waveshare init error: {e}", flush=True)
         traceback.print_exc()
     
     # Fallback to dataset video
     if source is None:
         dataset_video = Path(__file__).parent.parent / "dataset" / "test2.mp4"
-        print(f"[THERMAL] Looking for dataset at: {dataset_video}", flush=True)
-        print(f"[THERMAL] Dataset exists: {dataset_video.exists()}", flush=True)
+        print(f"[FUSION] Looking for dataset at: {dataset_video}", flush=True)
+        print(f"[FUSION] Dataset exists: {dataset_video.exists()}", flush=True)
         if dataset_video.exists():
-            source = thermal_pipeline.VideoSource(str(dataset_video))
-            print("[THERMAL] Using dataset video as thermal source", flush=True)
+            source = fusion_pipeline.VideoSource(str(dataset_video))
+            print("[FUSION] Using dataset video as thermal source", flush=True)
+    
+    # Get RGB camera for sensor fusion
+    rgb_cam = None
+    try:
+        rgb_cam = camera.get_rgb_camera()
+        if rgb_cam and rgb_cam.is_available():
+            print("[FUSION] ✓ Pi RGB Camera detected — sensor fusion ENABLED", flush=True)
+        else:
+            rgb_cam = None
+            print("[FUSION] No RGB camera — running thermal-only mode", flush=True)
+    except Exception as e:
+        print(f"[FUSION] RGB camera init error: {e}", flush=True)
     
     if source is not None:
         
@@ -868,38 +881,34 @@ async def startup():
         main_loop = asyncio.get_running_loop()
 
         # Detection callback - creates alerts and broadcasts via WebSocket
-        def on_detection_event(event: thermal_pipeline.DetectionEvent):
-            print(f"[DEBUG] on_detection_event CALLED! Frame: {event.frame_number}, Hotspots: {len(event.hotspots)}", flush=True)
+        def on_detection_event(event: fusion_pipeline.DetectionEvent):
+            print(f"[FUSION] ALERT! Frame: {event.frame_number}, Detections: {len(event.hotspots)}", flush=True)
             """Handle detection event - save to DB and broadcast."""
-            # Get GPS (Default to 0.0 if no lock)
             lat = 0.0
             lon = 0.0
             
             if gps_reader:
                 gps_data = gps_reader.get_data()
-                # Check if we have a valid fix (non-zero)
                 if gps_data.get('latitude') and gps_data.get('latitude') != 0.0:
                     lat, lon = gps_data['latitude'], gps_data['longitude']
             
-            # Create alert in database - schedule on the running event loop SAFELY
             async def save_and_broadcast():
                 try:
                     async with AsyncSessionLocal() as db:
                         for hotspot in event.hotspots:
-                            # Use track_id if available, else standard index
                             obj_id = hotspot.track_id if hotspot.track_id is not None else 0
                             
-                            # Unique GPS offset based on ID (consistent position for same ID)
                             person_lat = lat + ((obj_id % 10) * 0.0005)
                             person_lon = lon + ((obj_id % 10) * 0.0003)
                             
                             alert_id = str(uuid.uuid4())
+                            validation = getattr(hotspot, 'validation_type', 'THERMAL_ONLY')
                             
                             alert = AlertDB(
                                 id=alert_id,
                                 type='LIFE',
-                                title=f'PERSON #{obj_id} DETECTED',
-                                message=f"New target tracked (ID: {obj_id}, {hotspot.estimated_temp:.0f}°C, {int(hotspot.confidence*100)}%)",
+                                title=f'LIFEFORM #{obj_id} [{validation}]',
+                                message=f"Target ID:{obj_id} | {hotspot.estimated_temp:.0f}°C | {int(hotspot.confidence*100)}% | {validation}",
                                 timestamp=event.timestamp,
                                 acknowledged=False,
                                 lat=person_lat,
@@ -909,11 +918,11 @@ async def startup():
                             )
                             db.add(alert)
                             
-                            # Broadcast each alert via WebSocket
                             alert_data = {
                                 "id": alert_id,
-                                "type": "LIFE",
-                                "title": f"PERSON #{obj_id}",
+                                "type": "LIFEFORM_DETECTED",
+                                "title": f"LIFEFORM #{obj_id}",
+                                "validation": validation,
                                 "confidence": hotspot.confidence,
                                 "max_temp": hotspot.estimated_temp,
                                 "estimated_temp": hotspot.estimated_temp,
@@ -927,13 +936,11 @@ async def startup():
                             await ws_manager.broadcast(alert_data)
                         
                         await db.commit()
-                        print(f"[ALERT] Saved {len(event.hotspots)} detections to DB", flush=True)
+                        print(f"[FUSION] ✓ {len(event.hotspots)} alerts saved & broadcast", flush=True)
                     
-                    print(f"[THERMAL] ✓ {len(event.hotspots)} alerts sent for frame {event.frame_number}")
                 except Exception as e:
-                    print(f"[THERMAL] Error in save_and_broadcast: {e}")
+                    print(f"[FUSION] Error in save_and_broadcast: {e}")
             
-            # Schedule on the main loop from the thermal thread
             try:
                 if main_loop.is_running():
                     asyncio.run_coroutine_threadsafe(save_and_broadcast(), main_loop)
@@ -942,15 +949,18 @@ async def startup():
             except Exception as e:
                  print(f"[ERROR] Could not schedule alert task: {e}", flush=True)
         
-        # Create the unified pipeline
+        # Create the multi-sensor fusion pipeline
         global thermal_frame_pipeline
-        thermal_frame_pipeline = thermal_pipeline.ThermalFramePipeline(
-            source=source,
-            on_detection=on_detection_event
+        thermal_frame_pipeline = fusion_pipeline.FusionPipeline(
+            thermal_source=source,
+            rgb_camera=rgb_cam,
+            on_detection=on_detection_event,
+            require_rgb_validation=False,  # Alert on thermal-only too (fallback)
         )
-        print("[THERMAL] Synchronized pipeline initialized", flush=True)
+        mode = "FUSION (Thermal+RGB)" if rgb_cam else "THERMAL-ONLY"
+        print(f"[FUSION] ✓ Pipeline initialized — Mode: {mode}", flush=True)
     else:
-        print("[THERMAL] No thermal source available (no HAT, no dataset), detection disabled", flush=True)
+        print("[FUSION] No thermal source available (no HAT, no dataset), detection disabled", flush=True)
         thermal_frame_pipeline = None
 
     # 4. Start background monitor loops
