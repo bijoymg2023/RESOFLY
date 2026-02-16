@@ -21,6 +21,7 @@ Install pysenxor:
 
 import numpy as np
 import time
+import threading
 import logging
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,9 @@ class WaveshareThermal:
         # Error tracking for auto-reset
         self.consecutive_errors = 0
         self.last_reset_time = 0
+
+        # Thread-safe SPI access
+        self._spi_lock = threading.Lock()
 
         self._init_hardware()
 
@@ -213,27 +217,28 @@ class WaveshareThermal:
             return None, None
 
         try:
-            # Wait for DATA_READY signal
-            if hasattr(self.mi48, 'data_ready') and self.mi48.data_ready is not None:
-                self.mi48.data_ready.wait_for_active(timeout=1.0)
-            else:
-                # Fallback: poll status register
-                for _ in range(100):
-                    status = self.mi48.get_status()
-                    if status & 0x10:  # DATA_READY bit
-                        break
-                    time.sleep(0.01)
+            with self._spi_lock:
+                # Wait for DATA_READY signal
+                if hasattr(self.mi48, 'data_ready') and self.mi48.data_ready is not None:
+                    self.mi48.data_ready.wait_for_active(timeout=1.0)
+                else:
+                    # Fallback: poll status register
+                    for _ in range(100):
+                        status = self.mi48.get_status()
+                        if status & 0x10:  # DATA_READY bit
+                            break
+                        time.sleep(0.01)
 
-            # Assert chip select, read frame, deassert
-            if self.spi_cs:
-                self.spi_cs.on()
-                time.sleep(MI48_SPI_CS_DELAY)
+                # Assert chip select, read frame, deassert
+                if self.spi_cs:
+                    self.spi_cs.on()
+                    time.sleep(MI48_SPI_CS_DELAY)
 
-            data, header = self.mi48.read()
+                data, header = self.mi48.read()
 
-            if self.spi_cs:
-                time.sleep(MI48_SPI_CS_DELAY)
-                self.spi_cs.off()
+                if self.spi_cs:
+                    time.sleep(MI48_SPI_CS_DELAY)
+                    self.spi_cs.off()
 
             if data is None:
                 return None, None

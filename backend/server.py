@@ -737,48 +737,28 @@ async def websocket_alerts(websocket: WebSocket):
 @app.get("/thermal/")
 async def thermal_stream():
     """
-    MJPEG stream with synchronized detection.
-    Each frame is processed for detection before being streamed.
-    Alerts are generated at the exact moment signatures are visible.
+    MJPEG stream — reads pre-encoded JPEG from background capture thread.
+    Multiple clients can connect; they all read the same cached frame.
+    No SPI access, no detection processing happens here.
     """
     if thermal_frame_pipeline is None:
-        # Return placeholder if no pipeline
         async def placeholder():
             yield b'--frame\r\nContent-Type: text/plain\r\n\r\nNo thermal source available\r\n'
         return StreamingResponse(placeholder(), media_type="multipart/x-mixed-replace; boundary=frame")
-    
-    # Pre-generate a "no signal" placeholder frame
-    no_signal = np.zeros((496, 640, 3), dtype=np.uint8)
-    cv2.putText(no_signal, "THERMAL", (180, 220), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 180, 255), 3)
-    cv2.putText(no_signal, "Waiting for sensor data...", (140, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 1)
-    _, no_signal_jpeg = cv2.imencode('.jpg', no_signal, [cv2.IMWRITE_JPEG_QUALITY, 70])
-    no_signal_bytes = no_signal_jpeg.tobytes()
-    
+
     async def generate():
-        loop = asyncio.get_running_loop()
         while True:
-            # Move heavy CV2/detection logic to a background thread
-            # This prevents the thermal processing from "freezing" the rest of the app
-            frame = await loop.run_in_executor(None, thermal_frame_pipeline.process_next)
-            
-            if frame is not None:
-                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                frame_bytes = jpeg.tobytes()
-            else:
-                # Send placeholder so browser doesn't show blank
-                frame_bytes = no_signal_bytes
-            
+            # Thread-safe read of latest JPEG (no camera/SPI access)
+            frame_bytes = thermal_frame_pipeline.get_jpeg()
             yield (
                 b'--frame\r\n'
                 b'Content-Type: image/jpeg\r\n\r\n' +
                 frame_bytes +
                 b'\r\n'
             )
-            
-            # Match sensor rate (Waveshare is ~5-6 FPS)
-            # Polling faster just wastes CPU.
-            await asyncio.sleep(1/6)
-    
+            # Match sensor rate — no point serving faster than capture
+            await asyncio.sleep(1 / 6)
+
     return StreamingResponse(
         generate(),
         media_type="multipart/x-mixed-replace; boundary=frame",
@@ -963,6 +943,10 @@ async def startup():
         )
         mode = "FUSION (Thermal+RGB)" if rgb_cam else "THERMAL-ONLY"
         print(f"[FUSION] ✓ Pipeline initialized — Mode: {mode}", flush=True)
+
+        # Start the single background capture thread
+        thermal_frame_pipeline.start()
+        print(f"[FUSION] ✓ Capture thread started (single writer architecture)", flush=True)
     else:
         print("[FUSION] No thermal source available (no HAT, no dataset), detection disabled", flush=True)
         thermal_frame_pipeline = None
@@ -970,6 +954,14 @@ async def startup():
     # 4. Start background monitor loops
     asyncio.create_task(background_monitor())
     asyncio.create_task(signal_monitor_loop())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up the capture thread on server shutdown."""
+    global thermal_frame_pipeline
+    if thermal_frame_pipeline is not None:
+        thermal_frame_pipeline.stop()
+        print("[FUSION] Capture thread stopped (shutdown)", flush=True)
 
 async def signal_monitor_loop():
     """Continuous background scanning for signals (Zero-Lag Architecture)."""

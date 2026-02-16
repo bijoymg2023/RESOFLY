@@ -16,6 +16,7 @@ Designed to be a drop-in replacement for thermal_pipeline.ThermalFramePipeline.
 import cv2
 import numpy as np
 import time
+import threading
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -197,6 +198,87 @@ class FusionPipeline:
         # Cached RGB frame (updated async from camera thread)
         self._last_rgb_frame: Optional[np.ndarray] = None
         self._rgb_frame_time: float = 0.0
+
+        # --- Single-writer/multi-reader frame cache ---
+        self._jpeg_lock = threading.Lock()
+        self._current_jpeg: Optional[bytes] = None
+        self._capture_thread: Optional[threading.Thread] = None
+        self._running = False
+        self._target_fps = 6  # Waveshare sensor rate
+
+        # Pre-generate "no signal" placeholder JPEG
+        no_signal = np.zeros((396, 512, 3), dtype=np.uint8)
+        cv2.putText(no_signal, "THERMAL", (130, 180),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 180, 255), 3)
+        cv2.putText(no_signal, "Waiting for sensor data...", (100, 240),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 1)
+        _, placeholder = cv2.imencode('.jpg', no_signal,
+                                      [cv2.IMWRITE_JPEG_QUALITY, 70])
+        self._placeholder_jpeg: bytes = placeholder.tobytes()
+
+    # ------------------------------------------------------------------
+    # Background capture thread
+    # ------------------------------------------------------------------
+    def start(self):
+        """Start the background capture thread (single writer)."""
+        if self._running:
+            return
+        self._running = True
+        self._capture_thread = threading.Thread(
+            target=self._capture_loop, daemon=True, name="thermal-capture"
+        )
+        self._capture_thread.start()
+        logger.info("FusionPipeline: capture thread started")
+
+    def stop(self):
+        """Stop the background capture thread."""
+        self._running = False
+        if self._capture_thread and self._capture_thread.is_alive():
+            self._capture_thread.join(timeout=3.0)
+        self._capture_thread = None
+        logger.info("FusionPipeline: capture thread stopped")
+
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
+    def get_jpeg(self) -> bytes:
+        """
+        Get the latest JPEG-encoded frame (thread-safe read).
+        Called by HTTP streaming generators — never touches the camera.
+        """
+        with self._jpeg_lock:
+            return self._current_jpeg or self._placeholder_jpeg
+
+    def _capture_loop(self):
+        """
+        Single-writer loop: read camera → detect → encode JPEG → cache.
+        Runs in its own thread at the sensor's native frame rate.
+        """
+        interval = 1.0 / self._target_fps
+        logger.info(f"Capture loop running at {self._target_fps} FPS")
+
+        while self._running:
+            t0 = time.monotonic()
+            try:
+                frame = self.process_next()
+                if frame is not None:
+                    _, jpeg = cv2.imencode(
+                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80]
+                    )
+                    with self._jpeg_lock:
+                        self._current_jpeg = jpeg.tobytes()
+                else:
+                    with self._jpeg_lock:
+                        self._current_jpeg = self._placeholder_jpeg
+            except Exception as e:
+                logger.error(f"Capture loop error: {e}", exc_info=True)
+
+            # FPS limiter — sleep only the remaining time
+            elapsed = time.monotonic() - t0
+            sleep_time = interval - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
     # ------------------------------------------------------------------
     def process_next(self) -> Optional[np.ndarray]:
