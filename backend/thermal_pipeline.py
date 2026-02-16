@@ -98,13 +98,13 @@ class WaveshareSource:
     - Detection: runs on 480x372 (6x) for speed
     """
     
-    # Display resolution (8x upscale — standard 640x480-ish)
-    OUTPUT_WIDTH = 640
-    OUTPUT_HEIGHT = 496
+    # Display resolution (Balanced upscale)
+    OUTPUT_WIDTH = 512
+    OUTPUT_HEIGHT = 396
     
-    # Detection resolution (2x — fast for contour ops)
-    DETECT_WIDTH = 160
-    DETECT_HEIGHT = 124
+    # Detection resolution (Fast for contour ops)
+    DETECT_WIDTH = 128
+    DETECT_HEIGHT = 96
     
     def __init__(self):
         self._available = False

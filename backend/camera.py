@@ -125,7 +125,7 @@ class RpicamCamera(BaseCamera):
     Outputs MJPEG directly to stdout for high performance.
     Use asyncio.Event for zero-latency frame signaling.
     """
-    def __init__(self, resolution=(1024, 768), framerate=30):
+    def __init__(self, resolution=(800, 600), framerate=20):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -140,7 +140,7 @@ class RpicamCamera(BaseCamera):
         import shutil
         if shutil.which("rpicam-vid"):
             self.available = True
-            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (v1.4 Ultra-Smooth)")
+            print(f"RpicamCamera initialized at {resolution} @ {framerate}fps (v1.5 Balanced)")
             
             # Start video streaming thread
             self.thread = threading.Thread(target=self._stream_loop, daemon=True)
