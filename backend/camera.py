@@ -159,6 +159,8 @@ class RpicamCamera(BaseCamera):
     def _stream_loop(self):
         """Background thread to continuously stream video using rpicam-vid."""
         import subprocess
+        import fcntl
+        import os
         
         while self.running and self.available:
             try:
@@ -186,27 +188,50 @@ class RpicamCamera(BaseCamera):
                     bufsize=0
                 )
                 
-                print(f"rpicam-vid stable stream started ({self.resolution[0]}x{self.resolution[1]} @ {self.framerate}fps)")
+                # SET NON-BLOCKING MODE
+                # This is CRITICAL. It allows us to read *everything* currently in the pipe
+                # without getting stuck waiting for more.
+                fd = self.process.stdout.fileno()
+                fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+                
+                print(f"rpicam-vid ZERO-LATENCY stream started ({self.resolution[0]}x{self.resolution[1]} @ {self.framerate}fps)")
                 
                 # Buffer management
                 buffer = bytearray()
+                
                 while self.running and self.process.poll() is None:
-                    # AGGRESSIVE READ:
-                    # Read up to 4MB at once. This forces the OS pipe to empty completely.
-                    # If there is a backlog of 20 frames, this reads them ALL.
-                    chunk = self.process.stdout.read(4194304)
-                    if not chunk:
-                        break
+                    # 1. DRAIN THE PIPE
+                    # Keep reading until the OS says "BlockingIOError" (pipe empty)
+                    # or returning None/0 bytes (EOF)
+                    data_read = False
+                    while True:
+                        try:
+                            # Read up to 1MB at a time
+                            chunk = os.read(fd, 1048576)
+                            if not chunk:
+                                # EOF
+                                break
+                            buffer.extend(chunk)
+                            data_read = True
+                        except BlockingIOError:
+                            # Pipe is empty! We have everything.
+                            break
+                        except Exception:
+                            # Some other error?
+                            break
+                            
+                    if not data_read:
+                        # Don't burn CPU if no data came in
+                        time.sleep(0.005)
+                        continue
                     
-                    buffer.extend(chunk)
-                    
-                    # GREEDY PARSING: 
-                    # Find the LAST complete frame in the current buffer.
-                    # This instantly burns through any backlog (lag) that accumulated.
+                    # 2. GREEDY PARSING
+                    # We now have the entire backlog in 'buffer'. 
+                    # Find the LAST complete frame and discard everything before it.
                     last_end = buffer.rfind(b'\xff\xd9')
                     
                     if last_end != -1:
-                        # We found some ending. Now find the start closest before it.
                         last_start = buffer.rfind(b'\xff\xd8', 0, last_end)
                         
                         if last_start != -1:
@@ -218,13 +243,25 @@ class RpicamCamera(BaseCamera):
                             
                             self._signal_new_frame()
                             
-                            # CRITICAL: Discard EVERYTHING up to the end of the frame we just took.
-                            # All intermediate "stale" frames are thrown away here.
+                            # DISCARD OLD DATA
+                            # Throw away everything up to this frame.
+                            # Even if there are partial bytes after (next frame starting),
+                            # it's safer to just keep them.
+                            # Wait, strictly speaking, we want to discard everything *before* the next start?
+                            # Actually, just clearing up to the end of the current frame is fine.
+                            # The non-blocking drain ensures we catch up next cycle anyway.
+                            del buffer[:last_end+2]
+                            
+                            # Safety: if buffer is still huge (junk data?), clear it.
+                            if len(buffer) > 2000000:
+                                buffer = bytearray()
+                        else:
+                            # We have an end but no start? Junk. Clear up to end.
                             del buffer[:last_end+2]
                     
-                    # Safety valve (prevent memory leak if markers aren't found)
-                    if len(buffer) > 500000:
-                        buffer = bytearray()
+                    # Safety valve
+                    if len(buffer) > 5000000:
+                         buffer = bytearray()
                 
             except Exception as e:
                 print(f"RpicamCamera stream error: {e}")
