@@ -158,7 +158,7 @@ class WaveshareThermal:
             )
 
             # Configure camera
-            self.mi48.set_fps(5)  # User requested 5 FPS specific target
+            self.mi48.set_fps(20)  # User requested faster/smoother (20 FPS)
 
             # Enable noise filters if firmware supports it
             try:

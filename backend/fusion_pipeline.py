@@ -213,12 +213,12 @@ class FusionPipeline:
         # Camera reader → processor bridge
         self._raw_lock = threading.Lock()
         self._latest_raw: Optional[np.ndarray] = None
-        self._target_fps = 5  # User requested 5 FPS specific target
+        self._target_fps = 20  # User requested faster/smoother (20 FPS)
         self._raw_seq = 0           # increments on each new camera frame
         self._last_processed_seq = 0  # last seq the processor consumed
 
         # Detection cadence
-        self._detect_interval = 1  # detect every frame (5 Hz)
+        self._detect_interval = 4  # detect every 4th frame (5 Hz)
         self._cached_tracked: dict = {}
         self._cached_raw_frame: Optional[np.ndarray] = None
         self._loop_frame = 0
