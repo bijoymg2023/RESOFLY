@@ -221,6 +221,7 @@ class FusionPipeline:
         self._detect_interval = 4  # detect every 4th frame (5 Hz)
         self._cached_tracked: dict = {}
         self._cached_raw_frame: Optional[np.ndarray] = None
+        self._avg_frame: Optional[np.ndarray] = None  # For temporal smoothing
         self._loop_frame = 0
 
         # Pre-generate "no signal" placeholder JPEG
@@ -324,18 +325,30 @@ class FusionPipeline:
             self._last_processed_seq = seq
 
             try:
+                # --- Temporal Smoothing (reduces noise flicker) ---
+                if self._avg_frame is None:
+                    self._avg_frame = raw.astype(np.float32)
+                else:
+                    # alpha=0.6: 60% new frame, 40% history (tune as needed)
+                    # Higher alpha = more responsive, less smooth.
+                    # Lower alpha = smoother, more ghosting.
+                    cv2.accumulateWeighted(raw, self._avg_frame, 0.6)
+                
+                # Use smoothed frame for everything
+                smooth_raw = cv2.convertScaleAbs(self._avg_frame)
+
                 self._loop_frame += 1
-                self._cached_raw_frame = raw
+                self._cached_raw_frame = smooth_raw
                 self.frame_number += 1
                 run_detect = (self._loop_frame % self._detect_interval == 0)
 
                 if run_detect:
                     # Full pipeline (uses self.thermal_source.get_frame()
                     #   internally — override with cached raw)
-                    frame = self._process_with_frame(raw)
+                    frame = self._process_with_frame(smooth_raw)
                 else:
                     # Light: colormap + cached boxes only
-                    frame = self._annotate(raw, self._cached_tracked)
+                    frame = self._annotate(smooth_raw, self._cached_tracked)
 
                 if frame is not None:
                     _, jpeg = cv2.imencode(
@@ -559,7 +572,7 @@ class FusionPipeline:
         )
 
         # Upscale 2x for better browser compatibility (80x62 -> 160x124)
-        # INTER_NEAREST is fastest and keeps the "thermal pixel" look
-        display = cv2.resize(display, (160, 124), interpolation=cv2.INTER_NEAREST)
+        # INTER_LINEAR smooths out pixels -> looks "smoother", less blocky
+        display = cv2.resize(display, (160, 124), interpolation=cv2.INTER_LINEAR)
 
         return display
