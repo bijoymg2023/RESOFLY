@@ -214,6 +214,7 @@ class FusionPipeline:
         # reuse cached detections + just re-annotate on skip frames.
         self._detect_interval = 3  # detect every 3rd frame
         self._cached_tracked: dict = {}
+        self._cached_raw_frame: Optional[np.ndarray] = None
         self._loop_frame = 0
 
         # Pre-generate "no signal" placeholder JPEG
@@ -303,16 +304,15 @@ class FusionPipeline:
 
     def _fast_frame(self) -> Optional[np.ndarray]:
         """
-        Skip-detection frame: grab thermal data, apply colormap,
-        re-draw cached bounding boxes. No detection/fusion/tracking.
-        ~10x faster than full pipeline.
+        Skip-detection frame: reuse cached raw thermal frame,
+        apply colormap + redraw cached bounding boxes.
+        NO camera read, NO SPI access — ~30ms vs ~300ms.
         """
+        if self._cached_raw_frame is None:
+            return None
         try:
-            full_frame = self.thermal_source.get_frame()
-            if full_frame is None:
-                return None
             self.frame_number += 1
-            return self._annotate(full_frame, self._cached_tracked)
+            return self._annotate(self._cached_raw_frame, self._cached_tracked)
         except Exception as e:
             logger.error(f"Fast frame error: {e}")
             return None
@@ -333,6 +333,8 @@ class FusionPipeline:
             if full_frame is None:
                 return None
 
+            # Cache raw frame for skip-frame reuse
+            self._cached_raw_frame = full_frame
             self.frame_number += 1
             now = time.time()
 
