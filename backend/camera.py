@@ -178,6 +178,7 @@ class RpicamCamera(BaseCamera):
                     "--denoise", "off",
                     "--inline",            
                     "--nopreview",
+                    "--rotation", "180",
                     "--flush",
                     "-o", "-"
                 ]
