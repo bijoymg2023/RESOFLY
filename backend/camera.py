@@ -179,6 +179,7 @@ class RpicamCamera(BaseCamera):
                     "--inline",            
                     "--nopreview",
                     "--rotation", "180",
+                    "--hflip",
                     "--flush",
                     "-o", "-"
                 ]
