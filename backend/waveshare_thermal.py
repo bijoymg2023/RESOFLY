@@ -37,9 +37,9 @@ MI48_I2C_CHANNEL = 1
 MI48_SPI_BUS = 0
 MI48_SPI_CE = 0
 MI48_SPI_MODE = 0b00
-MI48_SPI_SPEED_HZ = 20000000  # 20 MHz (Faster SPI)
+MI48_SPI_SPEED_HZ = 12000000  # 12 MHz (Cleaner signal)
 MI48_SPI_XFER_SIZE = 160      # 1 row = 80 pixels x 2 bytes
-MI48_SPI_CS_DELAY = 0.0001    # 100us delay (Reduced from 500us)
+MI48_SPI_CS_DELAY = 0.0002    # 200us delay
 
 # GPIO pins (BCM numbering)
 PIN_DATA_READY = "BCM24"

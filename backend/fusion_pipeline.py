@@ -338,7 +338,7 @@ class FusionPipeline:
 
                 if frame is not None:
                     _, jpeg = cv2.imencode(
-                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 40]
+                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70]
                     )
                     with self._jpeg_lock:
                         self._current_jpeg = jpeg.tobytes()
