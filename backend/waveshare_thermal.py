@@ -36,7 +36,7 @@ MI48_I2C_CHANNEL = 1
 MI48_SPI_BUS = 0
 MI48_SPI_CE = 0
 MI48_SPI_MODE = 0b00
-MI48_SPI_SPEED_HZ = 20000000  # 20 MHz (Balanced speed)
+MI48_SPI_SPEED_HZ = 10000000  # 10 MHz (Safe/Stable speed)
 MI48_SPI_XFER_SIZE = 160      # 1 row = 80 pixels x 2 bytes
 MI48_SPI_CS_DELAY = 0.0005    # 500us delay
 
@@ -188,8 +188,8 @@ class WaveshareThermal:
     def _reset_camera(self):
         """Hardware reset the camera (GPIO 23)."""
         now = time.time()
-        if now - self.last_reset_time < 5.0:
-            return  # Prevent reset loops (max 1 reset every 5s)
+        if now - self.last_reset_time < 10.0:
+            return  # Prevent reset loops (max 1 reset every 10s)
             
         logger.warning("TRIGGERING HARDWARE RESET (Glitch Recovery)...")
         self.last_reset_time = now
@@ -268,7 +268,7 @@ class WaveshareThermal:
             total_pixels = temp_frame.size
             zero_ratio = zero_count / total_pixels
             
-            if zero_ratio > 0.05: # >5% zeros (Strict check)
+            if zero_ratio > 0.02: # >2% zeros (Very strict check)
                 self.consecutive_errors += 1
                 logger.warning(f"Glitch detected: {zero_ratio*100:.1f}% zeros (Bad Frame #{self.consecutive_errors})")
                 
@@ -276,7 +276,8 @@ class WaveshareThermal:
                 if self.consecutive_errors >= 5:
                     self._reset_camera()
                     
-                return None
+                # Return last good frame to prevent black flicker
+                return self.last_frame if self.last_frame is not None else None
             
             # Reset error counter on good frame
             self.consecutive_errors = 0
@@ -286,7 +287,7 @@ class WaveshareThermal:
         except Exception as e:
             logger.error(f"Frame parse error: {e}")
             self.consecutive_errors += 1
-            return None
+            return self.last_frame if self.last_frame is not None else None
 
     def get_frame(self):
         """
