@@ -125,7 +125,7 @@ class RpicamCamera(BaseCamera):
     Outputs MJPEG directly to stdout for high performance.
     Use asyncio.Event for zero-latency frame signaling.
     """
-    def __init__(self, resolution=(640, 480), framerate=15):
+    def __init__(self, resolution=(640, 480), framerate=30):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
