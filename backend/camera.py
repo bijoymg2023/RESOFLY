@@ -191,35 +191,37 @@ class RpicamCamera(BaseCamera):
                 # Buffer management
                 buffer = bytearray()
                 while self.running and self.process.poll() is None:
-                    # Smaller chunks for lower latency and better parsing
-                    chunk = self.process.stdout.read(65536)
+                    # Small, fast reads to keep up with the pipe
+                    chunk = self.process.stdout.read(32768)
                     if not chunk:
                         break
                     
                     buffer.extend(chunk)
                     
-                    # Find JPEG markers
-                    while True:
-                        start = buffer.find(b'\xff\xd8')
-                        end = buffer.find(b'\xff\xd9', start)
+                    # GREEDY PARSING: 
+                    # Find the LAST complete frame in the current buffer.
+                    # This instantly burns through any backlog (lag) that accumulated.
+                    last_end = buffer.rfind(b'\xff\xd9')
+                    
+                    if last_end != -1:
+                        # We found some ending. Now find the start closest before it.
+                        last_start = buffer.rfind(b'\xff\xd8', 0, last_end)
                         
-                        if start != -1 and end != -1:
-                            # We have a full frame
-                            jpg_frame = buffer[start:end+2]
+                        if last_start != -1:
+                            # Extract the absolute latest frame
+                            latest_frame = bytes(buffer[last_start:last_end+2])
                             
                             with self.lock:
-                                self.frame = bytes(jpg_frame)
+                                self.frame = latest_frame
                             
                             self._signal_new_frame()
                             
-                            # Remove processed frame (and any junk before it)
-                            del buffer[:end+2]
-                        else:
-                            # Not enough data for a full frame yet
-                            break
+                            # CRITICAL: Discard EVERYTHING up to the end of the frame we just took.
+                            # All intermediate "stale" frames are thrown away here.
+                            del buffer[:last_end+2]
                     
                     # Safety valve (prevent memory leak if markers aren't found)
-                    if len(buffer) > 1000000:
+                    if len(buffer) > 500000:
                         buffer = bytearray()
                 
             except Exception as e:
