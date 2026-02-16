@@ -129,6 +129,7 @@ class RpicamCamera(BaseCamera):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
+        self.frame_id = 0
         self.running = True
         self.available = False
         self.process = None
@@ -240,6 +241,7 @@ class RpicamCamera(BaseCamera):
                             
                             with self.lock:
                                 self.frame = latest_frame
+                                self.frame_id += 1
                             
                             self._signal_new_frame()
                             
@@ -275,11 +277,15 @@ class RpicamCamera(BaseCamera):
                         pass
                     self.process = None
                 time.sleep(1.0)
-
     
     async def get_frame(self):
         with self.lock:
             return self.frame
+
+    async def get_frame_with_id(self):
+        """Get the latest frame and its ID for deduplication."""
+        with self.lock:
+            return self.frame, self.frame_id
     
     async def wait_for_frame(self, timeout=0.1):
         """Wait for a new frame with timeout. Returns the frame or None."""
@@ -323,20 +329,34 @@ async def generate_rgb_stream():
     Falls back to polling if events aren't available.
     """
     camera = get_rgb_camera()
+    last_frame_id = -1
     
     while True:
         # Wait for a new frame (event-driven) instead of blind polling
         if hasattr(camera, 'wait_for_frame'):
-            frame = await camera.wait_for_frame(timeout=0.033)
+            # Wait for event signal
+            await camera.wait_for_frame(timeout=0.2)
+        else:
+            await asyncio.sleep(0.01)
+            
+        # Get frame data + ID
+        if hasattr(camera, 'get_frame_with_id'):
+            frame, current_id = await camera.get_frame_with_id()
         else:
             frame = await camera.get_frame()
-            await asyncio.sleep(0.016)
+            current_id = time.time() # Fallback for other camera types
         
-        if frame:
+        # DEDUPLICATION:
+        # Only send if we have a NEW frame.
+        if frame and current_id != last_frame_id:
+            last_frame_id = current_id
             yield (
                 b'--frame\r\n'
                 b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
             )
+        else:
+            # If no new frame, just sleep a tiny bit to prevent CPU burn
+            await asyncio.sleep(0.005)
         else:
             yield (
                 b'--frame\r\n'
