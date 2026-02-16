@@ -36,9 +36,9 @@ MI48_I2C_CHANNEL = 1
 MI48_SPI_BUS = 0
 MI48_SPI_CE = 0
 MI48_SPI_MODE = 0b00
-MI48_SPI_SPEED_HZ = 31200000  # 31.2 MHz
+MI48_SPI_SPEED_HZ = 20000000  # 20 MHz (Balanced speed)
 MI48_SPI_XFER_SIZE = 160      # 1 row = 80 pixels x 2 bytes
-MI48_SPI_CS_DELAY = 0.0001
+MI48_SPI_CS_DELAY = 0.0005    # 500us delay
 
 # GPIO pins (BCM numbering)
 PIN_DATA_READY = "BCM24"
@@ -60,6 +60,10 @@ class WaveshareThermal:
         self.frame_count = 0
         self.min_temp = 15.0
         self.max_temp = 45.0
+        
+        # Error tracking for auto-reset
+        self.consecutive_errors = 0
+        self.last_reset_time = 0
 
         self._init_hardware()
 
@@ -178,10 +182,26 @@ class WaveshareThermal:
                 "wget https://files.waveshare.com/wiki/common/Thermal_Camera_Hat.zip && "
                 "unzip Thermal_Camera_Hat.zip && cd pysenxor-master && pip install -e ./"
             )
-        except Exception as e:
-            logger.warning(f"Waveshare Thermal HAT init failed: {e}")
             import traceback
             traceback.print_exc()
+
+    def _reset_camera(self):
+        """Hardware reset the camera (GPIO 23)."""
+        now = time.time()
+        if now - self.last_reset_time < 5.0:
+            return  # Prevent reset loops (max 1 reset every 5s)
+            
+        logger.warning("TRIGGERING HARDWARE RESET (Glitch Recovery)...")
+        self.last_reset_time = now
+        self.consecutive_errors = 0
+        
+        try:
+            # Re-initialize to trigger reset sequence
+            if self.mi48:
+                self.mi48.stop()
+            self._init_hardware()
+        except Exception as e:
+            logger.error(f"Reset failed: {e}")
 
     def _read_frame(self):
         """
@@ -241,10 +261,31 @@ class WaveshareThermal:
             # data is float16 array, reshape to (62, 80)
             from senxor.utils import data_to_frame
             temp_frame = data_to_frame(data, self.mi48.fpa_shape)
+            
+            # --- FRAME VALIDATION (Glitch Suppression) ---
+            # Smart check for "torn" frames (large black/zero regions)
+            zero_count = np.count_nonzero(temp_frame == 0.0)
+            total_pixels = temp_frame.size
+            zero_ratio = zero_count / total_pixels
+            
+            if zero_ratio > 0.05: # >5% zeros (Strict check)
+                self.consecutive_errors += 1
+                logger.warning(f"Glitch detected: {zero_ratio*100:.1f}% zeros (Bad Frame #{self.consecutive_errors})")
+                
+                # Auto-Reset if stuck in glitch state
+                if self.consecutive_errors >= 5:
+                    self._reset_camera()
+                    
+                return None
+            
+            # Reset error counter on good frame
+            self.consecutive_errors = 0
             self.frame_count += 1
             return temp_frame.astype(np.float32)
+
         except Exception as e:
             logger.error(f"Frame parse error: {e}")
+            self.consecutive_errors += 1
             return None
 
     def get_frame(self):
