@@ -217,7 +217,7 @@ class FusionPipeline:
         self._last_processed_seq = 0  # last seq the processor consumed
 
         # Detection cadence
-        self._detect_interval = 4
+        self._detect_interval = 5
         self._cached_tracked: dict = {}
         self._cached_raw_frame: Optional[np.ndarray] = None
         self._loop_frame = 0
@@ -295,7 +295,7 @@ class FusionPipeline:
                         self._raw_seq += 1
             except Exception as e:
                 logger.error(f"Camera reader error: {e}")
-                time.sleep(0.1)
+                time.sleep(0.005)  # Retry fast (5ms)
 
     # ------------------------------------------------------------------
     # Thread 2: Frame processor (never blocks on SPI)
@@ -317,7 +317,7 @@ class FusionPipeline:
 
             if raw is None or seq == self._last_processed_seq:
                 # No new frame from camera yet — brief sleep, reuse last JPEG
-                time.sleep(0.01)
+                time.sleep(0.002)  # Check very frequently (2ms)
                 continue
 
             self._last_processed_seq = seq
@@ -338,7 +338,7 @@ class FusionPipeline:
 
                 if frame is not None:
                     _, jpeg = cv2.imencode(
-                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 55]
+                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 35]
                     )
                     with self._jpeg_lock:
                         self._current_jpeg = jpeg.tobytes()
@@ -347,7 +347,7 @@ class FusionPipeline:
                         self._current_jpeg = self._placeholder_jpeg
             except Exception as e:
                 logger.error(f"Processor error: {e}", exc_info=True)
-                time.sleep(0.05)
+                time.sleep(0.005)
 
     def _fast_frame(self) -> Optional[np.ndarray]:
         """
@@ -553,8 +553,12 @@ class FusionPipeline:
         # Status bar
         status = f"Targets: {confirmed_count} | Frame: {self.frame_number}"
         cv2.putText(
-            display, status, (8, display.shape[0] - 8),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA,
+            display, status, (2, display.shape[0] - 2),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1, cv2.LINE_AA,
         )
+
+        # Upscale 2x for better browser compatibility (80x62 -> 160x124)
+        # INTER_NEAREST is fastest and keeps the "thermal pixel" look
+        display = cv2.resize(display, (160, 124), interpolation=cv2.INTER_NEAREST)
 
         return display
