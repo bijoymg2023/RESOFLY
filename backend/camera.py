@@ -191,8 +191,10 @@ class RpicamCamera(BaseCamera):
                 # Buffer management
                 buffer = bytearray()
                 while self.running and self.process.poll() is None:
-                    # Small, fast reads to keep up with the pipe
-                    chunk = self.process.stdout.read(32768)
+                    # AGGRESSIVE READ:
+                    # Read up to 4MB at once. This forces the OS pipe to empty completely.
+                    # If there is a backlog of 20 frames, this reads them ALL.
+                    chunk = self.process.stdout.read(4194304)
                     if not chunk:
                         break
                     
