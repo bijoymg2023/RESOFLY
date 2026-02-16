@@ -37,9 +37,9 @@ MI48_I2C_CHANNEL = 1
 MI48_SPI_BUS = 0
 MI48_SPI_CE = 0
 MI48_SPI_MODE = 0b00
-MI48_SPI_SPEED_HZ = 16000000  # 16 MHz (Optimal / Stable)
+MI48_SPI_SPEED_HZ = 20000000  # 20 MHz (Faster SPI)
 MI48_SPI_XFER_SIZE = 160      # 1 row = 80 pixels x 2 bytes
-MI48_SPI_CS_DELAY = 0.0001    # 100us delay
+MI48_SPI_CS_DELAY = 0.0001    # 100us delay (Reduced from 500us)
 
 # GPIO pins (BCM numbering)
 PIN_DATA_READY = "BCM24"
@@ -158,7 +158,7 @@ class WaveshareThermal:
             )
 
             # Configure camera
-            self.mi48.set_fps(30)  # Attempt 30 FPS (hardware max)
+            self.mi48.set_fps(20)  # User requested 20 FPS specific target
 
             # Enable noise filters if firmware supports it
             try:
