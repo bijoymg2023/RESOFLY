@@ -208,7 +208,13 @@ class FusionPipeline:
         self._current_jpeg: Optional[bytes] = None
         self._capture_thread: Optional[threading.Thread] = None
         self._running = False
-        self._target_fps = 6  # Waveshare sensor rate
+        self._target_fps = 8  # Stream a bit faster than sensor (interpolate)
+
+        # Skip-frame detection: run full detect pipeline every N frames,
+        # reuse cached detections + just re-annotate on skip frames.
+        self._detect_interval = 2  # detect every 2nd frame
+        self._cached_tracked: dict = {}
+        self._loop_frame = 0
 
         # Pre-generate "no signal" placeholder JPEG
         no_signal = np.zeros((396, 512, 3), dtype=np.uint8)
@@ -257,18 +263,29 @@ class FusionPipeline:
     def _capture_loop(self):
         """
         Single-writer loop: read camera → detect → encode JPEG → cache.
-        Runs in its own thread at the sensor's native frame rate.
+        Runs detection every _detect_interval frames; skip-frames just
+        re-annotate with cached tracks (very cheap).
         """
         interval = 1.0 / self._target_fps
-        logger.info(f"Capture loop running at {self._target_fps} FPS")
+        logger.info(f"Capture loop running at ~{self._target_fps} FPS "
+                    f"(detect every {self._detect_interval} frames)")
 
         while self._running:
             t0 = time.monotonic()
             try:
-                frame = self.process_next()
+                self._loop_frame += 1
+                run_detect = (self._loop_frame % self._detect_interval == 0)
+
+                if run_detect:
+                    # Full pipeline: capture + detect + track + annotate
+                    frame = self.process_next()
+                else:
+                    # Cheap frame: capture + annotate with cached tracks
+                    frame = self._fast_frame()
+
                 if frame is not None:
                     _, jpeg = cv2.imencode(
-                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80]
+                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 55]
                     )
                     with self._jpeg_lock:
                         self._current_jpeg = jpeg.tobytes()
@@ -283,6 +300,22 @@ class FusionPipeline:
             sleep_time = interval - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
+
+    def _fast_frame(self) -> Optional[np.ndarray]:
+        """
+        Skip-detection frame: grab thermal data, apply colormap,
+        re-draw cached bounding boxes. No detection/fusion/tracking.
+        ~10x faster than full pipeline.
+        """
+        try:
+            full_frame = self.thermal_source.get_frame()
+            if full_frame is None:
+                return None
+            self.frame_number += 1
+            return self._annotate(full_frame, self._cached_tracked)
+        except Exception as e:
+            logger.error(f"Fast frame error: {e}")
+            return None
 
     # ------------------------------------------------------------------
     def process_next(self) -> Optional[np.ndarray]:
@@ -362,7 +395,8 @@ class FusionPipeline:
             # 5. Tracking
             tracked = self.tracker.update(fused_dets)
 
-            # 6. Alert management
+            # Cache for skip-frame re-annotation
+            self._cached_tracked = tracked
             alerts = self.alert_mgr.check_and_emit(tracked, self.frame_number)
 
             # 7. Fire callback

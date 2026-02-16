@@ -336,8 +336,8 @@ async def generate_rgb_stream():
     while True:
         # Wait for a new frame (event-driven) instead of blind polling
         if hasattr(camera, 'wait_for_frame'):
-            # Wait for event signal
-            await camera.wait_for_frame(timeout=0.2)
+            # Wait up to 80ms for a new frame signal (camera runs at ~15 fps = 67ms/frame)
+            await camera.wait_for_frame(timeout=0.08)
         else:
             await asyncio.sleep(0.01)
             

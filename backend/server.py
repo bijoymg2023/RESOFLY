@@ -756,8 +756,9 @@ async def thermal_stream():
                 frame_bytes +
                 b'\r\n'
             )
-            # Match sensor rate — no point serving faster than capture
-            await asyncio.sleep(1 / 6)
+            # Poll faster than capture rate so we never add extra latency.
+            # Capture loop runs at ~8 FPS; this polls at ~12 FPS.
+            await asyncio.sleep(0.08)
 
     return StreamingResponse(
         generate(),
