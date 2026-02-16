@@ -1,8 +1,13 @@
 """
-ResoFly Mk-V — Centroid Tracker
-================================
+ResoFly Mk-V — Centroid Tracker (with EMA Smoothing)
+=====================================================
 Assigns persistent IDs to detections across frames using centroid distance.
 Tracks persistence count and handles object disappearance/reappearance.
+
+Bbox stabilisation:
+- Exponential Moving Average (EMA) on centroid and bbox
+- Movement threshold: skip update if centroid moved < min_movement px
+- Prevents micro-jitter on stationary targets
 """
 
 from collections import OrderedDict
@@ -18,6 +23,7 @@ class TrackedObject:
 
     __slots__ = (
         "object_id", "centroid", "bbox",
+        "smooth_centroid", "smooth_bbox",
         "first_seen", "last_seen",
         "persistence", "disappeared",
         "max_temp", "alert_sent",
@@ -28,6 +34,9 @@ class TrackedObject:
         self.object_id = object_id
         self.centroid = centroid
         self.bbox = bbox
+        # Smoothed values start at the raw detection
+        self.smooth_centroid = centroid
+        self.smooth_bbox = bbox
         self.first_seen = time.time()
         self.last_seen = time.time()
         self.persistence = 1
@@ -40,7 +49,7 @@ class TrackedObject:
 
 class Tracker:
     """
-    Centroid-based multi-object tracker.
+    Centroid-based multi-object tracker with EMA smoothing.
 
     Parameters
     ----------
@@ -50,6 +59,12 @@ class Tracker:
         Max pixel distance to associate a detection with existing track.
     persistence_threshold : int
         Frames needed before a track is considered "confirmed".
+    bbox_alpha : float
+        EMA smoothing factor (0-1). Lower = smoother but laggier.
+        0.4 is a good balance for 6 FPS thermal.
+    min_movement : float
+        Minimum centroid movement (px) to trigger bbox update.
+        Prevents micro-jitter on stationary targets.
     """
 
     def __init__(
@@ -57,12 +72,16 @@ class Tracker:
         max_disappeared: int = 15,
         max_distance: float = 60.0,
         persistence_threshold: int = 3,
+        bbox_alpha: float = 0.4,
+        min_movement: float = 3.0,
     ):
         self.next_id = 0
         self.objects: OrderedDict[int, TrackedObject] = OrderedDict()
         self.max_disappeared = max_disappeared
         self.max_distance = max_distance
         self.persistence_threshold = persistence_threshold
+        self.bbox_alpha = bbox_alpha
+        self.min_movement = min_movement
 
     # ------------------------------------------------------------------
     def register(self, centroid, bbox=(0, 0, 0, 0)) -> TrackedObject:
@@ -75,6 +94,45 @@ class Tracker:
     def deregister(self, object_id: int):
         if object_id in self.objects:
             del self.objects[object_id]
+
+    # ------------------------------------------------------------------
+    def _smooth_update(self, obj: TrackedObject, new_centroid, new_bbox):
+        """
+        Apply EMA smoothing to centroid and bbox.
+
+        If movement is below min_movement, keep the previous smooth
+        values to prevent micro-jitter on stationary targets.
+        """
+        a = self.bbox_alpha
+
+        # Check movement magnitude
+        dx = new_centroid[0] - obj.smooth_centroid[0]
+        dy = new_centroid[1] - obj.smooth_centroid[1]
+        dist = (dx * dx + dy * dy) ** 0.5
+
+        # Always store raw values
+        obj.centroid = new_centroid
+        obj.bbox = new_bbox
+
+        if dist < self.min_movement:
+            # Stationary — keep smooth values unchanged
+            return
+
+        # EMA blend: smooth = α * new + (1-α) * old
+        old_cx, old_cy = obj.smooth_centroid
+        obj.smooth_centroid = (
+            int(a * new_centroid[0] + (1 - a) * old_cx),
+            int(a * new_centroid[1] + (1 - a) * old_cy),
+        )
+
+        ox, oy, ow, oh = obj.smooth_bbox
+        nx, ny, nw, nh = new_bbox
+        obj.smooth_bbox = (
+            int(a * nx + (1 - a) * ox),
+            int(a * ny + (1 - a) * oy),
+            int(a * nw + (1 - a) * ow),
+            int(a * nh + (1 - a) * oh),
+        )
 
     # ------------------------------------------------------------------
     def update(self, detections: list) -> OrderedDict:
@@ -114,7 +172,7 @@ class Tracker:
 
         # --- Match existing objects to new detections ---
         object_ids = list(self.objects.keys())
-        object_centroids = [self.objects[oid].centroid for oid in object_ids]
+        object_centroids = [self.objects[oid].smooth_centroid for oid in object_ids]
 
         # Distance matrix (M existing × N new)
         D = np.zeros((len(object_centroids), len(input_centroids)))
@@ -136,8 +194,10 @@ class Tracker:
 
             oid = object_ids[row]
             obj = self.objects[oid]
-            obj.centroid = input_centroids[col]
-            obj.bbox = detections[col]["bbox"]
+
+            # EMA-smoothed update
+            self._smooth_update(obj, input_centroids[col], detections[col]["bbox"])
+
             obj.disappeared = 0
             obj.persistence += 1
             obj.last_seen = time.time()

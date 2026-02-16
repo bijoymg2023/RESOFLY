@@ -170,26 +170,30 @@ class FusionPipeline:
 
         # --- Sub-modules ---
         self.thermal_det = ThermalDetector(
-            min_area=40,         # Raised from 20 — reduces noise detections
+            min_area=40,
             max_area=5000,
             blur_ksize=5,
-            std_multiplier=3.0,  # Raised from 2.5 — stricter threshold
+            std_multiplier=3.0,
+            min_temp_variance=5.0,   # Reject flat/uniform blobs
+            min_solidity=0.3,        # Reject fragmented noise
         )
         self.rgb_det = RGBDetector(target_width=320)
         self.fusion = FusionEngine(
-            thermal_res=(160, 124),  # detection frame size
-            rgb_res=(640, 480),      # RGB resolution
+            thermal_res=(160, 124),
+            rgb_res=(640, 480),
             iou_threshold=0.3,
         )
         self.tracker = Tracker(
-            max_disappeared=8,       # Reduced from 15 — clean up stale tracks faster
+            max_disappeared=8,
             max_distance=60,
-            persistence_threshold=5, # Raised from 3 — require 5 frames to confirm
+            persistence_threshold=5,
+            bbox_alpha=0.4,          # EMA smoothing factor
+            min_movement=3.0,        # Skip update if < 3px movement
         )
         self.alert_mgr = AlertManager(
             cooldown_seconds=300.0,
             require_validation="FUSED_VALIDATED" if require_rgb_validation else None,
-            persistence_threshold=5, # Match tracker
+            persistence_threshold=5,
         )
 
         self.frame_number = 0
@@ -373,7 +377,7 @@ class FusionPipeline:
                                 estimated_temp=obj.max_temp,
                                 confidence=obj.confidence,
                                 validation_type=obj.validation_type,
-                                bbox=obj.bbox,
+                                bbox=obj.smooth_bbox,
                                 persistence=obj.persistence,
                             )
                         )
@@ -433,7 +437,8 @@ class FusionPipeline:
 
         for oid, obj in tracked.items():
             is_conf = obj.persistence >= self.tracker.persistence_threshold
-            x, y, w, h = obj.bbox
+            # Use EMA-smoothed bbox for stable drawing
+            x, y, w, h = obj.smooth_bbox
 
             # Clamp bbox to frame boundaries (safety net)
             x = max(0, min(x, frame_w - 1))
