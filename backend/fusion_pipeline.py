@@ -212,7 +212,7 @@ class FusionPipeline:
 
         # Skip-frame detection: run full detect pipeline every N frames.
         # Skip frames reuse the LAST ENCODED JPEG (zero CPU cost).
-        self._detect_interval = 4  # detect every 4th frame
+        self._detect_interval = 3  # detect every 3rd frame
         self._cached_tracked: dict = {}
         self._cached_raw_frame: Optional[np.ndarray] = None
         self._loop_frame = 0
@@ -263,42 +263,44 @@ class FusionPipeline:
 
     def _capture_loop(self):
         """
-        Single-writer loop: read camera → detect → encode JPEG → cache.
-        Runs detection every _detect_interval frames; skip-frames just
-        re-annotate with cached tracks (very cheap).
+        Single-writer loop.  ALWAYS reads a fresh frame from the camera
+        (keeps SPI drained, no stale data, no glitching).
+        Runs full detect+track only every _detect_interval frames.
+        Non-detect frames just: colormap + cached boxes + JPEG encode.
+        Camera read (~200ms) IS the natural FPS limiter.
         """
-        interval = 1.0 / self._target_fps
-        logger.info(f"Capture loop running at ~{self._target_fps} FPS "
-                    f"(detect every {self._detect_interval} frames)")
+        logger.info(f"Capture loop started (detect every {self._detect_interval} frames)")
 
         while self._running:
-            t0 = time.monotonic()
             try:
                 self._loop_frame += 1
                 run_detect = (self._loop_frame % self._detect_interval == 0)
 
                 if run_detect:
-                    # Full pipeline: capture + detect + track + annotate
+                    # Full pipeline: read + detect + track + annotate
                     frame = self.process_next()
-                    if frame is not None:
-                        _, jpeg = cv2.imencode(
-                            '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 45]
-                        )
-                        with self._jpeg_lock:
-                            self._current_jpeg = jpeg.tobytes()
+                else:
+                    # Light frame: read camera + colormap + cached boxes
+                    raw = self.thermal_source.get_frame()
+                    if raw is not None:
+                        self._cached_raw_frame = raw
+                        self.frame_number += 1
+                        frame = self._annotate(raw, self._cached_tracked)
                     else:
-                        with self._jpeg_lock:
-                            self._current_jpeg = self._placeholder_jpeg
-                # else: skip frame — reuse whatever JPEG we already have
-                #       (zero CPU cost, no encode, no colormap, no annotate)
+                        frame = None
+
+                if frame is not None:
+                    _, jpeg = cv2.imencode(
+                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50]
+                    )
+                    with self._jpeg_lock:
+                        self._current_jpeg = jpeg.tobytes()
+                else:
+                    with self._jpeg_lock:
+                        self._current_jpeg = self._placeholder_jpeg
             except Exception as e:
                 logger.error(f"Capture loop error: {e}", exc_info=True)
-
-            # FPS limiter — sleep only the remaining time
-            elapsed = time.monotonic() - t0
-            sleep_time = interval - elapsed
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+                time.sleep(0.05)
 
     def _fast_frame(self) -> Optional[np.ndarray]:
         """
