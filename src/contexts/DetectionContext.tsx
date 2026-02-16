@@ -66,51 +66,11 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setSelectedAlert(null);
     }, []);
 
-    // --- Backend Integration ---
-
-    // Function to fetch alerts from backend
-    const refreshAlerts = useCallback(async () => {
-        try {
-            const token = localStorage.getItem('token');
-            if (!token) return;
-
-            const res = await fetch('/api/alerts', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-
-                // Map backend alerts to frontend DetectionEvent interface
-                const mappedAlerts: DetectionEvent[] = data.map((a: any) => ({
-                    id: a.id,
-                    type: a.type.toUpperCase() as any, // 'life' -> 'LIFE'
-                    confidence: a.confidence || 0.8,
-                    max_temp: a.max_temp || 0,
-                    lat: a.lat || 0,
-                    lon: a.lon || 0,
-                    timestamp: new Date(a.timestamp).toLocaleTimeString([], { hour12: false }),
-                    fullTimestamp: new Date(a.timestamp),
-                    isActive: !a.acknowledged
-                }));
-
-                // Update state only if changed (simple comparison)
-                setAlerts(prev => {
-                    const hasNew = mappedAlerts.some(ma => !prev.find(p => p.id === ma.id));
-                    const stateChanged = mappedAlerts.length !== prev.length || hasNew;
-                    return stateChanged ? mappedAlerts : prev;
-                });
-            }
-        } catch (e) {
-            console.error("Failed to sync alerts with backend:", e);
-        }
-    }, []);
+    // --- WebSocket-Only Alert System ---
+    // NO REST fetching. Alert box starts empty on every page load.
+    // Only live WebSocket events populate alerts.
 
     useEffect(() => {
-        // NO initial fetch — start with a clean, empty alert box.
-        // Alerts appear ONLY via live WebSocket events from the current session.
-
-        // WebSocket connection for instant alerts
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${window.location.host}/ws/alerts`;
         let ws: WebSocket | null = null;
