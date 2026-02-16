@@ -551,7 +551,8 @@ async def video_feed_rgb(token: Optional[str] = None):
             "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
             "Pragma": "no-cache",
             "Expires": "0",
-            "Connection": "keep-alive"
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
         }
     )
 
@@ -776,7 +777,14 @@ async def thermal_stream():
     
     return StreamingResponse(
         generate(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
     )
 
 # Startup
