@@ -217,7 +217,7 @@ class FusionPipeline:
         self._last_processed_seq = 0  # last seq the processor consumed
 
         # Detection cadence
-        self._detect_interval = 5
+        self._detect_interval = 4
         self._cached_tracked: dict = {}
         self._cached_raw_frame: Optional[np.ndarray] = None
         self._loop_frame = 0
@@ -338,7 +338,7 @@ class FusionPipeline:
 
                 if frame is not None:
                     _, jpeg = cv2.imencode(
-                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70]
+                        '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 55]
                     )
                     with self._jpeg_lock:
                         self._current_jpeg = jpeg.tobytes()
