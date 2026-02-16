@@ -169,10 +169,10 @@ class FusionPipeline:
 
         # --- Sub-modules ---
         self.thermal_det = ThermalDetector(
-            min_area=20,
+            min_area=40,         # Raised from 20 — reduces noise detections
             max_area=5000,
             blur_ksize=5,
-            std_multiplier=2.5,
+            std_multiplier=3.0,  # Raised from 2.5 — stricter threshold
         )
         self.rgb_det = RGBDetector(target_width=320)
         self.fusion = FusionEngine(
@@ -181,14 +181,14 @@ class FusionPipeline:
             iou_threshold=0.3,
         )
         self.tracker = Tracker(
-            max_disappeared=15,
+            max_disappeared=8,       # Reduced from 15 — clean up stale tracks faster
             max_distance=60,
-            persistence_threshold=3,
+            persistence_threshold=5, # Raised from 3 — require 5 frames to confirm
         )
         self.alert_mgr = AlertManager(
             cooldown_seconds=300.0,
             require_validation="FUSED_VALIDATED" if require_rgb_validation else None,
-            persistence_threshold=3,
+            persistence_threshold=5, # Match tracker
         )
 
         self.frame_number = 0
@@ -245,6 +245,8 @@ class FusionPipeline:
                     rgb_dets = self.rgb_det.detect(rgb_frame)
 
             # 4. Sensor fusion
+            display_h, display_w = full_frame.shape[:2]  # e.g. 512×396
+
             if rgb_dets:
                 # Update fusion engine resolutions based on actual frames
                 self.fusion.set_resolutions(
@@ -252,6 +254,18 @@ class FusionPipeline:
                     rgb_res=(rgb_frame.shape[1], rgb_frame.shape[0]),
                 )
                 fused_dets = self.fusion.fuse(thermal_dets, rgb_dets)
+
+                # CRITICAL: Fusion returns bbox in RGB coordinate space.
+                # We must scale them BACK to thermal display coordinates
+                # so _annotate() draws them correctly on the thermal frame.
+                rgb_h, rgb_w = rgb_frame.shape[:2]
+                rx = display_w / rgb_w
+                ry = display_h / rgb_h
+                for d in fused_dets:
+                    x, y, w, h = d["bbox"]
+                    d["bbox"] = (int(x * rx), int(y * ry), int(w * rx), int(h * ry))
+                    cx, cy = d.get("centroid", (x + w // 2, y + h // 2))
+                    d["centroid"] = (int(cx * rx), int(cy * ry))
             else:
                 # No RGB → mark everything as THERMAL_ONLY
                 fused_dets = []
@@ -333,10 +347,21 @@ class FusionPipeline:
             display = frame.copy()
 
         confirmed_count = 0
+        frame_h, frame_w = display.shape[:2]
 
         for oid, obj in tracked.items():
             is_conf = obj.persistence >= self.tracker.persistence_threshold
             x, y, w, h = obj.bbox
+
+            # Clamp bbox to frame boundaries (safety net)
+            x = max(0, min(x, frame_w - 1))
+            y = max(0, min(y, frame_h - 1))
+            w = min(w, frame_w - x)
+            h = min(h, frame_h - y)
+
+            # Skip degenerate boxes
+            if w < 3 or h < 3:
+                continue
 
             # Color by validation type
             if obj.validation_type == "FUSED_VALIDATED":
