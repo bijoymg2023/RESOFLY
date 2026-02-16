@@ -357,6 +357,3 @@ async def generate_rgb_stream():
         else:
             # If no new frame, just sleep a tiny bit to prevent CPU burn
             await asyncio.sleep(0.005)
-                b'Waiting for camera...\r\n'
-            )
-            await asyncio.sleep(0.5)  # Don't spam when no camera
