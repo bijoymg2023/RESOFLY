@@ -20,6 +20,7 @@ export interface DetectionContextType {
     activeAlerts: DetectionEvent[]; // Only active/recent for Alert Box
     selectedAlert: DetectionEvent | null; // For map focus
     ackAlert: (id: string) => void;
+    clearAlerts: () => void; // Clear all alerts
     focusAlert: (alert: DetectionEvent) => void;
     clearSelection: () => void;
 }
@@ -63,6 +64,11 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, []);
 
     const clearSelection = useCallback(() => {
+        setSelectedAlert(null);
+    }, []);
+
+    const clearAlerts = useCallback(() => {
+        setAlerts([]);
         setSelectedAlert(null);
     }, []);
 
@@ -143,7 +149,7 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, []);
 
     return (
-        <DetectionContext.Provider value={{ alerts, activeAlerts, selectedAlert, ackAlert, focusAlert, clearSelection }}>
+        <DetectionContext.Provider value={{ alerts, activeAlerts, selectedAlert, ackAlert, clearAlerts, focusAlert, clearSelection }}>
             {children}
         </DetectionContext.Provider>
     );

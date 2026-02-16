@@ -265,17 +265,10 @@ async def read_users_me(current_user: UserDB = Depends(get_current_user)):
 
 @api_router.get("/alerts", response_model=List[Alert])
 async def get_alerts(db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
-    # Only return alerts from the current server session (prevents stale alerts on refresh)
-    if server_boot_time:
-        result = await db.execute(
-            select(AlertDB)
-            .where(AlertDB.timestamp >= server_boot_time)
-            .order_by(AlertDB.timestamp.desc())
-            .limit(50)
-        )
-    else:
-        result = await db.execute(select(AlertDB).order_by(AlertDB.timestamp.desc()).limit(50))
-    return result.scalars().all()
+    # Dashboard uses WebSocket-only for real-time alerts.
+    # Return empty list to prevent old alerts from appearing on page load.
+    # Historical alerts are still in DB and can be queried via /api/alerts/history if needed.
+    return []
 
 @api_router.post("/alerts", response_model=Alert)
 async def create_alert(input: AlertCreate, db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
