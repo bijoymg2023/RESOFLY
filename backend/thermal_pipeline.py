@@ -1,12 +1,12 @@
 """
-Synchronized Thermal Detection Pipeline
-========================================
-Unified frame pipeline where the same frame is used for:
-1. Video display (MJPEG stream)
-2. Hotspot detection
-3. Alert generation
-
-This ensures alerts appear at the exact moment thermal signatures are visible.
+Synchronized Thermal Detection Pipeline (ResoFly Mk-IV)
+=======================================================
+Robust, high-accuracy thermal detection optimized for Raspberry Pi 4 (80x62 Sensor).
+Features:
+- Adaptive Thresholding (Mean + Offset)
+- Morphological Noise Reduction
+- Unique Hotspot Tracking (Centroid)
+- Smart Alert Logic (Persistence + Cooldowns)
 """
 
 import cv2
@@ -15,8 +15,8 @@ import time
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple, Callable
-from dataclasses import dataclass
+from typing import List, Optional, Tuple, Callable, Dict
+from dataclasses import dataclass, field
 
 import logging
 
@@ -36,14 +36,27 @@ class Hotspot:
     max_intensity: float
     estimated_temp: float  # Estimated temperature in °C
     confidence: float
-    circularity: float = 0.0  # 1.0 = perfect circle (Head from top view)
-    convexity: float = 0.0    # 1.0 = convex (Human), <0.8 = jagged (Noise)
-    inertia: float = 0.0      # 1.0 = circle, 0.0 = line
+    
+    # Shape metrics
+    circularity: float = 0.0
+    aspect_ratio: float = 0.0
+    
+    # Tracking info
     track_id: Optional[int] = None
-    is_confirmed: bool = False # Passed probation check?
+    is_confirmed: bool = False  # Passed persistence check?
+    first_seen: float = 0.0
+    last_seen: float = 0.0
+    max_temp_seen: float = 0.0
+    
+    def to_dict(self):
+        return {
+            "x": self.x, "y": self.y, "w": self.width, "h": self.height,
+            "temp": self.estimated_temp, "conf": self.confidence,
+            "id": self.track_id
+        }
 
 
-@dataclass 
+@dataclass
 class DetectionEvent:
     """Alert event with full metadata."""
     hotspots: List[Hotspot]
@@ -52,753 +65,398 @@ class DetectionEvent:
     total_count: int
 
 
-# ============ TEMPERATURE NORMALIZATION ============
+# ============ CONFIGURATION ============
+
+# Human body detection threshold (Lower than 37°C due to distance/clothing)
+HUMAN_TEMP_THRESHOLD_C = 28.0 
+
+# ============ TEMPERATURE HELPER ============
 
 def intensity_to_temperature(intensity: float, min_temp: float = 15.0, max_temp: float = 45.0) -> float:
-    """
-    Map 0-255 pixel intensity to estimated temperature.
-    
-    LWIR cameras (8-14μm) measure thermal radiation.
-    Hotter objects = brighter pixels (in grayscale thermal).
-    
-    Args:
-        intensity: Pixel value 0-255
-        min_temp: Minimum scene temperature (ambient cold)
-        max_temp: Maximum scene temperature (body heat)
-    
-    Returns:
-        Estimated temperature in °C
-    """
+    """Map 0-255 pixel intensity to estimated temperature."""
     normalized = intensity / 255.0
     return min_temp + normalized * (max_temp - min_temp)
 
-
 def temperature_to_intensity(temp: float, min_temp: float = 15.0, max_temp: float = 45.0) -> int:
-    """Inverse: convert temperature to pixel intensity."""
+    """Convert temperature to pixel intensity."""
     normalized = (temp - min_temp) / (max_temp - min_temp)
     return int(np.clip(normalized * 255, 0, 255))
 
-
-# Human body detection threshold
-# Accounts for: clothing, distance, ambient conditions
-HUMAN_TEMP_THRESHOLD_C = 28.0  # Lower than 37°C due to clothing/distance
-HUMAN_TEMP_THRESHOLD_INTENSITY = temperature_to_intensity(HUMAN_TEMP_THRESHOLD_C)
+HUMAN_TEMP_INTENSITY = temperature_to_intensity(HUMAN_TEMP_THRESHOLD_C)
 
 
-# ============ FRAME SOURCE ============
+# ============ FRAME SOURCES ============
 
 class WaveshareSource:
-    """
-    Live thermal source from Waveshare 80x62 Thermal Camera HAT.
-    Wraps the waveshare_thermal hardware driver for the unified pipeline.
+    """Live thermal source from Waveshare 80x62 Thermal Camera HAT."""
     
-    Best possible quality from this sensor:
-    - Native: 80x62 pixels (4,960 thermal pixels)
-    - Display: 960x744 (12x upscale — sweet spot for quality vs bandwidth)
-    - Detection: runs on 480x372 (6x) for speed
-    """
-    
-    # Display resolution (Balanced upscale)
     OUTPUT_WIDTH = 512
     OUTPUT_HEIGHT = 396
-    
-    # Detection resolution (Fast for contour ops)
-    DETECT_WIDTH = 128
-    DETECT_HEIGHT = 96
+    DETECT_WIDTH = 160 # 2x native (80->160) for better contour definition
+    DETECT_HEIGHT = 124
     
     def __init__(self):
         self._available = False
         self.camera = None
-        self.fps = 5  # Hardware limited ~5 FPS
-        self.frame_count = 0  # Live = unlimited
-        self._prev_frame = None  # For temporal smoothing
+        self.fps = 8
+        self.frame_count = 0
         
         try:
             from waveshare_thermal import get_thermal_camera
             self.camera = get_thermal_camera()
             self._available = self.camera.is_available()
             if self._available:
-                logger.info("WaveshareSource: Live 80x62 thermal camera connected")
-            else:
-                logger.info("WaveshareSource: Camera HAT not responding")
-        except ImportError:
-            logger.info("WaveshareSource: waveshare_thermal driver not available")
-        except Exception as e:
-            logger.warning(f"WaveshareSource: Init error: {e}")
+                logger.info("WaveshareSource: Live thermal camera connected")
+        except:
+            logger.warning("WaveshareSource: Driver not available")
     
     def get_frame(self) -> Optional[np.ndarray]:
         if not self._available or self.camera is None:
             return None
-        
+            
         frame = self.camera.get_frame()
-        if frame is not None:
-            # Ensure grayscale uint8
-            if len(frame.shape) == 3:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            
-            # --- Best possible quality pipeline for 80x62 sensor ---
-            
-            # --- LIVE SENSOR ANALYSIS ---
-            if self.frame_count % 30 == 0:
-                logger.info(f"LIVE FRAME {self.frame_count}: Shape={frame.shape}, Range=[{np.min(frame)}-{np.max(frame)}]")
+        if frame is None: return None
+        
+        # Normalize and Enhancement Pipeline
+        # 1. Normalize
+        frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        
+        # 2. Upscale for Display (Smooth Cubic)
+        # Upscale directly to output size for display
+        display_frame = cv2.resize(frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), interpolation=cv2.INTER_CUBIC)
+        
+        # 3. Apply Colormap (INFERNO is best for heat)
+        # display_frame = cv2.applyColorMap(display_frame, cv2.COLORMAP_INFERNO) 
+        # Wait, the pipeline expects grayscale here. We colorize later.
+        
+        return display_frame
 
-            try:
-                # 1. Normalize to full 0-255 range
-                frame = cv2.normalize(frame, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-                
-                # 2. Temporal smoothing: DISABLED
-                # This was causing "spreading" (ghosting) during motion.
-                # if self._prev_frame is not None:
-                #    frame = cv2.addWeighted(frame, 0.5, self._prev_frame, 0.5, 0)
-                # self._prev_frame = frame.copy()
-                
-                # 3. Gamma Correction (Brighten shadows / mid-tones)
-                # Gamma < 1.0 = lighter, Gamma > 1.0 = darker (Wait, standard gamma is inv)
-                # actually for thermal, we want to expand the 'warm' range.
-                # Let's use a look-up table for speed.
-                gamma = 1.5
-                invGamma = 1.0 / gamma
-                table = np.array([((i / 255.0) ** invGamma) * 255
-                    for i in np.arange(0, 256)]).astype("uint8")
-                frame = cv2.LUT(frame, table)
-                
-                # 4. Strong Contrast Enhancement (CLAHE)
-                # Clip limit 4.0 makes it very high contrast (Military style)
-                # Grid 8x8 is good for 80x62 sensor
-                clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
-                frame = clahe.apply(frame)
-                
-                # 5. Multi-Stage Upscaling (Smooth & Organic)
-                # Direct 8x makes pixels look like lego blocks. 
-                # We step up 4x, blur the grid, then step up 2x.
-                fframe = frame.astype(np.float32)
-                
-                # Stage 1: 4x Upscale (80 -> 320) - Back to "Medium Res" for detail
-                # 160px was too blurry. 320px is the sweet spot.
-                mid_w = self.OUTPUT_WIDTH // 2
-                mid_h = self.OUTPUT_HEIGHT // 2
-                
-                # Use CUBIC (Fast & Good)
-                mid_frame = cv2.resize(fframe, (mid_w, mid_h), interpolation=cv2.INTER_CUBIC)
-                
-                # mid_frame is 320x248
-            
-                # --- "Turbo" Smoothing (No Bilateral) ---
-                # Bilateral is too slow for Pi. 
-                # We use Median (Despeckle) + Gaussian (Soften) instead. 
-                # This is 10x faster and visually 90% similar.
-                
-                mid_u8 = np.clip(mid_frame, 0, 255).astype(np.uint8)
-                
-                # 1. Despeckle (Remove noisy dots)
-                mid_u8 = cv2.medianBlur(mid_u8, 3)
-                
-                # 2. Soften (Melt the grid)
-                # (5, 5) kernel provides better smoothing for the 4x4 pixel blocks
-                mid_u8 = cv2.GaussianBlur(mid_u8, (5, 5), 0)
-                
-                mid_frame = mid_u8.astype(np.float32)
-                
-                # Stage 2: 2x Upscale (320 -> 640)
-                upscaled = cv2.resize(mid_frame, (self.OUTPUT_WIDTH, self.OUTPUT_HEIGHT), 
-                                      interpolation=cv2.INTER_CUBIC)
-                
-                # 6. Definition Boost (Standard Sharpening)
-                # Strength 2.0: Crisp edges without highlighting pixelation
-                gaussian_blur = cv2.GaussianBlur(upscaled, (0, 0), 2.0)
-                upscaled = cv2.addWeighted(upscaled, 2.0, gaussian_blur, -1.0, 0)
-                
-                # 7. Convert back to uint8
-                upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
-                
-                # 7. Convert back to uint8
-                upscaled = np.clip(upscaled, 0, 255).astype(np.uint8)
-                
-                return upscaled
-            
-            except Exception as e:
-                logger.error(f"PIPELINE CRASH START: {e}")
-                import traceback
-                traceback.print_exc()
-                logger.error("PIPELINE CRASH END")
-                # Return a visual error frame so stream stays online
-                err_frame = np.zeros((self.OUTPUT_HEIGHT, self.OUTPUT_WIDTH), dtype=np.uint8)
-                cv2.putText(err_frame, "PIPELINE ERROR", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,), 2)
-                return err_frame
-        return None
-    
     def get_detect_frame(self, display_frame: np.ndarray) -> np.ndarray:
-        """Downscale display frame for fast detection processing."""
-        return cv2.resize(display_frame, (self.DETECT_WIDTH, self.DETECT_HEIGHT),
-                          interpolation=cv2.INTER_AREA)
-    
-    def is_available(self) -> bool:
-        return self._available
-    
-    def get_temperature_frame(self) -> Optional[np.ndarray]:
-        """Get raw temperature data in °C (for heatmap display)."""
-        if self.camera:
-            return self.camera.get_temperature_frame()
-        return None
+        """Downscale for detection speed."""
+        return cv2.resize(display_frame, (self.DETECT_WIDTH, self.DETECT_HEIGHT), interpolation=cv2.INTER_AREA)
+
+    def is_available(self) -> bool: return self._available
     
     def get_max_temperature(self) -> Optional[float]:
-        """Get max temp in current frame."""
-        if self.camera:
-            return self.camera.get_max_temperature()
-        return None
+        return self.camera.get_max_temperature() if self.camera else None
 
 
 class VideoSource:
     """Reads frames from a video file."""
-    
     def __init__(self, video_path: str):
-        self.path = Path(video_path)
-        self.cap = cv2.VideoCapture(str(self.path))
+        self.cap = cv2.VideoCapture(str(video_path))
         self._available = self.cap.isOpened()
-        self.fps = self.cap.get(cv2.CAP_PROP_FPS) or 15
-        self.frame_count = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
     def get_frame(self) -> Optional[np.ndarray]:
-        if not self._available:
-            return None
-        
+        if not self._available: return None
         ret, frame = self.cap.read()
         if not ret:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
             ret, frame = self.cap.read()
-        
-        return frame if ret else None
-    
-    def is_available(self) -> bool:
-        return self._available
+        if ret and len(frame.shape) == 3:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        return frame
+            
+    def is_available(self) -> bool: return self._available
 
 
-# ============ THERMAL DETECTOR ============
+# ============ DETECTION LOGIC ============
 
 class ThermalDetector:
-    """Detects thermal hotspots in frames."""
+    """
+    Robust thermal hotspot detector.
+    Uses Adaptive Thresholding + Morphology for clean blobs.
+    """
     
-    def __init__(
-        self,
-        min_area: int = 40,
-        blur_kernel: int = 5,
-        adaptive: bool = True
-    ):
+    def __init__(self, min_area: int = 25):
         self.min_area = min_area
-        self.blur_kernel = max(blur_kernel, 7)  # Larger blur for cleaner detection
-        self.adaptive = adaptive
-    
+        # Kernel for morphological opening (removes small noise)
+        self.morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        
     def process(self, frame: np.ndarray) -> Tuple[List[Hotspot], np.ndarray]:
-        """
-        Process frame and return hotspots + binary mask.
+        """Process frame -> detections."""
         
-        Returns:
-            hotspots: List of detected hotspots
-            binary: Thresholded binary image
-        """
-        # Ensure grayscale
-        if len(frame.shape) == 3:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = frame.copy()
+        # 1. Gaussian Blur (Reduce high-freq noise)
+        blurred = cv2.GaussianBlur(frame, (5, 5), 0)
         
-        # Normalize
-        gray = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        # 2. Adaptive Thresholding
+        # Dynamic offset based on scene statistics
+        mean_val = np.mean(blurred)
+        std_val = np.std(blurred)
         
-        # Denoise
-        blurred = cv2.GaussianBlur(gray, (self.blur_kernel, self.blur_kernel), 0)
+        # Threshold = Mean + 2.5 * StdDev (Isolates significant heat sources)
+        # Clamp to avoid thresholding too low if scene is flat
+        thresh_val = mean_val + 2.5 * std_val
+        thresh_val = max(thresh_val, HUMAN_TEMP_INTENSITY) # Respect detection floor
+        thresh_val = min(thresh_val, 240) # Allow very hot saturation
         
-        # Adaptive threshold based on frame statistics
-        if self.adaptive:
-            mean = np.mean(blurred)
-            std = np.std(blurred)
-            thresh_val = int(min(200, mean + 2.0 * std))  # Higher threshold = fewer false positives
-            thresh_val = max(thresh_val, HUMAN_TEMP_THRESHOLD_INTENSITY)
-        else:
-            thresh_val = HUMAN_TEMP_THRESHOLD_INTENSITY
-        
-        # Binary threshold
         _, binary = cv2.threshold(blurred, thresh_val, 255, cv2.THRESH_BINARY)
         
-        # Morphological cleanup
-        # DRONE VIEW OPTIMIZATION:
-        # Use smaller kernel for open/close to preserve small details
-        # DO NOT DILATE heavily, or heads close together will merge into one blob.
-        kernel = np.ones((3, 3), np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)   # Remove noise
-        # binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)  # Fill gaps (Optional, maybe skip for heads)
+        # 3. Morphological Cleanup (Opening = Erode -> Dilate)
+        # Removes small speckles, keeps solid blobs
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, self.morph_kernel, iterations=1)
         
-        # Find contours
+        # 4. Contour Detection
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         
         hotspots = []
         for cnt in contours:
             area = cv2.contourArea(cnt)
             
-            if area >= self.min_area:
-                x, y, w, h = cv2.boundingRect(cnt)
+            # Filter 1: Minimum Area
+            if area < self.min_area:
+                continue
                 
-                # --- Advanced Shape Analysis ---
-                
-                # 1. Circularity like before (Head detection)
-                perimeter = cv2.arcLength(cnt, True)
-                circularity = 0.0
-                if perimeter > 0:
-                    circularity = 4 * np.pi * area / (perimeter * perimeter)
-                
-                # 2. Convexity (Is it a smooth blob or a jagged mess?)
-                # Hull = "Rubber band" around the shape
-                hull = cv2.convexHull(cnt)
-                hull_area = cv2.contourArea(hull)
-                convexity = float(area) / hull_area if hull_area > 0 else 0.0
-                
-                # 3. Inertia (Is it elongated?)
-                # Fit an ellipse
-                inertia = 0.0
-                if len(cnt) >= 5: # Need 5 points for ellipse
-                    (e_center, (e_w, e_h), angle) = cv2.fitEllipse(cnt)
-                    major_axis = max(e_w, e_h)
-                    minor_axis = min(e_w, e_h)
-                    if major_axis > 0:
-                        inertia = minor_axis / major_axis
-                
-                # --- Temperature & Confidence ---
-                
-                # Get max intensity in region
-                mask = np.zeros(gray.shape, dtype=np.uint8)
-                cv2.drawContours(mask, [cnt], -1, 255, -1)
-                max_intensity = float(np.max(gray[mask == 255]))
-                estimated_temp = intensity_to_temperature(max_intensity)
-                
-                # Scoring Logic
-                temp_diff = estimated_temp - HUMAN_TEMP_THRESHOLD_C
-                temp_diff = estimated_temp - HUMAN_TEMP_THRESHOLD_C
-                confidence = min(0.95, 0.5 + (temp_diff / 15.0) * 0.45)
-                # Clamp to prevent saturation if temp is high
-                if confidence > 0.95: confidence = 0.99 # Allow 99%, but not 105%
-                
-                # Boost for good shapes
-                if circularity > 0.6: confidence += 0.1
-                if convexity > 0.9:   confidence += 0.1  # Solid blob
-                if inertia > 0.5:     confidence += 0.05 # Not a thin line
-                
-                # Penalize jagged noise
-                if convexity < 0.7:   confidence -= 0.2
-                
-                confidence = max(0.1, min(1.0, confidence))
-                
-                hotspots.append(Hotspot(
-                    x=int(x), y=int(y),
-                    width=int(w), height=int(h),
-                    area=float(area),
-                    max_intensity=max_intensity,
-                    estimated_temp=estimated_temp,
-                    confidence=confidence,
-                    circularity=circularity,
-                    convexity=convexity,
-                    inertia=inertia
-                ))
-        
-        # Sort by confidence (Highest first)
+            # Filter 2: Bounding Box
+            x, y, w, h = cv2.boundingRect(cnt)
+            aspect_ratio = float(w) / h
+            
+            # Filter 3: Aspect Ratio sanity check
+            # Humans are usually taller than wide (AR < 1.0) or squat (AR < 2.5 if lying down)
+            # Eliminate extremely thin lines (noise lines)
+            if aspect_ratio > 4.0 or aspect_ratio < 0.2:
+                continue
+            
+            # Get max intensity stats
+            mask = np.zeros(frame.shape, dtype=np.uint8)
+            cv2.drawContours(mask, [cnt], -1, 255, -1)
+            # Fast numpy masking
+            roi_vals = frame[y:y+h, x:x+w]
+            max_val = np.max(roi_vals) if roi_vals.size > 0 else 0
+            
+            estimated_temp = intensity_to_temperature(max_val)
+            
+            # --- CONFIDENCE SCORING ---
+            # Score = (Temp / Max) * 0.5 + (Area / Ideal) * 0.3 + (Shape) * 0.2
+            
+            # Temp Score
+            temp_score = min(1.0, (estimated_temp - HUMAN_TEMP_THRESHOLD_C) / 10.0)
+            if temp_score < 0: temp_score = 0
+            
+            # Area Score (Bigger = Better, up to a point)
+            area_score = min(1.0, area / 200.0)
+            
+            # Shape Score (Solid blobs > Noise)
+            hull = cv2.convexHull(cnt)
+            hull_area = cv2.contourArea(hull)
+            solidity = float(area) / hull_area if hull_area > 0 else 0
+            
+            confidence = (temp_score * 0.5) + (area_score * 0.3) + (solidity * 0.2)
+            confidence = min(0.99, max(0.1, confidence))
+            
+            hotspots.append(Hotspot(
+                x=x, y=y, width=w, height=h,
+                area=area,
+                max_intensity=float(max_val),
+                estimated_temp=estimated_temp,
+                confidence=confidence,
+                aspect_ratio=aspect_ratio
+            ))
+            
+        # Sort by confidence
         hotspots.sort(key=lambda h: h.confidence, reverse=True)
-        
-        # --- Aggressive Merging (Union) ---
-        # "Magnet" Logic: If boxes are close, fuse them into one big box.
-        # This prevents 1 person being 3 boxes (Head, Body, Hand).
-        
-        merged_hotspots = []
-        while hotspots:
-            # Take the first box
-            base = hotspots.pop(0)
-            
-            # Keep merging until no more neighbors found
-            changed = True
-            while changed:
-                changed = False
-                unmerged = []
-                for other in hotspots:
-                    # Check Overlap / Proximity (The "Magnet" Logic)
-                    # We inflate the boxes by 6px (Reduced from 25px)
-                    # This bridges the gap without grabbing background noise
-                    
-                    param_inflate = 6
-                    
-                    # Box A (Base)
-                    ax1, ay1 = base.x - param_inflate, base.y - param_inflate
-                    ax2, ay2 = base.x + base.width + param_inflate, base.y + base.height + param_inflate
-                    
-                    # Box B (Other)
-                    bx1, by1 = other.x - param_inflate, other.y - param_inflate
-                    bx2, by2 = other.x + other.width + param_inflate, other.y + other.height + param_inflate
-                    
-                    # Intersection Check
-                    # If they don't overlap, x_overlap or y_overlap will be negative/zero
-                    overlap_x = min(ax2, bx2) - max(ax1, bx1)
-                    overlap_y = min(ay2, by2) - max(ay1, by1)
-                    
-                    if overlap_x > 0 and overlap_y > 0:
-                        # MERGE THEM
-                        x1 = min(base.x, other.x)
-                        y1 = min(base.y, other.y)
-                        x2 = max(base.x + base.width, other.x + other.width)
-                        y2 = max(base.y + base.height, other.y + other.height)
-                        
-                        base.x = x1
-                        base.y = y1
-                        base.width = x2 - x1
-                        base.height = y2 - y1
-                        
-                        # Take max confidence/temp
-                        base.confidence = max(base.confidence, other.confidence)
-                        base.estimated_temp = max(base.estimated_temp, other.estimated_temp)
-                        changed = True
-                    else:
-                        unmerged.append(other)
-                hotspots = unmerged
-            
-            merged_hotspots.append(base)
-            
-        return merged_hotspots, binary
+        return hotspots, binary
 
 
-# ============ UNIFIED FRAME PIPELINE ============
+# ============ MAIN PIPELINE ============
 
 from centroid_tracker import CentroidTracker
 
 class ThermalFramePipeline:
     """
-    Single source of truth for thermal frames.
-    
-    Provides synchronized:
-    - Frame display (MJPEG)
-    - Hotspot detection (with tracking)
-    - Alert generation (per unique ID)
+    Orchestrates detection, tracking, and alerting.
+    Integration point for Server.
     """
     
-    def __init__(self, source: VideoSource, on_detection: Optional[Callable] = None):
+    def __init__(self, source, on_detection: Optional[Callable] = None):
         self.source = source
-        # min_area=25 on 160x124 detect frame (approx 100 pixels on 640x480)
-        # This allows detecting people much further away (small heat blobs)
-        self.detector = ThermalDetector(adaptive=True, min_area=25)
-        self.detector = ThermalDetector(adaptive=True, min_area=25)
-        # Increased max_distance to 100 to handle fast movement/falls without losing ID
-        self.tracker = CentroidTracker(max_disappeared=50, max_distance=100)
-        self.on_detection = on_detection
+        self.detector = ThermalDetector(min_area=20) # 20px on 160x124 grid
+        self.tracker = CentroidTracker(max_disappeared=10, max_distance=60)
         self.on_detection = on_detection
         
         self.frame_number = 0
-        self.current_frame = None
-        self.current_hotspots: List[Hotspot] = []
+        self.current_hotspots = []
         
-        # Track which IDs we've already alerted on
-        # Track timestamps for alerts to allow re-alerting
-        # Dict[int, float] -> {track_id: last_alert_timestamp}
-        self.alerted_ids: dict = {}
+        # --- TRACKING MEMORY ---
+        # Stores history for ID persistence
+        # { track_id: { 'first_seen': ts, 'last_alert': ts, 'max_temp': val, 'confirmed': bool } }
+        self.track_memory = {} 
         
-        # Rate Limiting
-        self.global_last_alert = 0.0
-        self.last_alert_coords = None
-        
-        # Stats
-        self.detection_count = 0
-        self.alert_count = 0
-    
     def process_next(self) -> Optional[np.ndarray]:
-        """
-        Get next frame, detect hotspots, track objects, trigger alerts for NEW IDs.
-        Detection runs on smaller frame for speed; boxes scaled up for display.
-        """
+        """Main loop step: Get Frame -> Detect -> Track -> Alert."""
         try:
-            frame = self.source.get_frame()
-            if frame is None:
-                return None
+            full_frame = self.source.get_frame() # 512x396
+            if full_frame is None: return None
             
             self.frame_number += 1
-            self.current_frame = frame.copy()
             timestamp = datetime.utcnow()
+            now_ts = time.time()
             
-            # 1. Detect hotspots on SMALLER frame for speed
+            # 1. Detection (Downscaled)
             if hasattr(self.source, 'get_detect_frame'):
-                detect_frame = self.source.get_detect_frame(frame)
-                scale_x = frame.shape[1] / detect_frame.shape[1]
-                scale_y = frame.shape[0] / detect_frame.shape[0]
+                detect_frame = self.source.get_detect_frame(full_frame)
+                scale_x = full_frame.shape[1] / detect_frame.shape[1]
+                scale_y = full_frame.shape[0] / detect_frame.shape[0]
             else:
-                detect_frame = frame
+                detect_frame = full_frame
                 scale_x = scale_y = 1.0
+                
+            raw_hotspots, _ = self.detector.process(detect_frame)
             
-            raw_hotspots, binary = self.detector.process(detect_frame)
-            
-            # Scale hotspot coordinates back to display resolution
-            if scale_x != 1.0:
-                for h in raw_hotspots:
-                    h.x = int(h.x * scale_x)
-                    h.y = int(h.y * scale_y)
-                    h.width = int(h.width * scale_x)
-                    h.height = int(h.height * scale_y)
-            
-            # Add debug prints to trace raw hotspot detection.
-            if self.frame_number % 30 == 0:
-                print(f"[DEBUG] Frame {self.frame_number}: Found {len(raw_hotspots)} raw hotspots. Tracker has {len(self.tracker.objects)} objects.", flush=True)
-
-            # 2. Prepare bounding boxes for tracker
+            # Scale coordinates back to full frame
             rects = []
             for h in raw_hotspots:
-                # Lower threshold to ensure we don't lose tracking during fluctuations
-                if h.confidence >= 0.65: 
-                    rects.append((h.x, h.y, h.width, h.height))
-            
-            # 3. Update Tracker
+                h.x = int(h.x * scale_x)
+                h.y = int(h.y * scale_y)
+                h.width = int(h.width * scale_x)
+                h.height = int(h.height * scale_y)
+                rects.append((h.x, h.y, h.width, h.height))
+                
+            # 2. Update Tracker
+            # CentroidTracker returns {id: (cx, cy)}
             objects = self.tracker.update(rects)
             
-            # 4. Match tracked objects back to hotspots (with SMOOTHING & PERSISTENCE)
             tracked_hotspots = []
             new_alerts = []
             
-            # Ensure memory exists
-            if not hasattr(self, 'track_memory'):
-                self.track_memory = {}
+            # 3. Associate Hotspots with IDs
+            # We need to map the raw hotspots to the track IDs based on distance
+            # to preserve the rich metadata (temp, confidence)
+            
+            used_hotspots = set()
+            
+            for obj_id, centroid in objects.items():
+                # Find closest raw hotspot
+                best_h = None
+                min_dist = 99999
                 
-            active_ids = set()
-
-            for (object_id, centroid) in objects.items():
-                active_ids.add(object_id)
-                
-                # Find the hotspot that matches this centroid (closest)
-                best_match = None
-                min_dist = float('inf')
-                
-                for h in raw_hotspots:
-                    cx = h.x + h.width // 2
-                    cy = h.y + h.height // 2
+                for i, h in enumerate(raw_hotspots):
+                    if i in used_hotspots: continue
+                    cx, cy = h.x + h.width//2, h.y + h.height//2
                     dist = np.sqrt((cx - centroid[0])**2 + (cy - centroid[1])**2)
                     
-                    if dist < 120:  # Threshold to associate
-                        if dist < min_dist:
-                            min_dist = dist
-                            best_match = h
+                    if dist < 50 and dist < min_dist: # Association threshold
+                        min_dist = dist
+                        best_h = h
+                        best_h_idx = i
                 
-                # --- SMOOTHING LOGIC ---
-                last_state = self.track_memory.get(object_id)
+                # --- MEMORY UPDATE ---
+                mem = self.track_memory.setdefault(obj_id, {
+                    'first_seen': now_ts,
+                    'last_alert': 0,
+                    'max_temp': 0,
+                    'persistence': 0,
+                    'confirmed': False
+                })
                 
-                if best_match:
-                    # LIVE DETECTION
-                    h = best_match
-                    h.is_ghost = False  # Flag as LIVE
+                final_hotspot = None
+                
+                if best_h:
+                    # Found live match
+                    used_hotspots.add(best_h_idx)
+                    best_h.track_id = obj_id
                     
-                    if last_state:
-                        # Smooth the box: 40% new, 60% old (Smoother)
-                        alpha = 0.40
-                        h.x = int(last_state['x'] * (1-alpha) + h.x * alpha)
-                        h.y = int(last_state['y'] * (1-alpha) + h.y * alpha)
-                        h.width = int(last_state['w'] * (1-alpha) + h.width * alpha)
-                        h.height = int(last_state['h'] * (1-alpha) + h.height * alpha)
+                    # Update Memory
+                    mem['max_temp'] = max(mem['max_temp'], best_h.estimated_temp)
+                    mem['persistence'] += 1
                     
-                    # Update memory
-                    self.track_memory[object_id] = {
-                        'x': h.x, 'y': h.y, 'w': h.width, 'h': h.height,
-                        'hotspot_data': h 
-                    }
+                    final_hotspot = best_h
                 else:
-                    # GHOST DETECTION (Gap Filling)
-                    if last_state:
-                        h = last_state['hotspot_data']
-                        h.is_ghost = True  # Flag as GHOST
-                        # Use last known dimensions
-                        h.x = last_state['x']
-                        h.y = last_state['y']
-                        h.width = last_state['w']
-                        h.height = last_state['h']
-                    else:
-                        continue 
-
-                # --- SIZE FILTER ---
-                # Ignore very small boxes (e.g. distant noise, birds)
-                # 35x35 = 1225 pixels (Close range humans only)
-                if h.width * h.height < 1200:
+                    # Lost visual but tracker holding it (probation)
+                    # Create a "Ghost" hotspot from last known pos?
+                    # For now, we skip ghosts in visual output to clean up display
                     continue
-
-                # --- SHAPE CHANGE DETECTION (Fall/Posture) ---
-                current_ar = h.width / h.height if h.height > 0 else 0
-                last_ar = 0.0
                 
-                if last_state:
-                    last_ar = last_state.get('ar', current_ar)
+                # --- CONFIRMATION LOGIC ---
+                # Must be seen for 3+ consecutive frames to be real
+                if mem['persistence'] >= 3:
+                    mem['confirmed'] = True
+                    final_hotspot.is_confirmed = True
+                
+                # --- ALERT LOGIC ---
+                # 1. Must be Confirmed
+                # 2. Cooldown: > 60s since last alert OR significant temp rise (+2C)
+                
+                if mem['confirmed']:
+                    time_since = now_ts - mem['last_alert']
+                    temp_gain = final_hotspot.estimated_temp - (mem['max_temp'] - 2.0) # Approx check
                     
-                    # Check for significant shape change (> 0.5)
-                    # e.g. 0.5 (Standing) -> 2.0 (Lying down) = delta 1.5
-                    if abs(current_ar - last_ar) > 0.5 and h.is_confirmed:
-                        print(f"[DEBUG] SHAPE CHANGE ID {object_id}: AR {last_ar:.2f} -> {current_ar:.2f}", flush=True)
-                        # DISABLED: User reported duplicate alerts.
-                        # Strict 1-Alert-Per-ID policy active.
-                        # self.alerted_ids[object_id] = 0
-
-                # Update memory with new Aspect Ratio
-                if object_id in self.track_memory:
-                     self.track_memory[object_id]['ar'] = current_ar
-
-                h.track_id = object_id
-                
-                # --- PROBATION CHECK (Anti-Spam) ---
-                persistence = self.tracker.persistence.get(object_id, 0)
-                is_confirmed = persistence >= 8
-                print(f"[DEBUG] ID: {object_id}, Persistence: {persistence}, Confirmed: {is_confirmed}", flush=True)
-                h.is_confirmed = is_confirmed
-                tracked_hotspots.append(h)
-                
-                # Trigger Alert IF:
-                # 1. Confirmed Object
-                # 2. Not in Per-ID Cooldown (30s)
-                # 3. Not in Global Cooldown (8s)
-                
-                last_id_alert = self.alerted_ids.get(object_id, 0)
-                now = time.time()
-                
-                last_id_alert = self.alerted_ids.get(object_id, 0)
-                now = time.time()
-                
-                # Check 1: Per-ID Cooldown (5 Minutes - 300s)
-                # If we alerted on this person recently, DO NOT alert again.
-                if is_confirmed and (now - last_id_alert) > 300.0:
+                    should_alert = False
                     
-                    # Check 2: Global Cooldown (8 seconds silence)
-                    if (now - self.global_last_alert) < 8.0:
-                        print(f"[DEBUG] Global Cooldown Active. Time since last: {now - self.global_last_alert:.1f}s", flush=True)
-                        continue
-
-                    # FIRE ALERT
-                    print(f"[DEBUG] TRIGGERING ALERT for ID {object_id}!", flush=True)
-                    self.alerted_ids[object_id] = now
-                    self.global_last_alert = now
-                    self.last_alert_coords = (h.x, h.y)
-                    new_alerts.append(h)
-                    self.alert_count += 1
-            
-            # --- GHOST KILLER (Fix Nested Boxes) ---
-            # If a Ghost Box overlaps with a Live Box, it means it was merged.
-            # We must kill the Ghost to prevent it from showing up inside the new box.
-            
-            final_list = []
-            live_boxes = [h for h in tracked_hotspots if not getattr(h, 'is_ghost', False)]
-            
-            for h in tracked_hotspots:
-                if getattr(h, 'is_ghost', False):
-                    # This is a Ghost. Check if it's inside a Live Box.
-                    killed = False
-                    for live in live_boxes:
-                        # Check Intersection
-                        ix = min(h.x + h.width, live.x + live.width) - max(h.x, live.x)
-                        iy = min(h.y + h.height, live.y + live.height) - max(h.y, live.y)
+                    # Initial Alert
+                    if mem['last_alert'] == 0:
+                        should_alert = True
+                    
+                    # Cooldown Expired (Re-alert)
+                    elif time_since > 60.0:
+                        should_alert = True
                         
-                        # If significant overlap, kill it
-                        if ix > 0 and iy > 0:
-                            killed = True
-                            # Force remove from tracker memory
-                            self.tracker.deregister(h.track_id)
-                            # SAFE POP
-                            self.track_memory.pop(h.track_id, None)
-                            break
+                    # Significant Temp Rise (Urgent update)
+                    elif final_hotspot.estimated_temp > (mem['max_temp'] + 2.0):
+                        should_alert = True
                     
-                    if not killed:
-                        final_list.append(h)
-                else:
-                    final_list.append(h)
+                    if should_alert:
+                        mem['last_alert'] = now_ts
+                        mem['max_temp'] = final_hotspot.estimated_temp # Update baseline
+                        new_alerts.append(final_hotspot)
+                
+                tracked_hotspots.append(final_hotspot)
 
-            
-            # --- GARBAGE COLLECTION ---
-            # Cleanup alert IDs
-            # Only remove if VERY old (e.g. 5 minutes) to prevent re-alerting on flicker
-            now = time.time()
-            for alerted_id, timestamp in list(self.alerted_ids.items()):
-                if (now - timestamp) > 300: # 5 minutes retention
-                    self.alerted_ids.pop(alerted_id, None)
-            
-            # Cleanup track memory
+            # Cleanup Memory for dead IDs
+            active_ids = set(objects.keys())
             for tid in list(self.track_memory.keys()):
                 if tid not in active_ids:
-                    self.track_memory.pop(tid, None)
+                    del self.track_memory[tid]
+
+            self.current_hotspots = tracked_hotspots
             
-            self.current_hotspots = final_list
-            
-            # 5. Trigger Alerts (only for CONFIRMED objects)
-            if new_alerts:
-                self.detection_count += 1
-                
+            # 4. Trigger Events
+            if new_alerts and self.on_detection:
                 event = DetectionEvent(
                     hotspots=new_alerts,
-                    timestamp=datetime.fromtimestamp(now),
+                    timestamp=timestamp,
                     frame_number=self.frame_number,
                     total_count=len(tracked_hotspots)
                 )
-                
-                if self.on_detection:
-                    self.on_detection(event)
-            
-            # Annotate frame
-            return self._annotate(frame, self.current_hotspots)
-        
+                self.on_detection(event)
+
+            # 5. Annotate
+            return self._annotate(full_frame, tracked_hotspots)
+
         except Exception as e:
-            # SAFETY FALLBACK: If anything crashes, return empty frame
-            # This prevents the stream from dying (black screen)
-            print(f"[ERROR] Thermal Pipeline Crash: {e}")
-            if 'frame' in locals() and frame is not None:
-                try:
-                    return self._annotate(frame, [])
-                except:
-                    return frame
-            return None
-    
+            logger.error(f"Pipeline Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None # Fail safe
+
     def _annotate(self, frame: np.ndarray, hotspots: List[Hotspot]) -> np.ndarray:
-        """Apply thermal colormap and draw clean bounding boxes on frame."""
-        # Apply INFERNO colormap (purple->orange->yellow) — matches reference image
+        """Draw bounding boxes and UI on frame."""
+        # Convert to BGR if needed
         if len(frame.shape) == 2:
-            annotated = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
+            display = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+            # Optional: Apply thermal colormap
+            display = cv2.applyColorMap(frame, cv2.COLORMAP_INFERNO)
         else:
-            annotated = frame.copy()
-        
-        # Filter for display
-        # We show EVERYTHING, but style them differently based on 'confirmed' status
-        visible = [h for h in hotspots if hasattr(h, 'track_id')]
-        
-        for h in visible:
-            # Add padding
-            pad = 8
-            h_img, w_img = annotated.shape[:2]
+            display = frame.copy()
             
-            x = max(0, h.x - pad)
-            y = max(0, h.y - pad)
-            w = min(w_img - x, h.width + 2*pad)
-            height = min(h_img - y, h.height + 2*pad)
+        for h in hotspots:
+            # Color: Green (Confirmed), Yellow (Probation)
+            color = (0, 255, 0) if h.is_confirmed else (0, 255, 255)
+            thick = 2 if h.is_confirmed else 1
             
-            # --- STYLE: Confirmed vs Probation ---
-            if h.is_confirmed:
-                # Green = Confirmed Target
-                color = (0, 255, 0)
-                thickness = 2
-                label = f"{h.estimated_temp:.0f}C | Life: {self._calculate_life_score(h)}%"
-            else:
-                # Gray = Probation (Acquiring...)
-                color = (128, 128, 128)
-                thickness = 1
-                label = "..." # Minimal label for noise
-                
-                # Skip drawing noise if confidence is super low
-                if h.confidence < 0.3: continue
+            # Draw Box
+            cv2.rectangle(display, (h.x, h.y), (h.x + h.width, h.y + h.height), color, thick)
             
-            cv2.rectangle(annotated, (x, y), (x + w, y + height), color, thickness)
+            # Draw Label
+            label = f"#{h.track_id} {h.estimated_temp:.0f}C"
+            cv2.putText(display, label, (h.x, h.y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
             
-            # Draw Label (Only for confirmed or high confidence)
-            if h.is_confirmed:
-                (text_w, text_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)
-                cv2.rectangle(annotated, (x, y - text_h - 4), (x + text_w, y), (0,0,0), -1)
-                cv2.putText(annotated, label, (x, y - 4), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
-        
-        # Minimal status bar
-        active_targets = sum(1 for h in visible if h.is_confirmed)
-        info = f"Targets: {active_targets} | Acquiring: {len(visible) - active_targets}"
-        cv2.putText(annotated, info, (8, annotated.shape[0] - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
-        
-        return annotated
+        # Status Bar
+        count = sum(1 for h in hotspots if h.is_confirmed)
+        cv2.putText(display, f"Targets: {count}", (10, display.shape[0]-10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    
+        return display
 
     def _calculate_life_score(self, h: Hotspot) -> int:
         """Helper to scoring logic."""
