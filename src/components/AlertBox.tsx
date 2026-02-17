@@ -55,7 +55,7 @@ const alertTypes = {
 };
 
 export const AlertBox = () => {
-  const { alerts, clearAlerts } = useDetection();
+  const { alerts } = useDetection();
 
   return (
     <Card className="bg-card/90 dark:bg-[#0A0A0A]/90 border border-border dark:border-white/10 backdrop-blur-sm flex flex-col overflow-hidden shadow-xl h-full">
@@ -65,19 +65,9 @@ export const AlertBox = () => {
           <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           <CardTitle className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Event Log</CardTitle>
         </div>
-        <div className="flex items-center space-x-2">
-          {alerts.length > 0 && (
-            <button
-              onClick={clearAlerts}
-              className="text-[9px] font-mono px-2 py-0.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-colors tracking-wider"
-            >
-              CLEAR ALL
-            </button>
-          )}
-          <Badge variant="outline" className="text-[10px] font-mono border-border dark:border-white/10 text-muted-foreground bg-muted/50 dark:bg-white/5">
-            {alerts.length} EVENTS
-          </Badge>
-        </div>
+        <Badge variant="outline" className="text-[10px] font-mono border-border dark:border-white/10 text-muted-foreground bg-muted/50 dark:bg-white/5">
+          {alerts.length} EVENTS
+        </Badge>
       </CardHeader>
 
       {/* Scrollable Content */}

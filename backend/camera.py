@@ -125,7 +125,7 @@ class RpicamCamera(BaseCamera):
     Outputs MJPEG directly to stdout for high performance.
     Use asyncio.Event for zero-latency frame signaling.
     """
-    def __init__(self, resolution=(640, 480), framerate=30):
+    def __init__(self, resolution=(640, 480), framerate=15):
         self.resolution = resolution
         self.framerate = framerate
         self.frame = None
@@ -336,8 +336,8 @@ async def generate_rgb_stream():
     while True:
         # Wait for a new frame (event-driven) instead of blind polling
         if hasattr(camera, 'wait_for_frame'):
-            # Wait up to 80ms for a new frame signal (camera runs at ~15 fps = 67ms/frame)
-            await camera.wait_for_frame(timeout=0.08)
+            # Wait for event signal
+            await camera.wait_for_frame(timeout=0.2)
         else:
             await asyncio.sleep(0.01)
             

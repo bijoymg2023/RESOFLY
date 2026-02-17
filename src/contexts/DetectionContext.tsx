@@ -20,7 +20,6 @@ export interface DetectionContextType {
     activeAlerts: DetectionEvent[]; // Only active/recent for Alert Box
     selectedAlert: DetectionEvent | null; // For map focus
     ackAlert: (id: string) => void;
-    clearAlerts: () => void; // Clear all alerts
     focusAlert: (alert: DetectionEvent) => void;
     clearSelection: () => void;
 }
@@ -67,16 +66,54 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setSelectedAlert(null);
     }, []);
 
-    const clearAlerts = useCallback(() => {
-        setAlerts([]);
-        setSelectedAlert(null);
+    // --- Backend Integration ---
+
+    // Function to fetch alerts from backend
+    const refreshAlerts = useCallback(async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+
+            const res = await fetch('/api/alerts', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+
+                // Map backend alerts to frontend DetectionEvent interface
+                const mappedAlerts: DetectionEvent[] = data.map((a: any) => ({
+                    id: a.id,
+                    type: a.type.toUpperCase() as any, // 'life' -> 'LIFE'
+                    confidence: a.confidence || 0.8,
+                    max_temp: a.max_temp || 0,
+                    lat: a.lat || 0,
+                    lon: a.lon || 0,
+                    timestamp: new Date(a.timestamp).toLocaleTimeString([], { hour12: false }),
+                    fullTimestamp: new Date(a.timestamp),
+                    isActive: !a.acknowledged
+                }));
+
+                // Update state only if changed (simple comparison)
+                setAlerts(prev => {
+                    const hasNew = mappedAlerts.some(ma => !prev.find(p => p.id === ma.id));
+                    const stateChanged = mappedAlerts.length !== prev.length || hasNew;
+                    return stateChanged ? mappedAlerts : prev;
+                });
+            }
+        } catch (e) {
+            console.error("Failed to sync alerts with backend:", e);
+        }
     }, []);
 
-    // --- WebSocket-Only Alert System ---
-    // NO REST fetching. Alert box starts empty on every page load.
-    // Only live WebSocket events populate alerts.
-
     useEffect(() => {
+        // Initial fetch
+        refreshAlerts();
+
+        // Polling loop (fallback for REST sync)
+        const interval = setInterval(refreshAlerts, 5000); // Reduced frequency since we have WebSocket
+
+        // WebSocket connection for instant alerts
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${wsProtocol}//${window.location.host}/ws/alerts`;
         let ws: WebSocket | null = null;
@@ -143,13 +180,14 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         connectWebSocket();
 
         return () => {
+            clearInterval(interval);
             if (reconnectTimer) clearTimeout(reconnectTimer);
             ws?.close();
         };
-    }, []);
+    }, [refreshAlerts]);
 
     return (
-        <DetectionContext.Provider value={{ alerts, activeAlerts, selectedAlert, ackAlert, clearAlerts, focusAlert, clearSelection }}>
+        <DetectionContext.Provider value={{ alerts, activeAlerts, selectedAlert, ackAlert, focusAlert, clearSelection }}>
             {children}
         </DetectionContext.Provider>
     );
