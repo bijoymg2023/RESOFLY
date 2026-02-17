@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-    Bluetooth, Signal, Target, Radar, Activity, Zap, Info, Shield, Gauge, X, MapPin
+    Bluetooth, Signal, Target, Radar, Activity, Zap, Info, Shield, Gauge, X, MapPin, RefreshCw
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -121,6 +121,15 @@ const SignalTracker = () => {
                     <CardTitle className="text-[11px] font-black uppercase tracking-[0.45em] text-white/60">SIGNAL TRACKER</CardTitle>
                 </div>
                 <div className="flex items-center space-x-2">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-white/40 hover:text-cyan-400 hover:bg-cyan-500/10"
+                        onClick={scan}
+                        disabled={scanning}
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
+                    </Button>
                     <Badge variant="outline" className={`h-4 text-[7px] border-white/10 px-2 flex items-center space-x-1.5 ${scanning ? 'bg-cyan-500/10 text-cyan-400' : 'bg-white/5 text-white/20'}`}>
                         <div className={`w-1 h-1 rounded-full ${scanning ? 'bg-cyan-500 animate-pulse' : 'bg-white/20'}`} />
                         <span>{scanning ? 'UPLINK_LIVE' : 'NET_IDLE'}</span>
