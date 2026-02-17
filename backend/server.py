@@ -27,7 +27,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer
+from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, select, Float, Integer, text
 import thermal_pipeline
 from datetime import datetime, timedelta, timezone
 import json
@@ -300,7 +300,18 @@ async def delete_alert(alert_id: str, db: AsyncSession = Depends(get_db), curren
         raise HTTPException(status_code=404, detail="Alert not found")
     await db.delete(alert)
     await db.commit()
-    return {"message": "Alert deleted"}
+    return {"status": "success"}
+
+@api_router.delete("/alerts")
+async def delete_all_alerts(db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Clear all alerts from the database."""
+    try:
+        await db.execute(text("DELETE FROM alerts"))
+        await db.commit()
+        return {"status": "success", "message": "All alerts cleared"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 @api_router.get("/thermal/status")
 async def thermal_camera_status():

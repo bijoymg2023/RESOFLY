@@ -67,9 +67,23 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setSelectedAlert(null);
     }, []);
 
-    const clearAlerts = useCallback(() => {
-        setAlerts([]);
-        toast.success("All alerts cleared");
+    const clearAlerts = useCallback(async () => {
+        try {
+            // Optimistic update
+            setAlerts([]);
+
+            const token = localStorage.getItem('token');
+            if (token) {
+                await fetch('/api/alerts', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            }
+            toast.success("All alerts cleared");
+        } catch (e) {
+            console.error("Failed to clear alerts:", e);
+            toast.error("Failed to clear alerts from server");
+        }
     }, []);
 
     // --- Backend Integration ---
@@ -193,7 +207,15 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, [refreshAlerts]);
 
     return (
-        <DetectionContext.Provider value={{ alerts, activeAlerts, selectedAlert, ackAlert, focusAlert, clearSelection }}>
+        <DetectionContext.Provider value={{
+            alerts,
+            activeAlerts,
+            selectedAlert,
+            ackAlert,
+            focusAlert,
+            clearSelection,
+            clearAlerts
+        }}>
             {children}
         </DetectionContext.Provider>
     );
