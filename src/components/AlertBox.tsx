@@ -7,7 +7,8 @@ import {
   CheckCircle,
   XCircle,
   Activity,
-  Flame
+  Flame,
+  Trash2
 } from 'lucide-react';
 import { useDetection } from '@/contexts/DetectionContext';
 
@@ -55,7 +56,7 @@ const alertTypes = {
 };
 
 export const AlertBox = () => {
-  const { alerts } = useDetection();
+  const { alerts, clearAlerts } = useDetection();
 
   return (
     <Card className="bg-card/90 dark:bg-[#0A0A0A]/90 border border-border dark:border-white/10 backdrop-blur-sm flex flex-col overflow-hidden shadow-xl h-full">
@@ -65,9 +66,18 @@ export const AlertBox = () => {
           <div className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           <CardTitle className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Event Log</CardTitle>
         </div>
-        <Badge variant="outline" className="text-[10px] font-mono border-border dark:border-white/10 text-muted-foreground bg-muted/50 dark:bg-white/5">
-          {alerts.length} EVENTS
-        </Badge>
+        <div className="flex items-center space-x-2">
+          <Badge variant="outline" className="text-[10px] font-mono border-border dark:border-white/10 text-muted-foreground bg-muted/50 dark:bg-white/5">
+            {alerts.length} EVENTS
+          </Badge>
+          <button
+            onClick={clearAlerts}
+            className="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground hover:text-white"
+            title="Clear Logs"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </CardHeader>
 
       {/* Scrollable Content */}
@@ -98,7 +108,7 @@ export const AlertBox = () => {
                     {alert.type}
                   </span>
                   <span className="text-foreground/80 dark:text-white/80 flex-1 text-[11px] truncate">
-                    {(alert.type === 'LIFE' || alert.type === 'life')
+                    {((alert.type as string).toUpperCase() === 'LIFE')
                       ? `Human Signature (Conf: ${(alert.confidence * 100).toFixed(0)}%)`
                       : `Detection Event at ${alert.lat.toFixed(4)}, ${alert.lon.toFixed(4)}`
                     }

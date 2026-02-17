@@ -22,6 +22,7 @@ export interface DetectionContextType {
     ackAlert: (id: string) => void;
     focusAlert: (alert: DetectionEvent) => void;
     clearSelection: () => void;
+    clearAlerts: () => void;
 }
 
 // --- Context ---
@@ -64,6 +65,11 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const clearSelection = useCallback(() => {
         setSelectedAlert(null);
+    }, []);
+
+    const clearAlerts = useCallback(() => {
+        setAlerts([]);
+        toast.success("All alerts cleared");
     }, []);
 
     // --- Backend Integration ---

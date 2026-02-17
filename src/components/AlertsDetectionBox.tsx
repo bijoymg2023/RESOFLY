@@ -9,7 +9,8 @@ import {
     Thermometer,
     MapPin,
     Target,
-    X
+    X,
+    Trash2
 } from 'lucide-react';
 import { useDetection, DetectionEvent } from '@/contexts/DetectionContext';
 
@@ -21,7 +22,7 @@ const alertConfig = {
 };
 
 export const AlertsDetectionBox = () => {
-    const { activeAlerts, focusAlert, ackAlert } = useDetection();
+    const { activeAlerts, focusAlert, ackAlert, clearAlerts } = useDetection();
 
     return (
         <Card className="bg-card/90 dark:bg-[#0A0A0A]/90 border border-border dark:border-white/10 backdrop-blur-sm flex flex-col overflow-hidden shadow-xl h-full">
@@ -31,9 +32,18 @@ export const AlertsDetectionBox = () => {
                     <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                     <CardTitle className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Active Threats</CardTitle>
                 </div>
-                <Badge variant="outline" className="text-[10px] font-mono border-red-500/20 text-red-400 bg-red-500/10">
-                    {activeAlerts.length} DETECTED
-                </Badge>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={clearAlerts}
+                        className="p-1 hover:bg-white/10 rounded transition-colors text-red-500/60 hover:text-red-400"
+                        title="Clear All Threats"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <Badge variant="outline" className="text-[10px] font-mono border-red-500/20 text-red-400 bg-red-500/10">
+                        {activeAlerts.length} DETECTED
+                    </Badge>
+                </div>
             </CardHeader>
 
             {/* Scrollable Content */}
