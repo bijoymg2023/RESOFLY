@@ -292,6 +292,17 @@ async def acknowledge_alert(alert_id: str, db: AsyncSession = Depends(get_db), c
     await db.refresh(alert)
     return alert
 
+@api_router.post("/alerts/acknowledge-all")
+async def acknowledge_all_alerts(db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
+    """Mark all alerts as acknowledged."""
+    try:
+        await db.execute(text("UPDATE alerts SET acknowledged = :ack"), {"ack": True})
+        await db.commit()
+        return {"status": "success", "message": "All alerts acknowledged"}
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @api_router.delete("/alerts/{alert_id}")
 async def delete_alert(alert_id: str, db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_user)):
     result = await db.execute(select(AlertDB).where(AlertDB.id == alert_id))

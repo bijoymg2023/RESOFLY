@@ -23,6 +23,7 @@ export interface DetectionContextType {
     focusAlert: (alert: DetectionEvent) => void;
     clearSelection: () => void;
     clearAlerts: () => void;
+    dismissAllAlerts: () => void;
 }
 
 // --- Context ---
@@ -83,6 +84,25 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         } catch (e) {
             console.error("Failed to clear alerts:", e);
             toast.error("Failed to clear alerts from server");
+        }
+    }, []);
+
+    const dismissAllAlerts = useCallback(async () => {
+        try {
+            // Optimistic update
+            setAlerts(prev => prev.map(a => ({ ...a, isActive: false })));
+
+            const token = localStorage.getItem('token');
+            if (token) {
+                await fetch('/api/alerts/acknowledge-all', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            }
+            toast.success("All active threats dismissed");
+        } catch (e) {
+            console.error("Failed to dismiss alerts:", e);
+            toast.error("Failed to dismiss alerts");
         }
     }, []);
 
@@ -214,7 +234,8 @@ export const DetectionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             ackAlert,
             focusAlert,
             clearSelection,
-            clearAlerts
+            clearAlerts,
+            dismissAllAlerts
         }}>
             {children}
         </DetectionContext.Provider>
