@@ -1064,22 +1064,25 @@ async def background_monitor():
 app.include_router(api_router)
 
 # Static Files & SPA Fallback
-if os.path.exists("../dist"):
-    app.mount("/assets", StaticFiles(directory="../dist/assets"), name="assets")
+DIST_DIR = ROOT_DIR.parent / "dist"
+DATASET_DIR = ROOT_DIR.parent / "dataset"
+
+if DIST_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets")), name="assets")
     
     # Mount Dataset Videos
-    if os.path.exists("../dataset"):
-        app.mount("/dataset", StaticFiles(directory="../dataset"), name="dataset")
+    if DATASET_DIR.exists():
+        app.mount("/dataset", StaticFiles(directory=str(DATASET_DIR)), name="dataset")
     
     # Mount Static Captures
     app.mount("/static", StaticFiles(directory=str(ROOT_DIR / "static")), name="static")
     
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
-        file_path = Path("../dist") / full_path
+        file_path = DIST_DIR / full_path
         if file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse("../dist/index.html")
+            return FileResponse(str(file_path))
+        return FileResponse(str(DIST_DIR / "index.html"))
 
 if __name__ == "__main__":
     import uvicorn
