@@ -1008,13 +1008,13 @@ async def signal_monitor_loop():
             async with signal_cache_lock:
                 signal_cache = all_devices
             
-            # Short sleep between scans to prevent 100% CPU on hardware bus
-            # Hardware scan already takes ~8s, this just adds a breath
-            await asyncio.sleep(1)
+            # Substantial sleep between scans to prevent 100% CPU and Wi-Fi interface drops!
+            # Continuous iwlist scanning will cause the wlan0 interface to drop packets and kill Cloudflare Tunnel.
+            await asyncio.sleep(60)
             
         except Exception as e:
             print(f"[SIGNAL] Background loop error: {e}", flush=True)
-            await asyncio.sleep(5)
+            await asyncio.sleep(10)
 
 async def background_monitor():
     """Periodically checks system health and logs alerts."""
