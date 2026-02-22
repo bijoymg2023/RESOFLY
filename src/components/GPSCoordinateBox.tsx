@@ -190,26 +190,46 @@ export const GPSCoordinateBox = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="aspect-video bg-cyan-950/20 rounded-lg flex items-center justify-center border border-cyan-500/30 relative overflow-hidden group">
-            {/* Grid bg for map placeholder */}
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.1)_1px,transparent_1px)] bg-[size:40px_40px]" />
-
-            {gpsData && (
-              <div className="text-center z-10 space-y-4">
-                <div className="inline-block p-4 rounded-full bg-cyan-500/10 border border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
-                  <MapPin className="w-8 h-8 text-cyan-400" />
+            {gpsData ? (
+              <iframe
+                width="100%"
+                height="100%"
+                frameBorder="0"
+                style={{ border: 0 }}
+                src={`https://maps.google.com/maps?q=${gpsData.latitude},${gpsData.longitude}&z=16&output=embed`}
+                title="Tactical GPS Map"
+                className="absolute inset-0 z-10"
+              />
+            ) : (
+              <>
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.1)_1px,transparent_1px)] bg-[size:40px_40px]" />
+                <div className="text-center z-10 space-y-4">
+                  <div className="inline-block p-4 rounded-full bg-cyan-500/10 border border-cyan-500/50 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
+                    <MapPin className="w-8 h-8 text-cyan-400" />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold font-mono text-white tracking-widest">ACQUIRING SIGNAL</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold font-mono text-white tracking-widest">TARGET LOCATED</div>
-                  <div className="text-cyan-400 font-mono">
+              </>
+            )}
+
+            {/* Overlay for coordinates & external link button */}
+            {gpsData && (
+              <div className="absolute bottom-4 left-4 right-4 z-20 flex justify-between items-end pointer-events-none">
+                <div className="bg-black/80 backdrop-blur-md border border-cyan-500/30 p-2 rounded pointer-events-auto">
+                  <div className="text-[10px] font-bold font-mono text-white tracking-widest">TARGET LOCATED</div>
+                  <div className="text-cyan-400 font-mono text-sm">
                     {gpsData.latitude.toFixed(6)}, {gpsData.longitude.toFixed(6)}
                   </div>
                 </div>
+
                 <Button
-                  className="bg-cyan-500 text-black hover:bg-cyan-400 font-bold"
+                  className="bg-cyan-500/90 text-black hover:bg-cyan-400 font-bold pointer-events-auto backdrop-blur"
                   onClick={openInMaps}
                 >
                   <ExternalLink className="w-3 h-3 mr-2" />
-                  OPEN GOOGLE MAPS
+                  OPEN FULL MAP
                 </Button>
               </div>
             )}
