@@ -21,8 +21,7 @@ interface Capture {
   timestamp: string;
 }
 
-type VideoType = 'RGB' | 'Thermal' | 'Overlay';
-type ThermalMode = 'live' | 'gallery';
+type VideoType = 'RGB' | 'Thermal';
 
 /**
  * RGBStreamView - Native MJPEG stream for maximum FPS
@@ -69,24 +68,11 @@ const RGBStreamView = () => {
 
 export const VideoStreamBox = () => {
   const [activeType, setActiveType] = useState<VideoType>('Thermal');
-  const [thermalMode, setThermalMode] = useState<ThermalMode>('live');
-  const [latestCapture, setLatestCapture] = useState<Capture | null>(null);
-  const [gallery, setGallery] = useState<Capture[]>([]);
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [isCalibrating, setIsCalibrating] = useState(false);
-  const [captureError, setCaptureError] = useState<string | null>(null);
   const [streamError, setStreamError] = useState(false);
-  const { token } = useAuth();
-  const [selectedImage, setSelectedImage] = useState<Capture | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
 
   // Live Waveshare thermal MJPEG stream from backend pipeline
   const THERMAL_STREAM_URL = `/thermal/`;
-
-  // Fetch gallery on mount
-  useEffect(() => {
-    fetchGallery();
-  }, [token]);
 
   // Handle stream errors
   const handleStreamError = () => {
@@ -97,68 +83,9 @@ export const VideoStreamBox = () => {
     setStreamError(false);
   };
 
-  const fetchGallery = async () => {
-    try {
-      const res = await fetch('/api/gallery', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setGallery(data);
-        if (data.length > 0 && !selectedImage) {
-          setSelectedImage(data[0]);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch gallery", e);
-    }
-  };
-
-  const handleCapture = async () => {
-    setIsCapturing(true);
-    setCaptureError(null);
-    try {
-      const res = await fetch('/api/capture', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      if (res.ok) {
-        const newCapture = await res.json();
-        setLatestCapture(newCapture);
-        setSelectedImage(newCapture);
-        await fetchGallery();
-        // Switch to gallery to show the captured image
-        setThermalMode('gallery');
-      } else {
-        const err = await res.json();
-        setCaptureError(err.detail || "Capture Failed");
-      }
-    } catch (e) {
-      setCaptureError("Connection Error");
-      console.error("Capture failed", e);
-    } finally {
-      setIsCapturing(false);
-    }
-  };
-
-  const handleCalibrate = async () => {
-    setIsCalibrating(true);
-    try {
-      await fetch('/api/calibrate', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setTimeout(() => setIsCalibrating(false), 2000);
-    } catch (e) {
-      setIsCalibrating(false);
-    }
-  };
-
   const videoTypes = [
     { key: 'RGB' as VideoType, label: 'OPTICAL', icon: Video },
-    { key: 'Thermal' as VideoType, label: 'THERMAL', icon: Thermometer },
-    { key: 'Overlay' as VideoType, label: 'FUSION', icon: Layers }
+    { key: 'Thermal' as VideoType, label: 'THERMAL', icon: Thermometer }
   ];
 
   return (
@@ -184,51 +111,7 @@ export const VideoStreamBox = () => {
           ))}
         </div>
 
-        {/* Actions (Only in Thermal) */}
-        {activeType === 'Thermal' && (
-          <div className="pointer-events-auto flex space-x-2">
-            {/* Live/Gallery Toggle */}
-            <div className="flex bg-muted dark:bg-black/40 rounded-md border border-border dark:border-white/20 overflow-hidden">
-              <button
-                onClick={() => setThermalMode('live')}
-                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'live' ? 'bg-green-500/20 text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}
-              >
-                <Radio className="w-3 h-3" />
-                <span>LIVE</span>
-              </button>
-              <button
-                onClick={() => setThermalMode('gallery')}
-                className={`px-2 py-1 text-[9px] flex items-center space-x-1 ${thermalMode === 'gallery' ? 'bg-purple-500/20 text-purple-600 dark:text-purple-400' : 'text-muted-foreground'}`}
-              >
-                <Grid className="w-3 h-3" />
-                <span>GALLERY</span>
-              </button>
-            </div>
-
-            {/* Calibrate Button */}
-            <Button
-              onClick={handleCalibrate}
-              disabled={isCalibrating || isCapturing}
-              size="sm"
-              variant="outline"
-              className={`border-border dark:border-white/20 bg-muted dark:bg-black/40 text-cyan-600 dark:text-cyan-500 hover:text-cyan-500 dark:hover:text-cyan-400 text-[10px] h-8 ${isCalibrating ? 'animate-pulse border-cyan-500' : ''}`}
-            >
-              <RefreshCw className={`w-3 h-3 mr-2 ${isCalibrating ? 'animate-spin' : ''}`} />
-              {isCalibrating ? 'CALIBRATING' : 'FFC'}
-            </Button>
-
-            {/* Capture Button */}
-            <Button
-              onClick={handleCapture}
-              disabled={isCapturing}
-              size="sm"
-              className={`bg-red-600 hover:bg-red-500 text-white font-bold tracking-wider border border-red-400/30 shadow-[0_0_15px_rgba(220,38,38,0.5)] transition-all h-8 ${isCapturing ? 'opacity-50' : ''}`}
-            >
-              <Camera className={`w-3 h-3 mr-2 ${isCapturing ? 'animate-pulse' : ''}`} />
-              {isCapturing ? 'CAPTURING' : 'CAPTURE'}
-            </Button>
-          </div>
-        )}
+        {/* Actions (Only in Thermal) - Removed Gallery/Capture buttons as requested */}
       </div>
 
       <CardContent className="flex-1 p-0 h-full relative flex flex-col bg-neutral-900 dark:bg-[#050505]">
@@ -240,122 +123,43 @@ export const VideoStreamBox = () => {
 
           {activeType === 'Thermal' ? (
             <>
-              {/* LIVE STREAM MODE */}
-              {thermalMode === 'live' ? (
-                <>
-                  {streamError ? (
-                    <div className="text-white/30 font-mono flex flex-col items-center z-10">
-                      <AlertCircle className="w-16 h-16 mb-4 text-red-500/50" />
-                      <p className="tracking-widest text-xs text-red-400">STREAM OFFLINE</p>
-                      <p className="text-[10px] mt-2 text-white/30">Check thermal camera connection</p>
-                      <button
-                        onClick={() => setStreamError(false)}
-                        className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
-                      >
-                        Retry Connection
-                      </button>
-                    </div>
-                  ) : (
-                    <img
-                      ref={imgRef}
-                      src={THERMAL_STREAM_URL}
-                      alt="Live Thermal Feed"
-                      onLoad={handleStreamLoad}
-                      onError={handleStreamError}
-                      className="w-full h-full object-contain"
-                    />
-                  )}
-
-                  {/* Live Indicator */}
-                  {!streamError && (
-                    <div className="absolute top-20 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                      <span className="font-mono text-[9px] text-green-400">LIVE THERMAL</span>
-                    </div>
-                  )}
-                </>
-              ) : (
-                /* GALLERY MODE */
-                <>
-                  {selectedImage ? (
-                    <img
-                      src={selectedImage.url}
-                      alt="Selected Thermal Capture"
-                      className="w-full h-full object-contain transition-opacity duration-300"
-                    />
-                  ) : (
-                    <div className="text-white/30 font-mono flex flex-col items-center z-10">
-                      <ImageIcon className="w-16 h-16 mb-4 opacity-10" />
-                      <p className="tracking-widest text-xs">NO IMAGES CAPTURED</p>
-                      {captureError && (
-                        <div className="mt-4 text-red-500 bg-red-500/10 px-4 py-2 rounded border border-red-500/20 flex items-center text-xs">
-                          <AlertCircle className="w-3 h-3 mr-2" />
-                          {captureError}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Timestamp Info */}
-                  {selectedImage && (
-                    <div className="absolute top-20 right-4 text-right font-mono text-[9px] text-cyan-500/60 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
-                      <div>ID: {selectedImage.filename.substring(8, 20)}...</div>
-                      <div>TS: {selectedImage.timestamp}</div>
-                    </div>
-                  )}
-
-                  {/* Gallery Strip */}
-                  <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black via-black/80 to-transparent flex items-end px-4 pb-4 space-x-2 overflow-x-auto z-30 scrollbar-none">
-                    {gallery.map((img) => (
-                      <button
-                        key={img.filename}
-                        onClick={() => setSelectedImage(img)}
-                        className={`relative h-12 w-16 min-w-[64px] rounded border overflow-hidden transition-all hover:scale-110 hover:border-white ${selectedImage?.filename === img.filename ? 'border-cyan-500 opacity-100 ring-1 ring-cyan-500/50' : 'border-white/10 opacity-50 grayscale hover:grayscale-0'}`}
-                      >
-                        <img src={img.url} alt="thumbnail" className="w-full h-full object-cover" />
-                      </button>
-                    ))}
+              {/* LIVE STREAM MODE ONLY */}
+              <>
+                {streamError ? (
+                  <div className="text-white/30 font-mono flex flex-col items-center z-10">
+                    <AlertCircle className="w-16 h-16 mb-4 text-red-500/50" />
+                    <p className="tracking-widest text-xs text-red-400">STREAM OFFLINE</p>
+                    <p className="text-[10px] mt-2 text-white/30">Check thermal camera connection</p>
+                    <button
+                      onClick={() => setStreamError(false)}
+                      className="mt-4 px-4 py-2 bg-white/10 rounded text-xs hover:bg-white/20"
+                    >
+                      Retry Connection
+                    </button>
                   </div>
-                </>
-              )}
+                ) : (
+                  <img
+                    ref={imgRef}
+                    src={THERMAL_STREAM_URL}
+                    alt="Live Thermal Feed"
+                    onLoad={handleStreamLoad}
+                    onError={handleStreamError}
+                    className="w-full h-full object-contain"
+                  />
+                )}
 
-              {/* Flash Overlay */}
-              {isCapturing && (
-                <div className="absolute inset-0 bg-white animate-flash pointer-events-none z-50 mix-blend-overlay" />
-              )}
-
-              {/* Calibration Overlay */}
-              {isCalibrating && (
-                <div className="absolute inset-0 bg-black/80 z-40 flex items-center justify-center backdrop-blur-sm">
-                  <div className="text-cyan-500 font-mono text-sm animate-pulse tracking-widest">
-                    CALIBRATING SENSOR...
+                {/* Live Indicator */}
+                {!streamError && (
+                  <div className="absolute top-20 right-4 flex items-center space-x-2 bg-black/60 px-2 py-1 rounded backdrop-blur z-20 border border-white/5">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="font-mono text-[9px] text-green-400">LIVE THERMAL</span>
                   </div>
-                </div>
-              )}
+                )}
+              </>
             </>
-          ) : activeType === 'RGB' ? (
+          ) : (
             /* RGB Camera Stream from Pi Camera - Rapid Frame Polling */
             <RGBStreamView />
-          ) : (
-            /* Offline / Placeholder for Fusion */
-            <div className="flex flex-col items-center justify-center h-full w-full bg-black relative overflow-hidden">
-              <div className="absolute inset-0 opacity-5 bg-[url('https://upload.wikimedia.org/wikipedia/commons/7/76/Noise_tv.gif')] bg-repeat opacity-10 mix-blend-overlay pointer-events-none" />
-
-              <div className="z-10 flex flex-col items-center">
-                <div className="relative mb-6">
-                  <Layers className="w-16 h-16 text-yellow-900/40" />
-                  <ScanLine className="absolute inset-0 w-16 h-16 text-white/5 animate-scan" />
-                </div>
-
-                <div className="flex items-center space-x-2 px-4 py-1 bg-white/5 rounded border border-white/10 backdrop-blur">
-                  <div className="w-2 h-2 rounded-full animate-pulse bg-yellow-500" />
-                  <span className="font-mono text-xl font-bold tracking-[0.2em] text-white/40">NO SIGNAL</span>
-                </div>
-                <p className="font-mono text-[9px] text-white/20 mt-3 tracking-widest uppercase">
-                  Fusion Sensor Unavailable
-                </p>
-              </div>
-            </div>
           )}
 
           {/* HUD Overlay */}
