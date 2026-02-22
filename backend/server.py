@@ -843,6 +843,12 @@ async def startup():
     # 2. Log System Startup (separate try block, optional)
     try:
         async with AsyncSessionLocal() as db:
+            # WIPE ENTIRE DATABASE ON STARTUP AS REQUESTED
+            from sqlalchemy import delete
+            await db.execute(delete(AlertDB))
+            await db.commit()
+            print("[DB] Cleared previous alerts on startup.", flush=True)
+
             startup_alert = AlertDB(
                 id=str(uuid.uuid4()),
                 type='info',
