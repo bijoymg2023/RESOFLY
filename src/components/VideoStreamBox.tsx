@@ -33,7 +33,7 @@ const RGBStreamView = () => {
   const [hasError, setHasError] = useState(false);
 
   return (
-    <div className="relative w-full h-full bg-black">
+    <div className="relative w-full h-full bg-transparent">
       {!hasError ? (
         <img
           src="/api/stream/rgb"
