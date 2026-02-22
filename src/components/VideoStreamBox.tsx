@@ -114,12 +114,12 @@ export const VideoStreamBox = () => {
         {/* Actions (Only in Thermal) - Removed Gallery/Capture buttons as requested */}
       </div>
 
-      <CardContent className="flex-1 p-0 h-full relative flex flex-col bg-neutral-900 dark:bg-[#050505]">
+      <CardContent className="flex-1 p-0 h-full relative flex flex-col bg-white dark:bg-[#050505] transition-colors duration-300">
         {/* Content Area */}
         <div className="relative flex-1 flex items-center justify-center overflow-hidden">
 
           {/* Background Grid */}
-          <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(128,128,128,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(128,128,128,0.05)_1px,transparent_1px)] bg-[size:40px_40px]" />
+          <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(0,0,0,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.1)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]" />
 
           {activeType === 'Thermal' ? (
             <>
