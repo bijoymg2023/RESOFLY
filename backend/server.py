@@ -421,8 +421,8 @@ async def create_test_alert(db: AsyncSession = Depends(get_db)):
             message='Test thermal signature (Debug endpoint)',
             timestamp=datetime.utcnow(),
             acknowledged=False,
-            lat=12.9716 + random.uniform(-0.01, 0.01),
-            lon=77.5946 + random.uniform(-0.01, 0.01),
+            lat=9.5936 + random.uniform(-0.001, 0.001),
+            lon=76.5492 + random.uniform(-0.001, 0.001),
             confidence=0.85,
             max_temp=180.0
         )
@@ -468,9 +468,9 @@ class UnifiedGPSReader:
                 wifi_data["source"] = "network"
                 return wifi_data
                 
-        # 3. Last Resort
+        # 3. Last Resort - Saintgits IEDC
         return {
-            "latitude": 0.0, "longitude": 0.0, "altitude": 0.0,
+            "latitude": 9.5936, "longitude": 76.5492, "altitude": 0.0,
             "accuracy": 0.0, "speed": 0.0, "heading": 0.0,
             "timestamp": datetime.utcnow(), "source": "none"
         }
@@ -850,8 +850,8 @@ async def startup():
                 message='ResoFly Backend started successfully.',
                 timestamp=get_ist_time(),
                 acknowledged=False,
-                lat=0.0,
-                lon=0.0,
+                lat=9.5936,
+                lon=76.5492,
                 confidence=1.0,
                 max_temp=0.0
             )
@@ -897,8 +897,8 @@ async def startup():
             print(f"[DEBUG] on_detection_event CALLED! Frame: {event.frame_number}, Hotspots: {len(event.hotspots)}", flush=True)
             """Handle detection event - save to DB and broadcast."""
             # Get GPS (Default to 0.0 if no lock)
-            lat = 0.0
-            lon = 0.0
+            lat = 9.5936
+            lon = 76.5492
             
             if gps_reader:
                 gps_data = gps_reader.get_data()

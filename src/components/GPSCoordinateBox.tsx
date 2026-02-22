@@ -103,7 +103,7 @@ export const GPSCoordinateBox = () => {
           </div>
           <Badge
             variant="outline"
-            className={`text-[9px] h-5 px-2 border-white/10 font-bold tracking-widest ${gpsData?.latitude !== 0 ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-muted-foreground'
+            className={`text-[9px] h-5 px-2 border-white/10 font-bold tracking-widest ${gpsData && gpsData.source !== 'none' ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-muted-foreground'
               }`}
           >
             {getSourceDisplay()}
