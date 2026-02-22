@@ -736,6 +736,11 @@ ws_manager = WebSocketConnectionManager()
 # Global thermal pipeline (initialized in startup)
 thermal_frame_pipeline = None
 
+# Global variables for synchronized streaming
+latest_thermal_frame = None
+latest_thermal_frame_id = 0
+thermal_no_signal = None  # Pre-generated "no signal" frame for fallback
+
 # --------------------------
 # WebSocket Endpoint
 # --------------------------
@@ -759,47 +764,41 @@ async def websocket_alerts(websocket: WebSocket):
 async def thermal_stream():
     """
     MJPEG stream with synchronized detection.
-    Each frame is processed for detection before being streamed.
-    Alerts are generated at the exact moment signatures are visible.
+    Reads from the globally processed thermal buffer.
+    Ensures 0 latency and eliminates frame-stealing across multiple clients.
     """
+    # Use the global variables
+    global latest_thermal_frame, latest_thermal_frame_id, thermal_no_signal
+    
     if thermal_frame_pipeline is None:
-        # Return placeholder if no pipeline
         async def placeholder():
-            yield b'--frame\r\nContent-Type: text/plain\r\n\r\nNo thermal source available\r\n'
+             yield b'--frame\r\nContent-Type: text/plain\r\n\r\nNo thermal pipeline available\r\n'
         return StreamingResponse(placeholder(), media_type="multipart/x-mixed-replace; boundary=frame")
-    
-    # Pre-generate a "no signal" placeholder frame
-    no_signal = np.zeros((496, 640, 3), dtype=np.uint8)
-    cv2.putText(no_signal, "THERMAL", (180, 220), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 180, 255), 3)
-    cv2.putText(no_signal, "Waiting for sensor data...", (140, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 1)
-    _, no_signal_jpeg = cv2.imencode('.jpg', no_signal, [cv2.IMWRITE_JPEG_QUALITY, 70])
-    no_signal_bytes = no_signal_jpeg.tobytes()
-    
+        
+    if thermal_no_signal is None:
+         no_signal = np.zeros((496, 640, 3), dtype=np.uint8)
+         cv2.putText(no_signal, "THERMAL", (180, 220), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (0, 180, 255), 3)
+         cv2.putText(no_signal, "Waiting for sensor data...", (140, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 1)
+         _, no_signal_jpeg = cv2.imencode('.jpg', no_signal, [cv2.IMWRITE_JPEG_QUALITY, 70])
+         thermal_no_signal = no_signal_jpeg.tobytes()
+
     async def generate():
-        loop = asyncio.get_running_loop()
+        last_sent_id = -1
         while True:
-            # Move heavy CV2/detection logic to a background thread
-            # This prevents the thermal processing from "freezing" the rest of the app
-            frame = await loop.run_in_executor(None, thermal_frame_pipeline.process_next)
+            # Yield frame only if it has been updated globally
+            if latest_thermal_frame_id != last_sent_id:
+                frame_bytes = latest_thermal_frame if latest_thermal_frame is not None else thermal_no_signal
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' +
+                    frame_bytes +
+                    b'\r\n'
+                )
+                last_sent_id = latest_thermal_frame_id
             
-            if frame is not None:
-                _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                frame_bytes = jpeg.tobytes()
-            else:
-                # Send placeholder so browser doesn't show blank
-                frame_bytes = no_signal_bytes
+            # Polling delay. The pipeline dictates the FPS. Clients just poll memory.
+            await asyncio.sleep(0.05)
             
-            yield (
-                b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' +
-                frame_bytes +
-                b'\r\n'
-            )
-            
-            # Match sensor rate (Waveshare is ~5-6 FPS)
-            # Polling faster just wastes CPU.
-            await asyncio.sleep(0.2)
-    
     return StreamingResponse(
         generate(),
         media_type="multipart/x-mixed-replace; boundary=frame",
@@ -811,6 +810,7 @@ async def thermal_stream():
             "X-Accel-Buffering": "no"
         }
     )
+
 
 # Startup
 @app.on_event("startup")
@@ -981,6 +981,34 @@ async def startup():
     # 4. Start background monitor loops
     asyncio.create_task(background_monitor())
     asyncio.create_task(signal_monitor_loop())
+    
+    if thermal_frame_pipeline is not None:
+       asyncio.create_task(thermal_processing_loop())
+
+async def thermal_processing_loop():
+    """Continuous background loop for processing thermal frames."""
+    global latest_thermal_frame, latest_thermal_frame_id, thermal_frame_pipeline
+    print("[THERMAL] Background processing loop started", flush=True)
+    loop = asyncio.get_running_loop()
+    
+    while True:
+        try:
+            # Process next frame in the background thread pool
+            frame = await loop.run_in_executor(None, thermal_frame_pipeline.process_next)
+            
+            if frame is not None:
+                 # Encode as jpeg
+                 _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                 # Update global buffer safely
+                 latest_thermal_frame = jpeg.tobytes()
+                 latest_thermal_frame_id += 1
+            
+            # Target ~10 FPS for the loop pipeline
+            await asyncio.sleep(0.1)
+        
+        except Exception as e:
+            print(f"[THERMAL] Processing loop error: {e}", flush=True)
+            await asyncio.sleep(1)
 
 async def signal_monitor_loop():
     """Continuous background scanning for signals (Zero-Lag Architecture)."""
