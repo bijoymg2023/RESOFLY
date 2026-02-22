@@ -69,7 +69,7 @@ const ThemeAwareTileLayer = () => {
 
 export const IncidentMap = () => {
     const { alerts, activeAlerts, selectedAlert } = useDetection();
-    const center = { lat: 0.0, lng: 0.0 };
+    const center = { lat: 9.510579, lng: 76.550428 };
 
     return (
         <Card className="h-full bg-card dark:bg-[#0A0A0A] border border-border dark:border-white/10 overflow-hidden relative shadow-lg flex flex-col">
@@ -90,7 +90,7 @@ export const IncidentMap = () => {
                     center={[center.lat, center.lng]}
                     zoom={13}
                     scrollWheelZoom={true}
-                    className="h-full w-full z-0"
+                    className="absolute inset-0 z-0"
                     style={{ background: 'hsl(var(--background))' }}
                 >
                     <ThemeAwareTileLayer />
