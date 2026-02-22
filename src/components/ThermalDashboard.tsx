@@ -82,22 +82,26 @@ const SystemStatusContent = () => {
   if (!status) return <div className="text-xs p-4 text-center text-cyan-500 animate-pulse font-mono tracking-widest">SYSTEM INITIALIZING...</div>;
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4 pb-2 border-b border-border dark:border-white/10">
-        <div className="flex items-center space-x-2 text-muted-foreground">
-          <Activity className="w-4 h-4" />
-          <span className="text-xs font-bold uppercase tracking-widest">System Diagnostics</span>
-        </div>
+    <div className="h-full flex flex-col bg-transparent">
+      {/* Unified Header matching GPS/Signal Tracker cards */}
+      <div className="py-3 px-4 flex flex-row items-center justify-between border-b border-border dark:border-white/10 bg-muted/50 dark:bg-black/60">
         <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          <span className="text-[10px] font-mono text-emerald-500">ONLINE</span>
+          <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-500" />
+          <h3 className="text-[10px] my-0 font-black uppercase tracking-[0.3em] text-foreground/60 dark:text-white/60">SYSTEM DIAGNOSTICS</h3>
+        </div>
+        <div className="h-5 px-2 flex items-center space-x-1.5 border border-border dark:border-white/10 rounded-full font-bold tracking-widest text-[9px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>ONLINE</span>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 flex-1">
-        <StatBox label="CPU Load" value={`${status.cpu_usage.toFixed(0)}%`} color={status.cpu_usage > 80 ? 'text-red-600 dark:text-red-500' : 'text-cyan-600 dark:text-cyan-500'} icon={Cpu} />
-        <StatBox label="Memory" value={`${status.memory_usage.toFixed(0)}%`} color={status.memory_usage > 80 ? 'text-red-600 dark:text-red-500' : 'text-purple-600 dark:text-purple-500'} icon={Activity} />
-        <StatBox label="Thermal" value={`${status.temperature.toFixed(0)}°C`} color={status.temperature > 75 ? 'text-red-600 dark:text-red-500' : 'text-emerald-600 dark:text-emerald-500'} icon={Thermometer} />
-        <StatBox label="Uptime" value={formatUptime(status.uptime).split(' ')[0]} color="text-foreground dark:text-white" icon={Clock} />
+
+      <div className="p-4 flex-1 flex flex-col relative bg-transparent">
+        <div className="grid grid-cols-2 gap-3 flex-1">
+          <StatBox label="CPU Load" value={`${status.cpu_usage.toFixed(0)}%`} color={status.cpu_usage > 80 ? 'text-red-600 dark:text-red-500' : 'text-cyan-600 dark:text-cyan-500'} icon={Cpu} />
+          <StatBox label="Memory" value={`${status.memory_usage.toFixed(0)}%`} color={status.memory_usage > 80 ? 'text-red-600 dark:text-red-500' : 'text-purple-600 dark:text-purple-500'} icon={Activity} />
+          <StatBox label="Thermal" value={`${status.temperature.toFixed(0)}°C`} color={status.temperature > 75 ? 'text-red-600 dark:text-red-500' : 'text-emerald-600 dark:text-emerald-500'} icon={Thermometer} />
+          <StatBox label="Uptime" value={formatUptime(status.uptime).split(' ')[0]} color="text-foreground dark:text-white" icon={Clock} />
+        </div>
       </div>
     </div>
   );
@@ -178,13 +182,9 @@ const ThermalDashboard = () => {
               </div>
 
               {/* Row 2 */}
-              <Card className="bg-card/80 dark:bg-[#0A0A0A]/80 border-border dark:border-white/10 backdrop-blur-sm rounded-xl overflow-hidden shadow-sm h-[450px] flex flex-col justify-center">
-                <CardContent className="p-6 h-full flex items-center">
-                  <div className="w-full">
-                    <SystemStatusContent />
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="h-[450px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm shadow-lg">
+                <SystemStatusContent />
+              </div>
 
               <div className="h-[450px] overflow-hidden rounded-xl border border-border bg-card/40 backdrop-blur-sm">
                 <IncidentMap />
