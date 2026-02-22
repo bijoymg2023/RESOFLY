@@ -35,7 +35,7 @@ interface SystemStatus {
 
 // Mini-Box Component for System Stats
 const StatBox = ({ label, value, color, icon: Icon }: { label: string; value: string; color: string; icon: any }) => (
-  <div className="bg-black/40 border border-white/5 rounded-lg p-3 flex flex-col justify-between h-full relative overflow-hidden group">
+  <div className="bg-muted/30 dark:bg-black/40 border border-border dark:border-white/5 rounded-lg p-3 flex flex-col justify-between h-full relative overflow-hidden group">
     <div className={`absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity ${color}`}>
       <Icon className="w-8 h-8" />
     </div>
@@ -49,8 +49,8 @@ const StatBox = ({ label, value, color, icon: Icon }: { label: string; value: st
       </div>
     </div>
     {value.includes('%') && (
-      <div className="w-full h-1 bg-white/10 rounded-full mt-2 overflow-hidden">
-        <div className={`h-full ${color.replace('text-', 'bg-')}`} style={{ width: value }} />
+      <div className="w-full h-1 bg-border dark:bg-white/10 rounded-full mt-2 overflow-hidden">
+        <div className={`h-full ${color.replace('text-', 'bg-')} dark:${color.replace('text-', 'bg-')}`} style={{ width: value }} />
       </div>
     )}
   </div>
@@ -80,7 +80,7 @@ const SystemStatusContent = () => {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/10">
+      <div className="flex items-center justify-between mb-4 pb-2 border-b border-border dark:border-white/10">
         <div className="flex items-center space-x-2 text-muted-foreground">
           <Activity className="w-4 h-4" />
           <span className="text-xs font-bold uppercase tracking-widest">System Diagnostics</span>
@@ -91,10 +91,10 @@ const SystemStatusContent = () => {
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3 flex-1">
-        <StatBox label="CPU Load" value={`${status.cpu_usage.toFixed(0)}%`} color={status.cpu_usage > 80 ? 'text-red-500' : 'text-cyan-500'} icon={Cpu} />
-        <StatBox label="Memory" value={`${status.memory_usage.toFixed(0)}%`} color={status.memory_usage > 80 ? 'text-red-500' : 'text-purple-500'} icon={Activity} />
-        <StatBox label="Thermal" value={`${status.temperature.toFixed(0)}°C`} color={status.temperature > 75 ? 'text-red-500' : 'text-emerald-500'} icon={Thermometer} />
-        <StatBox label="Uptime" value={formatUptime(status.uptime).split(' ')[0]} color="text-white" icon={Clock} />
+        <StatBox label="CPU Load" value={`${status.cpu_usage.toFixed(0)}%`} color={status.cpu_usage > 80 ? 'text-red-600 dark:text-red-500' : 'text-cyan-600 dark:text-cyan-500'} icon={Cpu} />
+        <StatBox label="Memory" value={`${status.memory_usage.toFixed(0)}%`} color={status.memory_usage > 80 ? 'text-red-600 dark:text-red-500' : 'text-purple-600 dark:text-purple-500'} icon={Activity} />
+        <StatBox label="Thermal" value={`${status.temperature.toFixed(0)}°C`} color={status.temperature > 75 ? 'text-red-600 dark:text-red-500' : 'text-emerald-600 dark:text-emerald-500'} icon={Thermometer} />
+        <StatBox label="Uptime" value={formatUptime(status.uptime).split(' ')[0]} color="text-foreground dark:text-white" icon={Clock} />
       </div>
     </div>
   );
