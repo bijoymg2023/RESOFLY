@@ -96,14 +96,14 @@ export const GPSCoordinateBox = () => {
     <>
       <Card className="h-full bg-card/40 backdrop-blur-sm border-border dark:border-white/10 overflow-hidden flex flex-col shadow-lg">
         {/* Header - Matching Signal Tracker Style */}
-        <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0 border-b border-white/10 bg-black/60">
+        <CardHeader className="py-3 px-4 flex flex-row items-center justify-between space-y-0 border-b border-border dark:border-white/10 bg-muted/50 dark:bg-black/60">
           <div className="flex items-center space-x-2">
             {getSourceIcon()}
-            <CardTitle className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60">POSITION_LOCK</CardTitle>
+            <CardTitle className="text-[10px] font-black uppercase tracking-[0.3em] text-foreground/60 dark:text-white/60">POSITION_LOCK</CardTitle>
           </div>
           <Badge
             variant="outline"
-            className={`text-[9px] h-5 px-2 border-white/10 font-bold tracking-widest ${gpsData && gpsData.source !== 'none' ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-muted-foreground'
+            className={`text-[9px] h-5 px-2 border-border dark:border-white/10 font-bold tracking-widest ${gpsData && gpsData.source !== 'none' ? 'text-emerald-500 border-emerald-500/20 bg-emerald-500/10' : 'text-muted-foreground'
               }`}
           >
             {getSourceDisplay()}
@@ -112,22 +112,22 @@ export const GPSCoordinateBox = () => {
 
         <CardContent className="p-0 flex-1 flex flex-col relative">
           {/* Main Coordinates Display */}
-          <div className="flex-1 flex flex-col justify-center items-center bg-black/80 border-b border-white/10 relative overflow-hidden p-4">
+          <div className="flex-1 flex flex-col justify-center items-center bg-white dark:bg-black/80 border-b border-border dark:border-white/10 relative overflow-hidden p-4">
             {/* Grid Overlay */}
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px]" />
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px]" />
 
             {gpsData ? (
               <div className="z-10 w-full space-y-4">
-                <div className="flex justify-between items-baseline border-b border-white/10 pb-2">
+                <div className="flex justify-between items-baseline border-b border-border dark:border-white/10 pb-2">
                   <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">LAT</span>
-                  <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-white tabular-nums">
-                    {gpsData.latitude.toFixed(6)}<span className="text-sm text-cyan-500 ml-1">°N</span>
+                  <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-foreground dark:text-white tabular-nums">
+                    {gpsData.latitude.toFixed(6)}<span className="text-sm text-cyan-600 dark:text-cyan-500 ml-1">°N</span>
                   </div>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">LON</span>
-                  <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-white tabular-nums">
-                    {gpsData.longitude.toFixed(6)}<span className="text-sm text-cyan-500 ml-1">°E</span>
+                  <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-foreground dark:text-white tabular-nums">
+                    {gpsData.longitude.toFixed(6)}<span className="text-sm text-cyan-600 dark:text-cyan-500 ml-1">°E</span>
                   </div>
                 </div>
               </div>
@@ -140,18 +140,18 @@ export const GPSCoordinateBox = () => {
           </div>
 
           {/* Secondary Data Strip */}
-          <div className="bg-black/90 p-3 grid grid-cols-3 gap-2 border-t border-white/5">
-            <div className="text-center p-2 rounded bg-white/5 border border-white/5">
+          <div className="bg-muted/30 dark:bg-black/90 p-3 grid grid-cols-3 gap-2 border-t border-border dark:border-white/5">
+            <div className="text-center p-2 rounded bg-background dark:bg-white/5 border border-border dark:border-white/5">
               <div className="text-[9px] text-muted-foreground font-mono uppercase mb-1">ALTITUDE</div>
-              <div className="font-bold font-mono text-emerald-400">{gpsData ? `${gpsData.altitude.toFixed(1)}m` : '--'}</div>
+              <div className="font-bold font-mono text-emerald-600 dark:text-emerald-400">{gpsData ? `${gpsData.altitude.toFixed(1)}m` : '--'}</div>
             </div>
-            <div className="text-center p-2 rounded bg-white/5 border border-white/5">
+            <div className="text-center p-2 rounded bg-background dark:bg-white/5 border border-border dark:border-white/5">
               <div className="text-[9px] text-muted-foreground font-mono uppercase mb-1">SPEED</div>
-              <div className="font-bold font-mono text-cyan-400">{gpsData ? `${gpsData.speed?.toFixed(1) || 0}km/h` : '--'}</div>
+              <div className="font-bold font-mono text-cyan-600 dark:text-cyan-400">{gpsData ? `${gpsData.speed?.toFixed(1) || 0}km/h` : '--'}</div>
             </div>
-            <div className="text-center p-2 rounded bg-white/5 border border-white/5">
+            <div className="text-center p-2 rounded bg-background dark:bg-white/5 border border-border dark:border-white/5">
               <div className="text-[9px] text-muted-foreground font-mono uppercase mb-1">HEADING</div>
-              <div className="font-bold font-mono text-purple-400">{gpsData ? `${(gpsData.heading || gpsData.climb || 0).toFixed(0)}°` : '--'}</div>
+              <div className="font-bold font-mono text-purple-600 dark:text-purple-400">{gpsData ? `${(gpsData.heading || gpsData.climb || 0).toFixed(0)}°` : '--'}</div>
             </div>
           </div>
 
