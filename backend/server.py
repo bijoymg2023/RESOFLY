@@ -421,8 +421,8 @@ async def create_test_alert(db: AsyncSession = Depends(get_db)):
             message='Test thermal signature (Debug endpoint)',
             timestamp=datetime.utcnow(),
             acknowledged=False,
-            lat=9.510579 + random.uniform(-0.001, 0.001),
-            lon=76.550428 + random.uniform(-0.001, 0.001),
+            lat=9.510579,
+            lon=76.550428,
             confidence=0.85,
             max_temp=180.0
         )
