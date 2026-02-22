@@ -34,27 +34,30 @@ interface SystemStatus {
 }
 
 // Mini-Box Component for System Stats
-const StatBox = ({ label, value, color, icon: Icon }: { label: string; value: string; color: string; icon: any }) => (
-  <div className="bg-muted/30 dark:bg-black/40 border border-border dark:border-white/5 rounded-lg p-3 flex flex-col justify-between h-full relative overflow-hidden group">
-    <div className={`absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-20 transition-opacity ${color}`}>
-      <Icon className="w-8 h-8" />
-    </div>
-    <div className="flex items-center space-x-2 mb-2">
-      <Icon className={`w-4 h-4 ${color}`} />
-      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
-    </div>
-    <div>
-      <div className={`text-2xl font-black font-mono tracking-tighter ${color}`}>
-        {value}
+const StatBox = ({ label, value, color, icon: Icon }: { label: string; value: string; color: string; icon: any }) => {
+  const bgColor = color.replace(/text-/g, 'bg-');
+  return (
+    <div className="bg-white dark:bg-black/40 border border-black/5 dark:border-white/5 rounded-lg p-3 flex flex-col justify-between h-full relative overflow-hidden group shadow-sm dark:shadow-none">
+      <div className={`absolute top-0 right-0 p-2 opacity-[0.03] dark:opacity-10 group-hover:opacity-10 dark:group-hover:opacity-20 transition-opacity ${color}`}>
+        <Icon className="w-8 h-8" />
       </div>
-    </div>
-    {value.includes('%') && (
-      <div className="w-full h-1 bg-border dark:bg-white/10 rounded-full mt-2 overflow-hidden">
-        <div className={`h-full ${color.replace('text-', 'bg-')} dark:${color.replace('text-', 'bg-')}`} style={{ width: value }} />
+      <div className="flex items-center space-x-2 mb-2">
+        <Icon className={`w-4 h-4 ${color}`} />
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
       </div>
-    )}
-  </div>
-);
+      <div>
+        <div className={`text-2xl font-black font-mono tracking-tighter ${color}`}>
+          {value}
+        </div>
+      </div>
+      {value.includes('%') && (
+        <div className="w-full h-1 bg-black/5 dark:bg-white/10 rounded-full mt-2 overflow-hidden">
+          <div className={`h-full ${bgColor}`} style={{ width: value }} />
+        </div>
+      )}
+    </div>
+  );
+};
 
 const formatUptime = (seconds: number) => {
   const d = Math.floor(seconds / (3600 * 24));
