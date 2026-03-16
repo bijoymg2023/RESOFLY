@@ -84,7 +84,10 @@ export const GPSCoordinateBox = () => {
 
   const getSourceDisplay = () => {
     if (!gpsData || !gpsData.source || gpsData.source === 'none') return 'SEARCHING';
-    return gpsData.source === 'hardware' ? 'HARDWARE' : 'NETWORK';
+    if (gpsData.source.includes('u-blox7')) return 'U-BLOX7 FIX';
+    if (gpsData.source.includes('acquiring')) return 'ACQUIRING FIX';
+    if (gpsData.source.includes('hardware')) return 'HARDWARE';
+    return 'NETWORK';
   };
 
   const getSourceIcon = () => {

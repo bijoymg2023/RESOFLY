@@ -153,6 +153,7 @@ class GPSData(BaseModel):
     heading: float = 0.0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     source: str = "none"
+    connected: bool = False
 
 class SystemStatus(BaseModel):
     cpu_usage: float
@@ -457,40 +458,48 @@ class UnifiedGPSReader:
         # 1. Try Hardware GPS first
         if self.hardware:
             hw_data = self.hardware.get_data()
-            if hw_data.get("latitude") and hw_data["latitude"] != 0.0:
-                hw_data["source"] = "hardware"
+            # If coordinates are valid, return hardware data
+            if hw_data.get("latitude") and hw_data["latitude"] != 0.0 and hw_data.get("longitude") and hw_data["longitude"] != 0.0:
+                hw_data["source"] = "hardware (u-blox7)"
                 return hw_data
+            
+            # If connected but no fix yet, still return hardware source to show it's trying
+            if hw_data.get("connected"):
+                 hw_data["source"] = "hardware (acquiring fix)"
+                 return hw_data
         
         # 2. Fallback to Wi-Fi Geolocation
         if self.wifi:
             wifi_data = self.wifi.get_location()
             if wifi_data.get("latitude") and wifi_data["latitude"] != 0.0:
                 wifi_data["source"] = "network"
+                wifi_data["connected"] = False
                 return wifi_data
                 
-        # 3. Last Resort - Saintgits IEDC
+        # 3. Last Resort - Default/Zero coordinates
         return {
-            "latitude": 9.510579, "longitude": 76.550428, "altitude": 0.0,
+            "latitude": 0.0, "longitude": 0.0, "altitude": 0.0,
             "accuracy": 0.0, "speed": 0.0, "heading": 0.0,
-            "timestamp": datetime.utcnow(), "source": "none"
+            "timestamp": datetime.utcnow(), "source": "none", "connected": False
         }
 
 # Initialize real GPS reader (Adjust port if using UART vs USB)
 # Common ports: /dev/ttyUSB0, /dev/ttyACM0, /dev/serial0
 # Initialize GPS infrastructure
 hw_gps = None
-possible_gps_ports = ['/dev/ttyUSB0', '/dev/ttyACM0', '/dev/ttyAMA0', '/dev/serial0']
+# U-blox7 on USB usually connects as /dev/ttyACM0 or /dev/ttyACM1. If via GPIO, it's /dev/serial0 or /dev/ttyAMA0.
+possible_gps_ports = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyAMA0', '/dev/serial0']
 
 for port in possible_gps_ports:
     try:
         if os.path.exists(port):
-            print(f"Attempting GPS on {port}...")
+            print(f"[GPS setup] Found port {port}. Initializing U-blox7...")
             hw_gps = gps_real.GPSReader(port=port) 
-            # hw_gps.start() - Handled by manager
-            print(f"GPS Hardware detected on {port}")
+            # gps_reader.start() handles the thread start below
+            print(f"[GPS setup] Hardware initialization successful on {port}")
             break
     except Exception as e:
-        print(f"Warning: GPS Probe Failed on {port}: {e}")
+        print(f"[GPS setup] Probe Failed on {port}: {e}")
 
 # Create Unified GPS Manager
 gps_reader = UnifiedGPSReader(
@@ -500,9 +509,9 @@ gps_reader = UnifiedGPSReader(
 gps_reader.start()
 
 if not hw_gps:
-    print("Warning: No GPS hardware found. Using Network GPS fallback.")
+    print("[GPS setup] Warning: No U-blox7 GPS hardware found on expected ports.")
 else:
-    print("GPS Hardware detected and initialized.")
+    print("[GPS setup] U-blox7 Manager started.")
 
 @api_router.get("/gps", response_model=GPSData)
 async def get_gps(current_user: UserDB = Depends(get_current_user)):

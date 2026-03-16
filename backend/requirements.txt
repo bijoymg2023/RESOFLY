@@ -145,3 +145,5 @@ spidev>=3.5
 crcmod>=1.7
 gpiozero
 # pysenxor — install separately: see waveshare_thermal.py header
+pyserial>=3.5
+pynmea2>=1.19.0
