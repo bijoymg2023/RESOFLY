@@ -526,6 +526,27 @@ async def get_gps(current_user: UserDB = Depends(get_current_user)):
             
     return GPSData(**data)
 
+@api_router.get("/gps/debug")
+async def get_gps_debug(token: str = Depends(oauth2_scheme)):
+    """Debug endpoint — shows GPS port detection and raw reading from U-blox7."""
+    detected_port = None
+    all_ports_checked = []
+    for port in ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyAMA0', '/dev/serial0']:
+        exists = os.path.exists(port)
+        all_ports_checked.append({"port": port, "exists": exists})
+        if exists and detected_port is None:
+            detected_port = port
+
+    raw_gps = gps_reader.get_data() if gps_reader else {}
+    return {
+        "hw_gps_initialized": hw_gps is not None,
+        "hw_gps_port": hw_gps.port if hw_gps else None,
+        "hw_gps_connected": hw_gps.connected if hw_gps else False,
+        "first_available_port": detected_port,
+        "all_ports_checked": all_ports_checked,
+        "current_gps_data": raw_gps
+    }
+
 def get_pi_temperature():
     try:
         with open("/sys/class/thermal/thermal_zone0/temp", "r") as f:
@@ -911,9 +932,9 @@ async def startup():
         def on_detection_event(event: thermal_pipeline.DetectionEvent):
             print(f"[DEBUG] on_detection_event CALLED! Frame: {event.frame_number}, Hotspots: {len(event.hotspots)}", flush=True)
             """Handle detection event - save to DB and broadcast."""
-            # Get GPS (Default to 0.0 if no lock)
-            lat = 9.510579
-            lon = 76.550428
+            # Get GPS - use actual live data from U-blox7
+            lat = 0.0
+            lon = 0.0
             
             if gps_reader:
                 gps_data = gps_reader.get_data()
