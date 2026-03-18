@@ -4,6 +4,8 @@ import re
 import sys
 import shutil
 import os
+import pty
+import select
 
 def log_debug(msg):
     print(f"[DEBUG-BT] {msg}", flush=True)
@@ -25,36 +27,44 @@ def get_bluetooth_devices():
         time.sleep(0.5)
         subprocess.run(["sudo", btmgmt_cmd, "power", "on"], capture_output=True)
 
-        # Add stdbuf -oL to force libc line buffering under systemd pipes.
-        # Otherwise <4096 bytes are trapped and memory-wiped when the process dies.
-        stdbuf_cmd = subprocess.run(["which", "stdbuf"], capture_output=True, text=True).stdout.strip() or "stdbuf"
-        cmd = ["sudo", stdbuf_cmd, "-oL", btmgmt_cmd, "find"]
-        log_debug(f"Executing natively: {' '.join(cmd)}")
+        cmd = ["sudo", btmgmt_cmd, "find"]
+        log_debug(f"Executing natively IN PTY: {' '.join(cmd)}")
         
-        # 2. Start find process natively
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # 2. Hostile CLI tools drop output if they aren't attached to a real Terminal (TTY).
+        # systemd has no TTY. We use `pty.openpty()` to construct a perfectly authentic mock terminal!
+        master_fd, slave_fd = pty.openpty()
         
-        # Wait for 6 seconds of scanning
-        time.sleep(6)
+        proc = subprocess.Popen(cmd, stdout=slave_fd, stderr=slave_fd, close_fds=True)
+        os.close(slave_fd)  # Close child's end in the parent
         
-        # 3. Gracefully stop find (causes btmgmt to flush and exit)
+        output = ""
+        start_time = time.time()
+        
+        # 3. Read continuously from the fake terminal for 6 seconds
+        while time.time() - start_time < 6:
+            # select.select waits up to 1 second for data to become readable
+            r, _, _ = select.select([master_fd], [], [], 1.0)
+            if master_fd in r:
+                try:
+                    data = os.read(master_fd, 1024)
+                    if not data:
+                        break # EOF
+                    output += data.decode('utf-8', errors='replace')
+                except OSError:
+                    break # Usually EIO when child closes PTY
+            
+            # If the process miraculously exits early, stop reading
+            if proc.poll() is not None:
+                break
+
+        # 4. Gracefully stop find (causes btmgmt to flush and exit)
         subprocess.run(["sudo", btmgmt_cmd, "stop-find"], capture_output=True)
-        
-        # 4. Read output
-        try:
-            output, stderr = proc.communicate(timeout=2)
-        except subprocess.TimeoutExpired:
-            log_debug("Stop-find failed, forcing termination.")
-            # Send SIGTERM first instead of SIGKILL to allow C flush
-            proc.terminate()
-            try:
-                output, stderr = proc.communicate(timeout=1)
-            except:
-                proc.kill()
-                output, stderr = proc.communicate()
+        proc.terminate()
+        proc.wait(timeout=2)
+        os.close(master_fd) # Cleanup
 
         if not output:
-             log_debug(f"Warning: Empty native stdout. Stderr: {stderr}")
+             log_debug(f"Warning: Empty native stdout. The PTY returned zero bytes.")
              return []
         
         lines = output.split('\n')
