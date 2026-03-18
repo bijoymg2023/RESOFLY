@@ -15,9 +15,11 @@ def get_bluetooth_devices():
     Avoids bash scripts and temporary files to ensure systemd robustness.
     """
     try:
-        # 1. Force hardware reset purely
+        # 1. Force hardware reset purely with crucial delays
         subprocess.run(["sudo", "hciconfig", "hci0", "down"], capture_output=True)
+        time.sleep(1)
         subprocess.run(["sudo", "hciconfig", "hci0", "up"], capture_output=True)
+        time.sleep(0.5)
         subprocess.run(["sudo", "btmgmt", "power", "on"], capture_output=True)
 
         cmd = ["sudo", "btmgmt", "find"]
