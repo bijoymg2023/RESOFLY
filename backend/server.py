@@ -21,7 +21,7 @@ import camera
 import psutil
 import random
 import bluetooth_scanner
-import wifi_scanner
+
 import gps_real
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -31,7 +31,7 @@ from sqlalchemy import Column, String, Boolean, DateTime, CheckConstraint, selec
 import thermal_pipeline
 from datetime import datetime, timedelta, timezone
 import json
-import wifi_gps
+
 
 # IST Timezone (UTC + 5:30)
 IST_OFFSET = timezone(timedelta(hours=5, minutes=30))
@@ -446,37 +446,25 @@ async def create_test_alert(db: AsyncSession = Depends(get_db)):
 import gps_real
 
 class UnifiedGPSReader:
-    def __init__(self, hardware_reader, wifi_gps_module):
+    """Wraps the U-blox7 hardware GPS reader. WiFi fallback removed."""
+    def __init__(self, hardware_reader):
         self.hardware = hardware_reader
-        self.wifi = wifi_gps_module
     
     def start(self):
         if self.hardware:
             self.hardware.start()
             
     def get_data(self):
-        # 1. Try Hardware GPS first
         if self.hardware:
             hw_data = self.hardware.get_data()
-            # If coordinates are valid, return hardware data
             if hw_data.get("latitude") and hw_data["latitude"] != 0.0 and hw_data.get("longitude") and hw_data["longitude"] != 0.0:
                 hw_data["source"] = "hardware (u-blox7)"
                 return hw_data
-            
-            # If connected but no fix yet, still return hardware source to show it's trying
             if hw_data.get("connected"):
-                 hw_data["source"] = "hardware (acquiring fix)"
-                 return hw_data
+                hw_data["source"] = "hardware (acquiring fix)"
+                return hw_data
         
-        # 2. Fallback to Wi-Fi Geolocation
-        if self.wifi:
-            wifi_data = self.wifi.get_location()
-            if wifi_data.get("latitude") and wifi_data["latitude"] != 0.0:
-                wifi_data["source"] = "network"
-                wifi_data["connected"] = False
-                return wifi_data
-                
-        # 3. Last Resort - Default/Zero coordinates
+        # No fix yet — return zero coords
         return {
             "latitude": 0.0, "longitude": 0.0, "altitude": 0.0,
             "accuracy": 0.0, "speed": 0.0, "heading": 0.0,
@@ -501,11 +489,8 @@ for port in possible_gps_ports:
     except Exception as e:
         print(f"[GPS setup] Probe Failed on {port}: {e}")
 
-# Create Unified GPS Manager
-gps_reader = UnifiedGPSReader(
-    hardware_reader=hw_gps,
-    wifi_gps_module=wifi_gps.WifiGPS()
-)
+# Create Unified GPS Manager (U-blox7 hardware only)
+gps_reader = UnifiedGPSReader(hardware_reader=hw_gps)
 gps_reader.start()
 
 if not hw_gps:
@@ -1054,19 +1039,14 @@ async def signal_monitor_loop():
         try:
             loop = asyncio.get_running_loop()
             
-            # Run scans in parallel
+            # Bluetooth scan only (WiFi GPS fallback removed)
             bt_task = loop.run_in_executor(None, bluetooth_scanner.get_bluetooth_devices)
-            wifi_task = loop.run_in_executor(None, wifi_scanner.get_wifi_devices)
+            bt_devices = await bt_task
             
-            bt_devices, wifi_devices = await asyncio.gather(bt_task, wifi_task)
-            
-            # Prepare result
             now = datetime.now()
             for d in bt_devices: d['type'] = 'bluetooth'
-            for d in wifi_devices: d['type'] = 'wifi'
             
-            all_devices = bt_devices + wifi_devices
-            all_devices.sort(key=lambda x: x.get('rssi', -100), reverse=True)
+            all_devices = sorted(bt_devices, key=lambda x: x.get('rssi', -100), reverse=True)
             
             # Atomic update of global cache
             async with signal_cache_lock:
