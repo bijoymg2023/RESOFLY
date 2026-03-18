@@ -11,35 +11,36 @@ def log_debug(msg):
 
 def get_bluetooth_devices():
     """
-    Scans for Bluetooth LE devices using 'btmgmt find' on Linux (Pi).
-    Returns a list of dicts: [{'mac': 'XX:XX...', 'name': 'Device', 'rssi': -80}]
+    Scans for Bluetooth LE devices using 'btmgmt find' natively in Python.
+    Avoids bash scripts and temporary files to ensure systemd robustness.
     """
     try:
-        # 1. Determine Script Path
-        script_path = os.path.join(os.path.dirname(__file__), "scan_helper.sh")
-        if not os.path.exists(script_path):
-             log_debug(f"Scan helper missing at: {script_path}")
-             return []
+        # 1. Force hardware reset purely
+        subprocess.run(["sudo", "hciconfig", "hci0", "down"], capture_output=True)
+        subprocess.run(["sudo", "hciconfig", "hci0", "up"], capture_output=True)
+        subprocess.run(["sudo", "btmgmt", "power", "on"], capture_output=True)
 
-        # 2. Make executable (just in case)
+        cmd = ["sudo", "btmgmt", "find"]
+        log_debug(f"Executing natively: {' '.join(cmd)}")
+        
+        # 2. Start find process natively
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        # Wait for 6 seconds of scanning
+        time.sleep(6)
+        
+        # 3. Gracefully stop find (causes btmgmt to flush and exit)
+        subprocess.run(["sudo", "btmgmt", "stop-find"], capture_output=True)
+        
+        # 4. Read output
         try:
-            os.chmod(script_path, 0o755)
-        except:
-            pass
+            output, stderr = proc.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            output, stderr = proc.communicate()
 
-        # 3. Construct Command (Identical to verification script)
-        cmd = ["bash", script_path]
-        if os.geteuid() != 0:
-            cmd.insert(0, "sudo")
-        
-        log_debug(f"Executing: {' '.join(cmd)}")
-        
-        # 4. Run Scan (No shell=True, capturing output)
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
-        
-        output = result.stdout
         if not output:
-             log_debug(f"Warning: Empty stdout. Stderr: {result.stderr}")
+             log_debug(f"Warning: Empty native stdout. Stderr: {stderr}")
              return []
         
         lines = output.split('\n')
