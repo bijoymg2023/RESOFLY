@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,14 +45,45 @@ export const GPSCoordinateBox = () => {
         timestamp: new Date(data.timestamp)
       };
     },
-    refetchInterval: 1000, // Poll every 1s for GPS
+    refetchInterval: 3000, // Poll every 3s — GPS hardware only updates at 1Hz
   });
+
+  // --- Anti-Flicker: Stable display state with dead-zone filter ---
+  // Only update the shown coordinates if the position changed by >0.0001° (~11m).
+  // This filters out GPS noise that causes the big numbers to flash every second.
+  const [stableGPS, setStableGPS] = useState<GPSData | null>(null);
+  const lastDisplayedRef = useRef<{ lat: number; lon: number } | null>(null);
+
+  useEffect(() => {
+    if (!gpsData) return;
+    const prev = lastDisplayedRef.current;
+    const DEAD_ZONE = 0.0001; // ~11 metres
+    const latChanged = !prev || Math.abs(gpsData.latitude - prev.lat) > DEAD_ZONE;
+    const lonChanged = !prev || Math.abs(gpsData.longitude - prev.lon) > DEAD_ZONE;
+    if (latChanged || lonChanged || !stableGPS) {
+      lastDisplayedRef.current = { lat: gpsData.latitude, lon: gpsData.longitude };
+      setStableGPS(gpsData);
+    } else {
+      // Position hasn't meaningfully changed — only update non-coordinate fields
+      // (altitude, speed, heading, timestamp) without triggering coord re-render
+      setStableGPS(prev => prev ? {
+        ...prev,
+        altitude: gpsData.altitude,
+        speed: gpsData.speed,
+        heading: gpsData.heading,
+        climb: gpsData.climb,
+        source: gpsData.source,
+        timestamp: gpsData.timestamp,
+      } : gpsData);
+    }
+  }, [gpsData]);
 
   useEffect(() => {
     if (gpsData) {
       setLastUpdate(new Date());
     }
   }, [gpsData]);
+
 
   const copyCoordinates = () => {
     if (gpsData) {
@@ -119,18 +150,18 @@ export const GPSCoordinateBox = () => {
             {/* Grid Overlay */}
             <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.03)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(0,255,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,255,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px]" />
 
-            {gpsData ? (
+            {stableGPS ? (
               <div className="z-10 w-full space-y-4">
                 <div className="flex justify-between items-baseline border-b border-border dark:border-white/10 pb-2">
                   <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">LAT</span>
                   <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-foreground dark:text-white tabular-nums">
-                    {gpsData.latitude.toFixed(6)}<span className="text-sm text-cyan-600 dark:text-cyan-500 ml-1">°N</span>
+                    {stableGPS.latitude.toFixed(6)}<span className="text-sm text-cyan-600 dark:text-cyan-500 ml-1">°N</span>
                   </div>
                 </div>
                 <div className="flex justify-between items-baseline">
                   <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">LON</span>
                   <div className="text-3xl sm:text-4xl font-black font-mono tracking-tighter text-foreground dark:text-white tabular-nums">
-                    {gpsData.longitude.toFixed(6)}<span className="text-sm text-cyan-600 dark:text-cyan-500 ml-1">°E</span>
+                    {stableGPS.longitude.toFixed(6)}<span className="text-sm text-cyan-600 dark:text-cyan-500 ml-1">°E</span>
                   </div>
                 </div>
               </div>
@@ -146,15 +177,15 @@ export const GPSCoordinateBox = () => {
           <div className="bg-muted/30 dark:bg-black/90 p-3 grid grid-cols-3 gap-2 border-t border-border dark:border-white/5">
             <div className="text-center p-2 rounded bg-background dark:bg-white/5 border border-border dark:border-white/5">
               <div className="text-[9px] text-muted-foreground font-mono uppercase mb-1">ALTITUDE</div>
-              <div className="font-bold font-mono text-emerald-600 dark:text-emerald-400">{gpsData ? `${gpsData.altitude.toFixed(1)}m` : '--'}</div>
+              <div className="font-bold font-mono text-emerald-600 dark:text-emerald-400">{stableGPS ? `${stableGPS.altitude.toFixed(1)}m` : '--'}</div>
             </div>
             <div className="text-center p-2 rounded bg-background dark:bg-white/5 border border-border dark:border-white/5">
               <div className="text-[9px] text-muted-foreground font-mono uppercase mb-1">SPEED</div>
-              <div className="font-bold font-mono text-cyan-600 dark:text-cyan-400">{gpsData ? `${gpsData.speed?.toFixed(1) || 0}km/h` : '--'}</div>
+              <div className="font-bold font-mono text-cyan-600 dark:text-cyan-400">{stableGPS ? `${stableGPS.speed?.toFixed(1) || 0}km/h` : '--'}</div>
             </div>
             <div className="text-center p-2 rounded bg-background dark:bg-white/5 border border-border dark:border-white/5">
               <div className="text-[9px] text-muted-foreground font-mono uppercase mb-1">HEADING</div>
-              <div className="font-bold font-mono text-purple-600 dark:text-purple-400">{gpsData ? `${(gpsData.heading || gpsData.climb || 0).toFixed(0)}°` : '--'}</div>
+              <div className="font-bold font-mono text-purple-600 dark:text-purple-400">{stableGPS ? `${(stableGPS.heading || stableGPS.climb || 0).toFixed(0)}°` : '--'}</div>
             </div>
           </div>
 
@@ -164,7 +195,7 @@ export const GPSCoordinateBox = () => {
               variant="outline"
               className="flex-1 h-8 text-[10px] border-white/10 hover:bg-white/5 font-mono uppercase"
               onClick={copyCoordinates}
-              disabled={!gpsData}
+              disabled={!stableGPS}
             >
               <Copy className="w-3 h-3 mr-2" />
               Copy Data
@@ -193,13 +224,13 @@ export const GPSCoordinateBox = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="aspect-video bg-cyan-950/20 rounded-lg flex items-center justify-center border border-cyan-500/30 relative overflow-hidden group">
-            {gpsData ? (
+            {stableGPS ? (
               <iframe
                 width="100%"
                 height="100%"
                 frameBorder="0"
                 style={{ border: 0 }}
-                src={`https://maps.google.com/maps?q=${gpsData.latitude},${gpsData.longitude}&z=16&output=embed`}
+                src={`https://maps.google.com/maps?q=${stableGPS.latitude},${stableGPS.longitude}&z=16&output=embed`}
                 title="Tactical GPS Map"
                 className="absolute inset-0 z-10"
               />
@@ -218,12 +249,12 @@ export const GPSCoordinateBox = () => {
             )}
 
             {/* Overlay for coordinates & external link button */}
-            {gpsData && (
+            {stableGPS && (
               <div className="absolute bottom-4 left-4 right-4 z-20 flex justify-between items-end pointer-events-none">
                 <div className="bg-black/80 backdrop-blur-md border border-cyan-500/30 p-2 rounded pointer-events-auto">
                   <div className="text-[10px] font-bold font-mono text-white tracking-widest">TARGET LOCATED</div>
                   <div className="text-cyan-400 font-mono text-sm">
-                    {gpsData.latitude.toFixed(6)}, {gpsData.longitude.toFixed(6)}
+                    {stableGPS.latitude.toFixed(6)}, {stableGPS.longitude.toFixed(6)}
                   </div>
                 </div>
 

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Navigation, MapPin, Target } from 'lucide-react';
+import { Navigation } from 'lucide-react';
 import { useDetection } from '@/contexts/DetectionContext';
+import { useQuery } from '@tanstack/react-query';
+import { apiFetch } from '@/lib/api';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -20,16 +22,39 @@ let DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Component to handle map movement
-const MapController = () => {
+// Glowing cyan drone icon — distinct from alert pins
+const droneIcon = L.divIcon({
+    className: '',
+    html: `
+      <div style="
+        width:20px;height:20px;
+        background:rgba(34,211,238,0.9);
+        border:3px solid #fff;
+        border-radius:50%;
+        box-shadow:0 0 12px 4px rgba(34,211,238,0.7), 0 0 0 6px rgba(34,211,238,0.2);
+      "></div>`,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+});
+
+// Auto-pans to drone position on first fix; also handles alert focus
+const MapController = ({ dronePos }: { dronePos: [number, number] | null }) => {
     const map = useMap();
     const { selectedAlert } = useDetection();
+    const centeredRef = useRef(false);
 
+    // Pan to drone on very first GPS fix
+    useEffect(() => {
+        if (dronePos && !centeredRef.current) {
+            centeredRef.current = true;
+            map.setView(dronePos, 16, { animate: true });
+        }
+    }, [dronePos, map]);
+
+    // Pan to selected alert when user clicks one
     useEffect(() => {
         if (selectedAlert) {
-            map.flyTo([selectedAlert.lat, selectedAlert.lon], 16, {
-                duration: 1.5
-            });
+            map.flyTo([selectedAlert.lat, selectedAlert.lon], 16, { duration: 1.5 });
         }
     }, [selectedAlert, map]);
 
@@ -68,8 +93,25 @@ const ThemeAwareTileLayer = () => {
 };
 
 export const IncidentMap = () => {
-    const { alerts, activeAlerts, selectedAlert } = useDetection();
-    const center = { lat: 9.510579, lng: 76.550428 };
+    const { activeAlerts } = useDetection();
+
+    // --- Live GPS for drone position ---
+    const { data: gpsData } = useQuery<{ latitude: number; longitude: number }>({
+        queryKey: ['gps'],
+        queryFn: async () => {
+            const res = await apiFetch('/api/gps');
+            if (!res.ok) throw new Error('GPS fetch failed');
+            return res.json();
+        },
+        refetchInterval: 3000,
+    });
+
+    // Default map center — used before first GPS fix
+    const defaultCenter: [number, number] = [9.510579, 76.550428];
+    const dronePos: [number, number] | null =
+        gpsData && gpsData.latitude && gpsData.longitude
+            ? [gpsData.latitude, gpsData.longitude]
+            : null;
 
     return (
         <Card className="h-full bg-card dark:bg-[#0A0A0A] border border-border dark:border-white/10 overflow-hidden relative shadow-lg flex flex-col">
@@ -87,15 +129,28 @@ export const IncidentMap = () => {
 
             <CardContent className="flex-1 p-0 relative">
                 <MapContainer
-                    center={[center.lat, center.lng]}
-                    zoom={13}
+                    center={dronePos ?? defaultCenter}
+                    zoom={16}
                     scrollWheelZoom={true}
                     className="absolute inset-0 z-0"
                     style={{ background: 'hsl(var(--background))' }}
                 >
                     <ThemeAwareTileLayer />
-                    <MapController />
+                    <MapController dronePos={dronePos} />
 
+                    {/* Single live drone marker — moves with GPS, never accumulates */}
+                    {dronePos && (
+                        <Marker key="drone" position={dronePos} icon={droneIcon}>
+                            <Popup className="custom-popup">
+                                <div className="text-xs font-mono">
+                                    <strong className="text-cyan-600">🛸 DRONE</strong><br />
+                                    {dronePos[0].toFixed(6)}, {dronePos[1].toFixed(6)}
+                                </div>
+                            </Popup>
+                        </Marker>
+                    )}
+
+                    {/* Thermal / life detection alert markers */}
                     {activeAlerts.map(alert => (
                         <Marker
                             key={alert.id}
