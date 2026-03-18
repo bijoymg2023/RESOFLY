@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import {
-    Bluetooth, Signal, Target, Radar, Activity, Zap, Info, Shield, Gauge, X, MapPin, RefreshCw
+    Bluetooth, Signal, Target, Radar, Activity, Zap, Info, Shield, Gauge, X, MapPin, RefreshCw, AlertCircle
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { Badge } from '@/components/ui/badge';
@@ -18,44 +18,56 @@ interface SignalDevice {
 const SignalTracker = () => {
     const [devices, setDevices] = useState<SignalDevice[]>([]);
     const [scanning, setScanning] = useState(false);
+    const [errorMsg, setErrorMsg] = useState<string | null>(null);
     const [target, setTarget] = useState<SignalDevice | null>(null);
     const [smoothedRssi, setSmoothedRssi] = useState<number | null>(null);
     const scrollContainerRef = useRef<HTMLDivElement>(null);
+    const targetRef = useRef<SignalDevice | null>(null);
+
+    useEffect(() => {
+        targetRef.current = target;
+    }, [target]);
 
     const scan = useCallback(async () => {
         setScanning(true);
         try {
-            const res = await apiFetch('/api/scan/bluetooth');
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), 6000);
+            
+            const res = await apiFetch('/api/scan/bluetooth', { signal: controller.signal });
+            clearTimeout(id);
+            
             if (res.ok) {
                 const data = await res.json();
                 const now = Date.now();
+                setErrorMsg(null); // Clear errors on success
 
                 setDevices(prev => {
                     const mergedMap = new Map<string, SignalDevice>();
-                    // Aggressive Pruning: If not seen in the latest background scan, remove it.
-                    // This creates a "Live" feel where lost devices drop off immediately.
                     data.forEach((d: any) => {
                         mergedMap.set(d.mac, { ...d, lastSeen: now });
                     });
                     return Array.from(mergedMap.values()).sort((a, b) => b.rssi - a.rssi);
                 });
 
-                if (target) {
-                    const fresh = data.find((d: any) => d.mac === target.mac);
+                if (targetRef.current) {
+                    const fresh = data.find((d: any) => d.mac === targetRef.current?.mac);
                     if (fresh) {
-                        setTarget(prev => ({ ...prev!, rssi: fresh.rssi, lastSeen: now }));
-                    } else if (now - (target.lastSeen || 0) > 12000) {
-                        // If target lost for >12s, clear target
+                        setTarget(prev => prev ? ({ ...prev, rssi: fresh.rssi, lastSeen: now }) : null);
+                    } else if (now - (targetRef.current?.lastSeen || 0) > 12000) {
                         setTarget(null);
+                        setSmoothedRssi(null);
                     }
                 }
+            } else {
+                setErrorMsg(`HTTP Error: ${res.status}`);
             }
-        } catch (e) {
-            console.error(e);
+        } catch (e: any) {
+            setErrorMsg(e.name === 'AbortError' ? 'Timeout (Backend hanging)' : e.message || 'Network Fetch Failed');
         } finally {
             setScanning(false);
         }
-    }, [target]);
+    }, []);
 
     useEffect(() => {
         scan();
@@ -120,19 +132,13 @@ const SignalTracker = () => {
                     <Activity className={`w-4 h-4 text-cyan-600 dark:text-cyan-500 ${scanning ? 'animate-pulse' : ''}`} />
                     <CardTitle className="text-[11px] font-black uppercase tracking-[0.45em] text-foreground/60 dark:text-white/60">SIGNAL TRACKER</CardTitle>
                 </div>
-                <div className="flex items-center space-x-2">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-muted-foreground hover:text-cyan-600 dark:text-white/40 dark:hover:text-cyan-400 hover:bg-cyan-500/10"
-                        onClick={scan}
-                        disabled={scanning}
-                    >
-                        <RefreshCw className={`w-3.5 h-3.5 ${scanning ? 'animate-spin' : ''}`} />
-                    </Button>
-                    <Badge variant="outline" className={`h-4 text-[7px] border-border dark:border-white/10 px-2 flex items-center space-x-1.5 ${scanning ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' : 'bg-muted dark:bg-white/5 text-muted-foreground dark:text-white/20'}`}>
-                        <div className={`w-1 h-1 rounded-full ${scanning ? 'bg-cyan-500 animate-pulse' : 'bg-muted-foreground dark:bg-white/20'}`} />
-                        <span>{scanning ? 'UPLINK_LIVE' : 'NET_IDLE'}</span>
+                <div className="flex items-center space-x-3">
+                    {errorMsg && (
+                        <span className="text-[9px] text-red-500 font-bold truncate max-w-[100px]">{errorMsg}</span>
+                    )}
+                    <Badge variant="outline" className={`h-4 text-[7px] border-border dark:border-white/10 px-2 flex items-center space-x-1.5 ${errorMsg ? 'bg-red-500/10 text-red-500' : scanning ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' : 'bg-muted dark:bg-white/5 text-muted-foreground dark:text-white/20'}`}>
+                        <div className={`w-1 h-1 rounded-full ${errorMsg ? 'bg-red-500' : scanning ? 'bg-cyan-500 animate-pulse' : 'bg-muted-foreground dark:bg-white/20'}`} />
+                        <span>{errorMsg ? 'ERR_FAIL' : scanning ? 'UPLINK_LIVE' : 'NET_IDLE'}</span>
                     </Badge>
                 </div>
             </CardHeader>
@@ -214,9 +220,15 @@ const SignalTracker = () => {
                             </div>
                         ))}
 
-                        {devices.length === 0 && !scanning && (
+                        {devices.length === 0 && !scanning && !errorMsg && (
                             <div className="py-20 text-center opacity-20">
                                 <Radar className="w-10 h-10 mx-auto mb-2" />
+                            </div>
+                        )}
+                        {errorMsg && (
+                            <div className="py-10 text-center opacity-80 text-red-500">
+                                <AlertCircle className="w-10 h-10 mx-auto mb-2" />
+                                <p className="text-xs font-mono">{errorMsg}</p>
                             </div>
                         )}
                     </div>
