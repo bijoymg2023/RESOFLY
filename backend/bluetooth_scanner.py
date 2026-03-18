@@ -25,7 +25,10 @@ def get_bluetooth_devices():
         time.sleep(0.5)
         subprocess.run(["sudo", btmgmt_cmd, "power", "on"], capture_output=True)
 
-        cmd = ["sudo", btmgmt_cmd, "find"]
+        # Add stdbuf -oL to force libc line buffering under systemd pipes.
+        # Otherwise <4096 bytes are trapped and memory-wiped when the process dies.
+        stdbuf_cmd = subprocess.run(["which", "stdbuf"], capture_output=True, text=True).stdout.strip() or "stdbuf"
+        cmd = ["sudo", stdbuf_cmd, "-oL", btmgmt_cmd, "find"]
         log_debug(f"Executing natively: {' '.join(cmd)}")
         
         # 2. Start find process natively
@@ -41,8 +44,14 @@ def get_bluetooth_devices():
         try:
             output, stderr = proc.communicate(timeout=2)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            output, stderr = proc.communicate()
+            log_debug("Stop-find failed, forcing termination.")
+            # Send SIGTERM first instead of SIGKILL to allow C flush
+            proc.terminate()
+            try:
+                output, stderr = proc.communicate(timeout=1)
+            except:
+                proc.kill()
+                output, stderr = proc.communicate()
 
         if not output:
              log_debug(f"Warning: Empty native stdout. Stderr: {stderr}")
