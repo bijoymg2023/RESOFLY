@@ -4,43 +4,20 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Function to parse btmgmt output
 scan_btmgmt() {
-    # Ensure power is on
-    btmgmt power on >/dev/null 2>&1
+    # Force a quick software reset of the HCI device to clear 'Busy' states
+    hciconfig hci0 down >/dev/null 2>&1
+    hciconfig hci0 up >/dev/null 2>&1
     
-    # Start find in background with line buffering
-    # We pipe to 'cat' to ensure it's treated as a stream
-    stdbuf -oL btmgmt find > /tmp/bt_scan.log 2>&1 &
-    SCAN_PID=$!
-    
-    # Wait for scan duration
-    sleep 7
-    
-    # Kill the scan
-    kill $SCAN_PID >/dev/null 2>&1
-    btmgmt stop-find >/dev/null 2>&1
-    
-    # Output the captured log
-    cat /tmp/bt_scan.log
-    rm /tmp/bt_scan.log
+    # We run btmgmt find with a strict timeout so it doesn't need stdbuf or tmp files
+    # Instead of piping, we let it run natively and timeout kills it after 6 seconds
+    timeout 6s btmgmt find 2>&1
 }
 
-# Function to parse bluetoothctl output (Fallback)
 scan_bluetoothctl() {
-    # Start scanning in background
-    bluetoothctl scan on >/dev/null 2>&1 &
-    SCAN_PID=$!
-    
-    sleep 7
-    
-    # Get devices
+    # Fallback to bluetoothctl list of discovered devices
+    timeout 6s bluetoothctl scan on >/dev/null 2>&1
     bluetoothctl devices
-    
-    # Kill background scan
-    kill $SCAN_PID >/dev/null 2>&1
-    # stop scan explicitly
-    bluetoothctl scan off >/dev/null 2>&1
 }
 
 # Try btmgmt first (detected devices are output to stdout)
