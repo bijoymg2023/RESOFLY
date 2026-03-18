@@ -12,17 +12,19 @@ def log_debug(msg):
 def get_bluetooth_devices():
     """
     Scans for Bluetooth LE devices using 'btmgmt find' natively in Python.
-    Avoids bash scripts and temporary files to ensure systemd robustness.
-    """
     try:
-        # 1. Force hardware reset purely with crucial delays
-        subprocess.run(["sudo", "hciconfig", "hci0", "down"], capture_output=True)
-        time.sleep(1)
-        subprocess.run(["sudo", "hciconfig", "hci0", "up"], capture_output=True)
-        time.sleep(0.5)
-        subprocess.run(["sudo", "btmgmt", "power", "on"], capture_output=True)
+        # Determine paths natively since systemd may strip /usr/sbin from PATH
+        hciconfig_cmd = subprocess.run(["which", "hciconfig"], capture_output=True, text=True).stdout.strip() or "hciconfig"
+        btmgmt_cmd = subprocess.run(["which", "btmgmt"], capture_output=True, text=True).stdout.strip() or "btmgmt"
 
-        cmd = ["sudo", "btmgmt", "find"]
+        # 1. Force hardware reset purely with crucial delays
+        subprocess.run(["sudo", hciconfig_cmd, "hci0", "down"], capture_output=True)
+        time.sleep(1)
+        subprocess.run(["sudo", hciconfig_cmd, "hci0", "up"], capture_output=True)
+        time.sleep(0.5)
+        subprocess.run(["sudo", btmgmt_cmd, "power", "on"], capture_output=True)
+
+        cmd = ["sudo", btmgmt_cmd, "find"]
         log_debug(f"Executing natively: {' '.join(cmd)}")
         
         # 2. Start find process natively
@@ -32,7 +34,7 @@ def get_bluetooth_devices():
         time.sleep(6)
         
         # 3. Gracefully stop find (causes btmgmt to flush and exit)
-        subprocess.run(["sudo", "btmgmt", "stop-find"], capture_output=True)
+        subprocess.run(["sudo", btmgmt_cmd, "stop-find"], capture_output=True)
         
         # 4. Read output
         try:

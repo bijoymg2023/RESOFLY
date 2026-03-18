@@ -1054,7 +1054,7 @@ async def signal_monitor_loop():
             
             # Substantial sleep between scans to prevent 100% CPU and Wi-Fi interface drops!
             # Continuous iwlist scanning will cause the wlan0 interface to drop packets and kill Cloudflare Tunnel.
-            await asyncio.sleep(60)
+            await asyncio.sleep(2)
             
         except Exception as e:
             print(f"[SIGNAL] Background loop error: {e}", flush=True)
