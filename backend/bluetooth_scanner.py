@@ -11,7 +11,8 @@ def log_debug(msg):
 
 def get_bluetooth_devices():
     """
-    Scans for Bluetooth LE devices using 'btmgmt find' natively in Python.
+    Avoids bash scripts and temporary files to ensure systemd robustness.
+    """
     try:
         # Determine paths natively since systemd may strip /usr/sbin from PATH
         hciconfig_cmd = subprocess.run(["which", "hciconfig"], capture_output=True, text=True).stdout.strip() or "hciconfig"
